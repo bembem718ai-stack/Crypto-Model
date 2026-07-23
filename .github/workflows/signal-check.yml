@@ -1,0 +1,60 @@
+name: Signal Check
+
+# WHEN THIS RUNS:
+#   - On the schedule below (cron is always UTC)
+#   - Any time you click "Run workflow" manually on the Actions tab
+#
+# QUOTA MATH: each run costs 1 Adanos request PER TICKER. The default below
+# checks 3 tickers twice a day = 6 requests/day = ~180/month, comfortably
+# under a 200/month free-tier cap. Adjust the cron line if you change the
+# ticker list or want a different frequency — see the comment above it.
+on:
+  schedule:
+    # Twice daily: 00:00 and 12:00 UTC. Change to '0 */6 * * *' for every 6h
+    # (4x/day, ~360/month — only if you have a higher Adanos quota), or
+    # '0 0 * * *' for once daily (~90/month) if you want more headroom.
+    - cron: '0 0,12 * * *'
+  workflow_dispatch: {}   # adds a manual "Run workflow" button on the Actions tab
+
+permissions:
+  contents: write   # needed so the workflow can commit signal_log.csv back
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15   # a single check shouldn't take long; safety cap
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run confluence check
+        env:
+          ADANOS_API_KEY: ${{ secrets.ADANOS_API_KEY }}
+          # BINANCE_REGION is intentionally NOT set to US here. GitHub-hosted
+          # runners aren't US-residential IPs, so the regular (global)
+          # Binance API should work fine from them. If a run ever fails with
+          # an HTTP 451 (geo-blocked) error in the logs, uncomment the next
+          # line to force Binance.US instead:
+          # BINANCE_REGION: US
+        run: >
+          python live_tools.py check BTC ETH SOL --confluence
+          --ml-bull-min 55 --ml-bear-max 45
+
+      - name: Commit updated signal log
+        run: |
+          git config user.name "signal-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add signal_log.csv
+          # Only commit if the log actually changed (i.e. something qualified)
+          git diff --cached --quiet || git commit -m "Signal check: $(date -u +'%Y-%m-%d %H:%M UTC') [skip ci]"
+          git push

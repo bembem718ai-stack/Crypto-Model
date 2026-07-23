@@ -1,0 +1,14 @@
+# Core — required for signal_engines.py / pipeline.py / live_tools.py check mode
+requests
+pandas
+numpy
+yfinance
+
+# ML confidence engine (pipeline.py run --ml, or live_tools.py check --confluence)
+xgboost
+scikit-learn
+
+# NOTE: plyer and winsound (desktop alerts/sound) are intentionally NOT listed
+# here — they're only used by `live_tools.py monitor`, which is for a machine
+# you keep running locally. GitHub Actions is headless, so `live_tools.py
+# check` (used by the workflow below) never touches them.
