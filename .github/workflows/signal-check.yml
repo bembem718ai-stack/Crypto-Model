@@ -15,6 +15,13 @@ on:
     - cron: '*/25 * * * *'
   workflow_dispatch: {}
 
+# Prevents two runs (e.g. a scheduled one + a manual "Run workflow" click)
+# from racing to commit/push at the same time. Overlapping runs queue up
+# one after another instead of colliding.
+concurrency:
+  group: signal-check
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -87,5 +94,19 @@ jobs:
           git config user.name "signal-bot"
           git config user.email "actions@users.noreply.github.com"
           git add signal_log.csv docs/
-          git diff --cached --quiet || git commit -m "Signal check: $(date -u +'%Y-%m-%d %H:%M UTC') [skip ci]"
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Signal check: $(date -u +'%Y-%m-%d %H:%M UTC') [skip ci]"
+            # If someone else pushed in the meantime (e.g. you pushed
+            # locally), rebase onto the latest before pushing, retrying a
+            # few times in case of a brief race.
+            for i in 1 2 3; do
+              if git pull --rebase origin main && git push; then
+                echo "Pushed successfully."
+                break
+              fi
+              echo "Push attempt $i failed, retrying in 5s..."
+              sleep 5
+            done
+          fi
