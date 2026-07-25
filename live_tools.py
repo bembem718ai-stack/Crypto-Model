@@ -122,6 +122,56 @@ def passes_confluence(result: dict, ml_bull_min: float = 55.0,
             "reason": f"{direction} — not an actionable direction"}
 
 
+def run_single_check(tickers: list, log_file: str = "signal_log.csv",
+                     confluence: bool = False, ml_bull_min: float = 55.0,
+                     ml_bear_max: float = 45.0) -> list:
+    """
+    ONE pass over `tickers` — no loop, no sleep, no desktop alerts. Built for
+    headless/scheduled environments (GitHub Actions, cron, etc.) where an
+    external scheduler provides the "every N hours" cadence instead of an
+    internal while-loop. Returns the list of qualifying results (empty if
+    none qualified, or all results if confluence=False).
+    """
+    qualifying = []
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    print(f"--- {timestamp} --- checking {', '.join(tickers)}"
+          f"{' (confluence mode)' if confluence else ''}")
+
+    for ticker in tickers:
+        try:
+            result = pl.run_full_pipeline(ticker, verbose=False, use_ml=confluence)
+            direction = result["combined"]["direction"]
+            decision = result["combined"]["decision"]
+            final_score = result["combined"]["final_score"]
+            ml_conf = result["combined"].get("ml_confidence")
+
+            if confluence:
+                gate = passes_confluence(result, ml_bull_min, ml_bear_max)
+                if not gate["qualifies"]:
+                    print(f"  {ticker}: skip — {gate['reason']}")
+                    continue
+                ml_str = f", ML={ml_conf:.0f}%" if ml_conf is not None else ""
+                print(f"  ✓ {ticker}: {direction} ({decision}, score={final_score}{ml_str}) "
+                      f"— QUALIFIED: {gate['reason']}")
+            else:
+                print(f"  {ticker}: {direction} ({decision}, score={final_score})")
+
+            try:
+                append_ping_to_log(result, log_file)
+            except Exception as e:  # noqa: BLE001
+                print(f"  [log] append failed ({type(e).__name__}: {e})")
+
+            qualifying.append(result)
+
+        except Exception as e:  # noqa: BLE001 - one bad ticker shouldn't kill the run
+            print(f"  {ticker}: FAILED — {type(e).__name__}: {e}")
+
+    if confluence and not qualifying:
+        print("  (no confluence signals this check)")
+
+    return qualifying
+
+
 def monitor(tickers: list, interval_seconds: int, alert_every_time: bool,
             log_file: str = "signal_log.csv", confluence: bool = False,
             ml_bull_min: float = 55.0, ml_bear_max: float = 45.0):
@@ -199,7 +249,39 @@ def monitor(tickers: list, interval_seconds: int, alert_every_time: bool,
             time.sleep(interval_seconds)
 
     except KeyboardInterrupt:
-        print("\nStopped.")
+        print("\nStopped. Generating chart(s) from what was logged...")
+        import webbrowser
+        chart_dir = None
+        chart_files = []
+        for ticker in tickers:
+            try:
+                log = load_log(log_file, ticker=ticker)
+                ohlcv = fetch_price_ohlcv(ticker, interval="4h", bars=500)
+                out_name = f"{ticker.lower()}_signals.html"
+                chart_path = generate_html_chart(ticker, ohlcv, log,
+                                                 output_path=out_name, interval="4h")
+                chart_dir = os.path.dirname(chart_path) or "."
+                chart_files.append(out_name)
+                n = len(log)
+                print(f"  {ticker}: {n} signal{'s' if n != 1 else ''} logged -> {out_name}")
+            except Exception as e:  # noqa: BLE001 - don't let one ticker's chart fail the rest
+                print(f"  {ticker}: chart generation failed ({type(e).__name__}: {e})")
+
+        if chart_files:
+            server, port = _start_server(chart_dir)
+            print(f"\nChart server running at http://localhost:{port} — opening "
+                  f"{len(chart_files)} chart(s) in your browser.")
+            print("Press Ctrl+C again once you're done viewing to shut the server down.\n")
+            for name in chart_files:
+                webbrowser.open(f"http://localhost:{port}/{name}")
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                server.shutdown()
+                print("\nChart server stopped.")
+        else:
+            print("No charts could be generated.")
 
 
 def main_monitor():
@@ -424,6 +506,8 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
   <div class="toggle on" id="tog-sig"><span class="dot"></span>Signals</div>
   <div class="toggle on" id="tog-lvl"><span class="dot"></span>Levels</div>
   <div class="toggle" id="tog-trades"><span class="dot"></span>Trades</div>
+  <span class="sep"></span>
+  <button class="btn" id="reset-zoom-btn" title="Fit all data / reset zoom">Reset Zoom</button>
   <span class="spacer"></span>
   <span class="status">Last: <b>%%LAST_INFO%%</b></span>
   <div id="live-dot" title="Live connection"></div>
@@ -462,7 +546,7 @@ const initCandles=%%CANDLES%%, initVolumes=%%VOLUMES%%, signalMarkers=%%MARKERS%
 let currentInterval='%%INTERVAL%%';
 
 // ---- Chart setup ----
-const OPTS={layout:{background:{type:'solid',color:'#0a0e17'},textColor:'#9ca3af',fontSize:11},grid:{vertLines:{color:'#1f293720'},horzLines:{color:'#1f293720'}},crosshair:{mode:LightweightCharts.CrosshairMode.Normal,vertLine:{color:'#3b82f640',labelBackgroundColor:'#3b82f6'},horzLine:{color:'#3b82f640',labelBackgroundColor:'#3b82f6'}},rightPriceScale:{borderColor:'#1f2937',scaleMargins:{top:0.05,bottom:0.12}},timeScale:{borderColor:'#1f2937',timeVisible:true,secondsVisible:false}};
+const OPTS={layout:{background:{type:'solid',color:'#0a0e17'},textColor:'#9ca3af',fontSize:11},grid:{vertLines:{color:'#1f293720'},horzLines:{color:'#1f293720'}},crosshair:{mode:LightweightCharts.CrosshairMode.Normal,vertLine:{color:'#3b82f640',labelBackgroundColor:'#3b82f6'},horzLine:{color:'#3b82f640',labelBackgroundColor:'#3b82f6'}},rightPriceScale:{borderColor:'#1f2937',scaleMargins:{top:0.05,bottom:0.12}},timeScale:{borderColor:'#1f2937',timeVisible:true,secondsVisible:false},handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:{time:true,price:true},axisDoubleClickReset:{time:true,price:true}},kineticScroll:{touch:true,mouse:false}};
 
 const pc=LightweightCharts.createChart(document.getElementById('price-chart'),OPTS);
 let candleSeries=pc.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',borderUpColor:'#22c55e',borderDownColor:'#ef4444',wickUpColor:'#22c55e80',wickDownColor:'#ef444480'});
@@ -609,6 +693,7 @@ async function switchInterval(iv){
   }catch(e){console.error('interval switch failed',e);}
 }
 document.querySelectorAll('[data-iv]').forEach(b=>b.addEventListener('click',()=>switchInterval(b.dataset.iv)));
+document.getElementById('reset-zoom-btn').addEventListener('click',()=>{pc.timeScale().fitContent();sc.timeScale().fitContent();});
 
 // ---- Toggles ----
 function tog(id,on,off){document.getElementById(id).addEventListener('click',function(){this.classList.toggle('on');this.classList.contains('on')?on():off();});}
@@ -856,11 +941,32 @@ def main_graph():
 # CLI DISPATCHER — subcommands: monitor / graph
 # ======================================================================
 
+def main_check():
+    parser = argparse.ArgumentParser(
+        description="ONE-SHOT check across tickers — no loop, no desktop alerts. "
+                    "Built for scheduled/headless runs (GitHub Actions, cron).")
+    parser.add_argument("tickers", nargs="+", help="One or more tickers, e.g. BTC ETH SOL")
+    parser.add_argument("--log-file", default="signal_log.csv")
+    parser.add_argument("--confluence", action="store_true",
+                         help="Only log runs where score direction AND ML agree")
+    parser.add_argument("--ml-bull-min", type=float, default=55.0)
+    parser.add_argument("--ml-bear-max", type=float, default=45.0)
+    args = parser.parse_args()
+
+    run_single_check(args.tickers, log_file=args.log_file, confluence=args.confluence,
+                     ml_bull_min=args.ml_bull_min, ml_bear_max=args.ml_bear_max)
+
+
+# ======================================================================
+# CLI DISPATCHER — subcommands: monitor / graph / check
+# ======================================================================
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("monitor", "graph"):
-        print("Usage: python live_tools.py <monitor|graph> [args...]\n"
-              "  monitor BTC ETH ...  - continuous loop + desktop alerts\n"
+    if len(sys.argv) < 2 or sys.argv[1] not in ("monitor", "graph", "check"):
+        print("Usage: python live_tools.py <monitor|graph|check> [args...]\n"
+              "  monitor BTC ETH ...  - continuous loop + desktop alerts (needs a machine that stays on)\n"
               "  graph BTC            - interactive chart with live price\n"
+              "  check BTC ETH ...    - ONE-SHOT check, no loop (for cron / GitHub Actions)\n"
               "Run 'python live_tools.py <command> --help' for details.")
         sys.exit(1)
 
@@ -869,6 +975,8 @@ def main():
         main_monitor()
     elif command == "graph":
         main_graph()
+    elif command == "check":
+        main_check()
 
 
 if __name__ == "__main__":
