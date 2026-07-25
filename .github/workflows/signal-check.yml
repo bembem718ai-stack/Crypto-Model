@@ -22,6 +22,12 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Azure (which hosts GitHub-hosted runners) gets geo-blocked by
+      # Binance's global API with an HTTP 451 error, same as US residential
+      # IPs. Binance.US is NOT blocked from Azure, so route everything
+      # there instead. This applies to every step in this job.
+      BINANCE_REGION: US
 
     steps:
       - name: Check out repo
