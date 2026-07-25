@@ -4,25 +4,24 @@ name: Signal Check
 #   - On the schedule below (cron is always UTC)
 #   - Any time you click "Run workflow" manually on the Actions tab
 #
-# QUOTA MATH: each run costs 1 Adanos request PER TICKER. The default below
-# checks 3 tickers twice a day = 6 requests/day = ~180/month, comfortably
-# under a 200/month free-tier cap. Adjust the cron line if you change the
-# ticker list or want a different frequency — see the comment above it.
+# !!! QUOTA WARNING !!!
+#   Every 25 minutes x 1 ticker (BTC) = ~58 Adanos requests/day =
+#   ~1,740/month. A 200/month free-tier key will be exhausted in roughly
+#   3 days at this rate. Only run this schedule if you're on a paid/
+#   higher-quota Adanos tier. If you're still on free, change the cron
+#   line below to '0 0,12 * * *' (twice daily, ~60/month for 1 ticker).
 on:
   schedule:
-    # Twice daily: 00:00 and 12:00 UTC. Change to '0 */6 * * *' for every 6h
-    # (4x/day, ~360/month — only if you have a higher Adanos quota), or
-    # '0 0 * * *' for once daily (~90/month) if you want more headroom.
-    - cron: '0 0,12 * * *'
-  workflow_dispatch: {}   # adds a manual "Run workflow" button on the Actions tab
+    - cron: '*/25 * * * *'
+  workflow_dispatch: {}
 
 permissions:
-  contents: write   # needed so the workflow can commit signal_log.csv back
+  contents: write
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15   # a single check shouldn't take long; safety cap
+    timeout-minutes: 15
 
     steps:
       - name: Check out repo
@@ -40,21 +39,47 @@ jobs:
       - name: Run confluence check
         env:
           ADANOS_API_KEY: ${{ secrets.ADANOS_API_KEY }}
-          # BINANCE_REGION is intentionally NOT set to US here. GitHub-hosted
-          # runners aren't US-residential IPs, so the regular (global)
-          # Binance API should work fine from them. If a run ever fails with
-          # an HTTP 451 (geo-blocked) error in the logs, uncomment the next
-          # line to force Binance.US instead:
-          # BINANCE_REGION: US
         run: >
-          python live_tools.py check BTC ETH SOL --confluence
+          python live_tools.py check BTC --confluence
           --ml-bull-min 55 --ml-bear-max 45
 
-      - name: Commit updated signal log
+      - name: Build hosted charts (docs/ folder, served by GitHub Pages)
+        run: |
+          mkdir -p docs
+          python - <<'PY'
+          import live_tools as lt
+
+          tickers = ["BTC"]
+          built = []
+          for t in tickers:
+              try:
+                  log = lt.load_log("signal_log.csv", ticker=t)
+                  ohlcv = lt.fetch_price_ohlcv(t, interval="4h", bars=500)
+                  lt.generate_html_chart(t, ohlcv, log, output_path=f"docs/{t}.html", interval="4h")
+                  built.append(t)
+                  print(f"built docs/{t}.html ({len(log)} signal(s) logged)")
+              except Exception as e:
+                  print(f"chart build failed for {t}: {type(e).__name__}: {e}")
+
+          rows = "".join(
+              f"<li><a style='color:#3b82f6;font-size:18px' href='{t}.html'>{t}</a></li>"
+              for t in built
+          )
+          index = f"""<html><head><meta charset="utf-8"><title>Signal Charts</title></head>
+          <body style="background:#0a0e17;color:#e5e7eb;font-family:-apple-system,sans-serif;padding:40px">
+          <h1>Signal Charts</h1>
+          <p style="color:#6b7280">Auto-updated by GitHub Actions. Open any ticker below &mdash;
+          price updates live via Binance WebSocket in your browser.</p>
+          <ul style="line-height:2">{rows}</ul>
+          </body></html>"""
+          with open("docs/index.html", "w") as f:
+              f.write(index)
+          PY
+
+      - name: Commit updated log + hosted charts
         run: |
           git config user.name "signal-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add signal_log.csv
-          # Only commit if the log actually changed (i.e. something qualified)
+          git add signal_log.csv docs/
           git diff --cached --quiet || git commit -m "Signal check: $(date -u +'%Y-%m-%d %H:%M UTC') [skip ci]"
           git push
