@@ -53,7 +53,7 @@ jobs:
         env:
           ADANOS_API_KEY: ${{ secrets.ADANOS_API_KEY }}
         run: >
-          python live_tools.py check BTC --confluence
+          python live_tools.py check BTC --confluence --log-all
           --ml-bull-min 55 --ml-bear-max 45
 
       - name: Build hosted charts (docs/ folder, served by GitHub Pages)
