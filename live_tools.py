@@ -78,7 +78,7 @@ def fire_alert(ticker: str, direction: str, decision: str, final_score: float):
 
 
 def passes_confluence(result: dict, ml_bull_min: float = 55.0,
-                      ml_bear_max: float = 45.0) -> dict:
+                      ml_bear_max: float = 45.0, long_only: bool = False) -> dict:
     """
     Confluence gate: qualifies a run ONLY when the direction score and the
     ML probability agree on the same side.
@@ -108,6 +108,10 @@ def passes_confluence(result: dict, ml_bull_min: float = 55.0,
     if bullish and ml >= ml_bull_min:
         return {"qualifies": True, "side": "bullish",
                 "reason": f"{direction} + ML {ml:.0f}% >= {ml_bull_min:.0f}%"}
+    if bearish and long_only:
+        return {"qualifies": False, "side": None,
+                "reason": f"{direction} suppressed — long-only mode (short side "
+                          f"showed no edge in backtest; display-only until validated)"}
     if bearish and ml <= ml_bear_max:
         return {"qualifies": True, "side": "bearish",
                 "reason": f"{direction} + ML {ml:.0f}% <= {ml_bear_max:.0f}%"}
@@ -124,52 +128,76 @@ def passes_confluence(result: dict, ml_bull_min: float = 55.0,
 
 def run_single_check(tickers: list, log_file: str = "signal_log.csv",
                      confluence: bool = False, ml_bull_min: float = 55.0,
-                     ml_bear_max: float = 45.0) -> list:
+                     ml_bear_max: float = 45.0, log_all: bool = False,
+                     long_only: bool = False) -> list:
     """
     ONE pass over `tickers` — no loop, no sleep, no desktop alerts. Built for
     headless/scheduled environments (GitHub Actions, cron, etc.) where an
     external scheduler provides the "every N hours" cadence instead of an
-    internal while-loop. Returns the list of qualifying results (empty if
-    none qualified, or all results if confluence=False).
+    internal while-loop.
+
+    LOGGING BEHAVIOR:
+      confluence=True, log_all=False (default) -> only QUALIFYING runs get
+          logged to log_file. Quiet by design — signal_log.csv only fills
+          up when score+ML genuinely agree.
+      confluence=True, log_all=True -> EVERY run gets logged (including
+          WATCH / non-qualifying), but the confluence gate is still
+          evaluated and printed, so you can see which ones would have
+          qualified without losing the rest of the history.
+      confluence=False -> every run logged, no gate evaluated. (ML is only
+          computed if log_all or confluence is set, since it's the more
+          expensive step — pass log_all=True if you want ML numbers
+          without confluence gating.)
+
+    Returns the list of results that were actually LOGGED this call.
     """
-    qualifying = []
+    logged = []
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    print(f"--- {timestamp} --- checking {', '.join(tickers)}"
-          f"{' (confluence mode)' if confluence else ''}")
+    mode = " (confluence mode)" if confluence else ""
+    mode += ", logging everything" if log_all else ""
+    print(f"--- {timestamp} --- checking {', '.join(tickers)}{mode}")
+
+    want_ml = confluence or log_all
 
     for ticker in tickers:
         try:
-            result = pl.run_full_pipeline(ticker, verbose=False, use_ml=confluence)
+            result = pl.run_full_pipeline(ticker, verbose=False, use_ml=want_ml)
             direction = result["combined"]["direction"]
             decision = result["combined"]["decision"]
             final_score = result["combined"]["final_score"]
             ml_conf = result["combined"].get("ml_confidence")
+            ml_str = f", ML={ml_conf:.0f}%" if ml_conf is not None else ""
 
+            should_log = True
             if confluence:
-                gate = passes_confluence(result, ml_bull_min, ml_bear_max)
-                if not gate["qualifies"]:
-                    print(f"  {ticker}: skip — {gate['reason']}")
-                    continue
-                ml_str = f", ML={ml_conf:.0f}%" if ml_conf is not None else ""
-                print(f"  ✓ {ticker}: {direction} ({decision}, score={final_score}{ml_str}) "
-                      f"— QUALIFIED: {gate['reason']}")
+                gate = passes_confluence(result, ml_bull_min, ml_bear_max,
+                                         long_only=long_only)
+                if gate["qualifies"]:
+                    print(f"  ✓ {ticker}: {direction} ({decision}, score={final_score}{ml_str}) "
+                          f"— QUALIFIED: {gate['reason']}")
+                else:
+                    should_log = log_all  # only log a non-qualifier if log_all is set
+                    tag = "logged (log-all)" if log_all else "skip, not logged"
+                    print(f"  {ticker}: {direction} ({decision}, score={final_score}{ml_str}) "
+                          f"— {tag}: {gate['reason']}")
             else:
-                print(f"  {ticker}: {direction} ({decision}, score={final_score})")
+                print(f"  {ticker}: {direction} ({decision}, score={final_score}{ml_str})")
 
-            try:
-                append_ping_to_log(result, log_file)
-            except Exception as e:  # noqa: BLE001
-                print(f"  [log] append failed ({type(e).__name__}: {e})")
-
-            qualifying.append(result)
+            if should_log:
+                try:
+                    append_ping_to_log(result, log_file)
+                    logged.append(result)
+                except Exception as e:  # noqa: BLE001
+                    print(f"  [log] append failed ({type(e).__name__}: {e})")
 
         except Exception as e:  # noqa: BLE001 - one bad ticker shouldn't kill the run
             print(f"  {ticker}: FAILED — {type(e).__name__}: {e}")
 
-    if confluence and not qualifying:
-        print("  (no confluence signals this check)")
+    if confluence and not log_all and not logged:
+        print("  (no confluence signals this check — nothing logged; "
+              "use --log-all to log every check regardless)")
 
-    return qualifying
+    return logged
 
 
 def monitor(tickers: list, interval_seconds: int, alert_every_time: bool,
@@ -948,13 +976,21 @@ def main_check():
     parser.add_argument("tickers", nargs="+", help="One or more tickers, e.g. BTC ETH SOL")
     parser.add_argument("--log-file", default="signal_log.csv")
     parser.add_argument("--confluence", action="store_true",
-                         help="Only log runs where score direction AND ML agree")
+                         help="Evaluate the score+ML agreement gate")
+    parser.add_argument("--log-all", action="store_true",
+                         help="Log EVERY check (WATCH included), not just qualifying "
+                              "confluence signals. Combine with --confluence to still see "
+                              "which ones qualified, while keeping full history.")
     parser.add_argument("--ml-bull-min", type=float, default=55.0)
     parser.add_argument("--ml-bear-max", type=float, default=45.0)
+    parser.add_argument("--long-only", action="store_true",
+                         help="Suppress SELL/STRONG_SELL qualifications (short side "
+                              "showed ~0R edge in the exit backtest)")
     args = parser.parse_args()
 
     run_single_check(args.tickers, log_file=args.log_file, confluence=args.confluence,
-                     ml_bull_min=args.ml_bull_min, ml_bear_max=args.ml_bear_max)
+                     ml_bull_min=args.ml_bull_min, ml_bear_max=args.ml_bear_max,
+                     log_all=args.log_all, long_only=args.long_only)
 
 
 # ======================================================================
