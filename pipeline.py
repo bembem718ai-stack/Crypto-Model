@@ -168,7 +168,7 @@ def to_yahoo_crypto_symbol(ticker: str) -> str:
 
 
 def apply_indicator_step(ticker: str, step2_result: dict, period: str = "2y",
-                          use_ml: bool = False) -> dict:
+                          use_ml: bool = False, trend_sma_period: int = 50) -> dict:
     """
     STEP 3. Runs entry_point_model2.py's full daily technical (RSI, MACD,
     moving averages, etc.) + macro (VIX, DXY) pipeline. Requires
@@ -194,6 +194,19 @@ def apply_indicator_step(ticker: str, step2_result: dict, period: str = "2y",
 
     # ML confidence (out-of-sample). May be absent if use_ml=False or if
     # training failed (too little history / xgboost missing).
+    # --- Short trend filter (validated in backtest_exits) -------------
+    # Shorting a low composite score means "no bullish setup", NOT "bearish
+    # setup" — taken counter-trend it bleeds to drift. Requiring price below
+    # its N-day SMA lifted short expectancy from +0.01R to +0.10R (BTC) and
+    # +0.24R (ETH). Computed from the SAME daily closes the backtest used.
+    trend_sma = None
+    below_trend = None
+    if trend_sma_period and trend_sma_period > 0:
+        sma_series = valid["Close"].rolling(trend_sma_period).mean()
+        if pd.notna(sma_series.iloc[-1]):
+            trend_sma = float(sma_series.iloc[-1])
+            below_trend = bool(float(latest["Close"]) < trend_sma)
+
     ml_info = {"ml_enabled": use_ml, "ml_ok": bool(result_df.attrs.get("ml_ok", False))}
     if use_ml:
         if result_df.attrs.get("ml_ok"):
@@ -219,6 +232,9 @@ def apply_indicator_step(ticker: str, step2_result: dict, period: str = "2y",
         "indicator_final_score": float(latest["final_score"]),
         "vix_level": float(latest["vix_level"]),
         "date": valid.index[-1],
+        "trend_sma": trend_sma,
+        "below_trend_sma": below_trend,
+        "trend_sma_period": trend_sma_period,
         **ml_info,
     }
 
@@ -360,7 +376,8 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
                        weight_pattern: float = 0.6, weight_indicators: float = 0.4,
                        extreme_fear_mode: str = "symmetric",
                        stop_mult: float = 1.5, target_mult: float = 3.0,
-                       use_ml: bool = False,
+                       use_ml: bool = False, short_trend_filter: bool = True,
+                       trend_sma_period: int = 50,
                        verbose: bool = True) -> dict:
     """
     Runs Step 1 -> Step 2 -> Step 3 -> combine, in that exact order,
@@ -395,7 +412,8 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
 
     if verbose:
         print("\n[STEP 3/3] Indicators/indexes (technical + macro)...")
-    step3 = apply_indicator_step(ticker, step2, period=daily_period, use_ml=use_ml)
+    step3 = apply_indicator_step(ticker, step2, period=daily_period, use_ml=use_ml,
+                                 trend_sma_period=trend_sma_period)
     step_log.append(step3)
     if verbose:
         print(f"  technical_score={step3['technical_score']:.1f}  "
@@ -433,6 +451,20 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
         entry_price=step1["close"], direction=combined["direction"],
         atr=step1.get("atr"), stop_mult=stop_mult, target_mult=target_mult,
     )
+    # --- Apply the short trend filter to the live direction -----------
+    if (short_trend_filter and combined["direction"] in ("SELL", "STRONG_SELL")
+            and step3.get("below_trend_sma") is False):
+        combined["direction_before_trend_filter"] = combined["direction"]
+        combined["direction"] = "WATCH"
+        combined["trend_filter_note"] = (
+            f"{combined['direction_before_trend_filter']} suppressed: price is ABOVE its "
+            f"{step3.get('trend_sma_period')}-day SMA ({step3.get('trend_sma'):.2f}), so this "
+            f"would be a counter-trend short (backtested at ~0R). Downgraded to WATCH.")
+        # Exit levels must be recomputed for the new (non-actionable) direction.
+        exit_levels = cf.compute_exit_levels(
+            entry_price=step1["close"], direction=combined["direction"],
+            atr=step1.get("atr"), stop_mult=stop_mult, target_mult=target_mult)
+
     combined["exit_levels"] = exit_levels
     # ML confidence rides along in the output (display-only; not in final_score)
     combined["ml_confidence"] = step3.get("ai_confidence_score") if step3.get("ml_ok") else None
@@ -445,6 +477,8 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
               f"(indicators, weight={weight_indicators})")
         print(f"  FINAL SCORE: {combined['final_score']}  ->  ENTRY DECISION: {combined['decision']}  "
               f"|  DIRECTION: {combined['direction']}")
+        if combined.get("trend_filter_note"):
+            print(f"  TREND FILTER: {combined['trend_filter_note']}")
         if exit_levels.get("applicable"):
             print(f"  EXIT LEVELS ({exit_levels['side'].upper()}, ATR={exit_levels['atr']}, "
                   f"R:R={exit_levels['risk_reward']}):")
@@ -486,6 +520,10 @@ def main_run():
                          help="Stop-loss distance in ATR multiples (default 1.5)")
     parser.add_argument("--target-mult", type=float, default=3.0,
                          help="Profit-target distance in ATR multiples (default 3.0 = 2:1 R:R)")
+    parser.add_argument("--no-short-trend-filter", action="store_true",
+                         help="Disable the validated short trend filter (allows "
+                              "counter-trend shorts, which backtested at ~0R)")
+    parser.add_argument("--trend-sma-period", type=int, default=50)
     parser.add_argument("--ml", action="store_true",
                          help="Also train + show the XGBoost ML confidence score "
                               "(Yahoo-derived features, honest holdout; display-only, "
@@ -509,6 +547,8 @@ def main_run():
                 extreme_fear_mode=args.extreme_fear_mode,
                 stop_mult=args.stop_mult, target_mult=args.target_mult,
                 use_ml=args.ml,
+                short_trend_filter=not args.no_short_trend_filter,
+                trend_sma_period=args.trend_sma_period,
             )
             if not args.no_log:
                 try:
@@ -684,6 +724,146 @@ def run_backtest(ticker: str, period: str = "2y", forward_days: int = 5,
     return merged
 
 
+def backtest_exits(merged, stop_mult: float = 1.5,
+                   target_mult: float = 3.0, max_hold_days: int = 15,
+                   side: str = "both", short_sma_filter: int = 0) -> dict:
+    """
+    Simulates the ATR exit levels on every historical actionable signal:
+    entry at that day's close, then walk forward daily bars until the
+    TARGET is touched (High>=target for longs / Low<=target for shorts),
+    the STOP is touched, or max_hold_days passes (timeout).
+
+    Also records MFE - max favorable excursion - how far price moved
+    toward the target (as a % of the target distance) before the trade
+    resolved. High MFE on stop-outs/timeouts = "almost reached, then
+    reversed", the failure mode a trailing stop or nearer target fixes.
+
+    HONESTY CAVEATS baked into the numbers:
+    - Daily bars can't tell which of target/stop was touched FIRST when
+      both fall inside one bar's range; those ambiguous bars are counted
+      as STOPS (pessimistic) and tallied separately.
+    - Live exits use 4h ATR; this uses daily ATR (bigger), so absolute
+      levels differ - the structural question (do 3x targets get reached
+      before 1.5x stops) is what's being measured.
+    - Consecutive-day signals are simulated as independent trades.
+    """
+    df = merged.dropna(subset=["High", "Low", "Close"]).copy()
+    df["atr"] = cf.compute_atr(df, period=14)
+    # Trend filter for shorts: only short when price is ALREADY below its
+    # N-day SMA (i.e. with the downtrend). Fixes the structural flaw where
+    # a low composite score means "no bullish setup", not "bearish setup" -
+    # without this, the mirror shorts into uptrends and bleeds to drift.
+    if short_sma_filter and short_sma_filter > 0:
+        df["_trend_sma"] = df["Close"].rolling(short_sma_filter).mean()
+
+    trades = []
+    idx = df.index.to_list()
+    for i, (day, row) in enumerate(df.iterrows()):
+        d = row["direction"]
+        if d not in ("BUY", "STRONG_BUY", "SELL", "STRONG_SELL"):
+            continue
+        if side == "long" and d not in ("BUY", "STRONG_BUY"):
+            continue
+        if side == "short" and d not in ("SELL", "STRONG_SELL"):
+            continue
+        if (short_sma_filter and d in ("SELL", "STRONG_SELL")
+                and not (row.get("_trend_sma") == row.get("_trend_sma")  # NaN warmup
+                         and row["Close"] < row["_trend_sma"])):
+            continue  # short suppressed: price not below its trend SMA
+        if not (row["atr"] == row["atr"]):  # NaN ATR (warmup rows)
+            continue
+        lvl = cf.compute_exit_levels(row["Close"], d, row["atr"],
+                                     stop_mult=stop_mult, target_mult=target_mult)
+        if not lvl.get("applicable"):
+            continue
+        entry, target, stop = lvl["entry"], lvl["target"], lvl["stop"]
+        is_long = lvl["side"] == "long"
+        tgt_dist = abs(target - entry)
+
+        outcome, exit_day, mfe = "timeout", None, 0.0
+        fwd = df.iloc[i + 1: i + 1 + max_hold_days]
+        if fwd.empty:
+            continue
+        for fday, frow in fwd.iterrows():
+            hi, lo = frow["High"], frow["Low"]
+            fav = (hi - entry) if is_long else (entry - lo)
+            if tgt_dist:
+                mfe = max(mfe, fav / tgt_dist)
+            hit_t = hi >= target if is_long else lo <= target
+            hit_s = lo <= stop if is_long else hi >= stop
+            if hit_t and hit_s:
+                outcome, exit_day = "ambiguous_stop", fday  # pessimistic
+                break
+            if hit_t:
+                outcome, exit_day = "target", fday
+                break
+            if hit_s:
+                outcome, exit_day = "stop", fday
+                break
+        if outcome == "timeout":
+            last_close = fwd.iloc[-1]["Close"]
+            denom = stop_mult * row["atr"]
+            pnl_r = ((last_close - entry) if is_long else (entry - last_close)) / denom
+        elif outcome == "target":
+            pnl_r = lvl["risk_reward"]
+        else:
+            pnl_r = -1.0
+        trades.append({"date": day, "direction": d, "outcome": outcome,
+                       "mfe_pct_of_target": round(mfe * 100, 1),
+                       "pnl_r": round(pnl_r, 3),
+                       "days_held": (idx.index(exit_day) - i) if exit_day is not None else max_hold_days})
+
+    if not trades:
+        return {"n": 0, "trades": trades}
+    tdf = pd.DataFrame(trades)
+    nonwin = tdf.loc[tdf["outcome"] != "target", "mfe_pct_of_target"]
+    return {
+        "n": len(tdf),
+        "target_rate": (tdf["outcome"] == "target").mean(),
+        "stop_rate": tdf["outcome"].isin(["stop", "ambiguous_stop"]).mean(),
+        "ambiguous_n": int((tdf["outcome"] == "ambiguous_stop").sum()),
+        "timeout_rate": (tdf["outcome"] == "timeout").mean(),
+        "expectancy_r": tdf["pnl_r"].mean(),
+        "avg_days_held": tdf["days_held"].mean(),
+        "avg_mfe_on_losses": nonwin.mean() if len(nonwin) else float("nan"),
+        "near_miss_rate": (nonwin >= 70).mean() if len(nonwin) else float("nan"),
+        "trades": trades,
+    }
+
+
+def print_exit_report(res: dict, stop_mult: float, target_mult: float, max_hold_days: int):
+    print(f"\n{'=' * 74}")
+    print(f"  EXIT BACKTEST - target {target_mult}xATR / stop {stop_mult}xATR, "
+          f"max hold {max_hold_days} days")
+    print(f"{'=' * 74}")
+    if res["n"] == 0:
+        print("  No actionable signals with enough forward data to simulate.")
+        return
+    be = 1.0 / (1.0 + target_mult / stop_mult)
+    print(f"  Trades simulated: {res['n']}")
+    print(f"  Target hit:  {res['target_rate']*100:5.1f}%   (breakeven at this R:R ~ {be*100:.0f}%)")
+    print(f"  Stop hit:    {res['stop_rate']*100:5.1f}%   (incl. {res['ambiguous_n']} ambiguous "
+          f"same-bar cases counted pessimistically as stops)")
+    print(f"  Timeout:     {res['timeout_rate']*100:5.1f}%   (neither level in {max_hold_days} days)")
+    print(f"  Expectancy:  {res['expectancy_r']:+.2f}R per trade   |   avg hold {res['avg_days_held']:.1f} days")
+    print(f"  --- 'almost reached, then reversed' diagnostics ---")
+    print(f"  Avg MFE on non-winners: {res['avg_mfe_on_losses']:.0f}% of the way to target")
+    print(f"  Near-miss rate (got >=70% to target, still didn't win): "
+          f"{res['near_miss_rate']*100:.0f}% of non-winners")
+    print(f"  -> If near-miss rate is high, a TRAILING stop or partial take-profit")
+    print(f"     at ~70-80% of target would capture what fixed targets give back.")
+    # --- per-side breakdown: is one side carrying (or killing) the edge? ---
+    tdf = pd.DataFrame(res["trades"])
+    tdf["side"] = tdf["direction"].apply(
+        lambda d: "LONG" if d in ("BUY", "STRONG_BUY") else "SHORT")
+    print(f"  --- per-side breakdown ---")
+    for side, g in tdf.groupby("side"):
+        tr = (g["outcome"] == "target").mean() * 100
+        print(f"  {side:5s}: {len(g):4d} trades | target {tr:4.1f}% | "
+              f"expectancy {g['pnl_r'].mean():+.2f}R")
+    print(f"{'=' * 74}\n")
+
+
 def summarize(merged: pd.DataFrame, forward_days: int, extreme_fear_mode: str = "symmetric"):
     n_extreme = int((merged["vix_level"] >= 35).sum())
     print(f"\n{'=' * 78}")
@@ -791,6 +971,19 @@ def main_backtest():
                          help="Run BOTH extreme_fear_mode settings back to back and "
                               "print a focused diff on extreme-fear days, instead of "
                               "a single run.")
+    parser.add_argument("--exits", action="store_true",
+                         help="Also simulate the ATR target/stop exits on every "
+                              "historical signal: hit rates, expectancy, and the "
+                              "'almost reached then reversed' (MFE) diagnostics.")
+    parser.add_argument("--stop-mult", type=float, default=1.5)
+    parser.add_argument("--target-mult", type=float, default=3.0)
+    parser.add_argument("--max-hold-days", type=int, default=15,
+                         help="Timeout for the exit simulation (default 15 trading days)")
+    parser.add_argument("--side", choices=("both", "long", "short"), default="both",
+                         help="Restrict the exit simulation to one side (default both)")
+    parser.add_argument("--short-sma-filter", type=int, default=0,
+                         help="Only take SHORT trades when Close is below this N-day "
+                              "SMA (0 = off). Tests the 'only short downtrends' fix.")
     args = parser.parse_args()
 
     if args.compare_modes:
@@ -805,6 +998,13 @@ def main_backtest():
                            weight_indicators=args.weight_indicators,
                            extreme_fear_mode=args.extreme_fear_mode)
     summarize(merged, args.forward_days, extreme_fear_mode=args.extreme_fear_mode)
+
+    if args.exits:
+        res = backtest_exits(merged, stop_mult=args.stop_mult,
+                             target_mult=args.target_mult,
+                             max_hold_days=args.max_hold_days, side=args.side,
+                             short_sma_filter=args.short_sma_filter)
+        print_exit_report(res, args.stop_mult, args.target_mult, args.max_hold_days)
 
 
 # ======================================================================
