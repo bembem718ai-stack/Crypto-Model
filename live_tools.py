@@ -480,6 +480,27 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .status b{color:var(--text);font-weight:600}
 #live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;margin-left:4px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+#tabbar{display:flex;gap:2px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0}
+.tab{padding:9px 18px;font-size:12px;font-weight:600;background:transparent;color:var(--dim);border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:#fff;border-bottom-color:var(--accent)}
+.tab .count{font-size:10px;opacity:.6;margin-left:5px}
+.pane{display:none;flex:1;min-height:0;flex-direction:column}
+.pane.active{display:flex}
+.tablewrap{flex:1;overflow-y:auto;padding:0 16px 16px}
+table.logs{width:100%;border-collapse:collapse;font-size:12px}
+table.logs th{position:sticky;top:0;background:var(--panel);text-align:left;padding:9px 8px;color:var(--dim);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border);z-index:5}
+table.logs td{padding:8px;border-bottom:1px solid #16202e}
+table.logs tr:hover td{background:#131c28}
+.dirbadge{font-weight:700;font-size:11px;padding:2px 7px;border-radius:3px}
+.d-STRONG_BUY{background:#052e16;color:#22c55e}.d-BUY{background:#08301a;color:#4ade80}
+.d-WATCH{background:#1e293b;color:#94a3b8}
+.d-SELL{background:#3a2408;color:#fb923c}.d-STRONG_SELL{background:#3b0d0d;color:#ef4444}
+.mono{font-family:ui-monospace,Consolas,monospace}
+.markbtn{padding:4px 11px;font-size:11px;font-weight:600;border:1px solid var(--border);background:#1e293b;color:var(--dim);border-radius:4px;cursor:pointer;transition:all .15s}
+.markbtn:hover{background:#2d3748;color:var(--text)}
+.markbtn.marked{background:#78350f;border-color:#f59e0b;color:#fbbf24}
+.empty{padding:50px;text-align:center;color:var(--dim);font-size:13px}
 #price-wrap{flex:1;min-height:0;position:relative}
 #price-chart{width:100%;height:100%}
 #divider{height:3px;background:var(--border);cursor:ns-resize;flex-shrink:0}
@@ -541,6 +562,16 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
   <div id="live-dot" title="Live connection"></div>
 </div>
 
+<div id="tabbar">
+  <button class="tab active" data-pane="all">All Logs<span class="count" id="c-all"></span></button>
+  <button class="tab" data-pane="flag">Flagged<span class="count" id="c-flag"></span></button>
+  <button class="tab" data-pane="chart">Chart<span class="count" id="c-chart"></span></button>
+</div>
+
+<div class="pane active" id="pane-all"><div class="tablewrap"><div id="tbl-all"></div></div></div>
+<div class="pane" id="pane-flag"><div class="tablewrap"><div id="tbl-flag"></div></div></div>
+
+<div class="pane" id="pane-chart">
 <div id="price-wrap">
   <div id="price-chart"></div>
   <div id="trades-panel">
@@ -552,6 +583,7 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 <div id="score-wrap">
   <span id="score-label">Signal Score</span>
   <div id="score-chart"></div>
+</div>
 </div>
 
 <div class="modal-bg" id="trade-modal">
@@ -570,6 +602,7 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 
 <script>
 const TICKER='%%TICKER%%', SYMBOL='%%SYMBOL%%';
+const LOGROWS=%%ROWS%%;
 const initCandles=%%CANDLES%%, initVolumes=%%VOLUMES%%, signalMarkers=%%MARKERS%%, scoreData=%%SCORES%%;
 let currentInterval='%%INTERVAL%%';
 
@@ -626,14 +659,84 @@ function drawTradeLines(){
 }
 
 function buildMarkers(){
-  const base=document.getElementById('tog-sig').classList.contains('on')?signalMarkers:[];
-  // Add trade markers (gold squares)
-  const tradeM=trades.map(t=>({time:t.time,position:t.direction.includes('SELL')?'aboveBar':'belowBar',color:'#fbbf24',shape:'square',text:'TRADE',size:2}));
-  const all=[...base,...tradeM].sort((a,b)=>a.time-b.time);
+  // CHART SHOWS ONLY MARKED TRADES — a signal appears here only after you
+  // mark it from the All Logs / Flagged tab. Unmarked signals stay in the
+  // tables so the chart reflects decisions, not raw model output.
+  const M2 = trades.map(t=>({
+    time:t.time,
+    position:(t.direction||'').includes('SELL')?'aboveBar':'belowBar',
+    color:'#fbbf24', shape:'square', text:'TRADE', size:2
+  })).sort((a,b)=>a.time-b.time);
   const series=lineSeries||areaSeries||candleSeries;
-  series.setMarkers(all);
+  series.setMarkers(M2);
   drawTradeLines();
+  const el=document.getElementById('c-chart');
+  if(el) el.textContent = trades.length ? trades.length : '';
 }
+
+function isMarked(time){ return trades.some(t=>t.time===time); }
+
+function toggleMark(time){
+  const i = trades.findIndex(t=>t.time===time);
+  if(i>=0){ trades.splice(i,1); }
+  else {
+    const r = LOGROWS.find(x=>x.time===time);
+    if(!r) return;
+    trades.push({time:r.time, direction:r.dir, price:r.price,
+                 target:r.target, stop:r.stop, rr:r.rr});
+  }
+  saveTrades(trades); buildMarkers(); renderTables(); renderTradesPanel();
+}
+
+function fmt(v,d){ return (v===null||v===undefined) ? '—' : Number(v).toLocaleString(undefined,{maximumFractionDigits:d===undefined?2:d}); }
+
+function renderTable(rows, elId){
+  const el=document.getElementById(elId);
+  if(!rows.length){ el.innerHTML='<div class="empty">Nothing logged yet.</div>'; return; }
+  el.innerHTML = '<table class="logs"><thead><tr>'+
+    '<th>Time (UTC)</th><th>Direction</th><th>Score</th><th>ML</th>'+
+    '<th>Price</th><th>Target</th><th>Stop</th><th>R:R</th><th></th>'+
+    '</tr></thead><tbody>' +
+    rows.map(r=>{
+      const m=isMarked(r.time);
+      return '<tr>'+
+        '<td class="mono" style="color:#94a3b8">'+r.ts+'</td>'+
+        '<td><span class="dirbadge d-'+r.dir+'">'+r.dir.replace('_',' ')+'</span></td>'+
+        '<td class="mono">'+fmt(r.score,2)+'</td>'+
+        '<td class="mono">'+(r.ml===null?'—':fmt(r.ml,0)+'%')+'</td>'+
+        '<td class="mono">'+fmt(r.price,2)+'</td>'+
+        '<td class="mono" style="color:#22c55e">'+fmt(r.target,2)+'</td>'+
+        '<td class="mono" style="color:#ef4444">'+fmt(r.stop,2)+'</td>'+
+        '<td class="mono">'+fmt(r.rr,1)+'</td>'+
+        '<td><button class="markbtn'+(m?' marked':'')+'" onclick="toggleMark('+r.time+')">'+
+          (m?'✓ Marked':'Mark Trade')+'</button></td>'+
+      '</tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function renderTables(){
+  const flagged = LOGROWS.filter(r=>r.flagged);
+  renderTable(LOGROWS,'tbl-all');
+  renderTable(flagged,'tbl-flag');
+  document.getElementById('c-all').textContent = LOGROWS.length;
+  document.getElementById('c-flag').textContent = flagged.length;
+}
+
+// Tab switching — charts need a resize nudge when their pane becomes visible
+document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  document.getElementById('pane-'+b.dataset.pane).classList.add('active');
+  if(b.dataset.pane==='chart'){
+    setTimeout(()=>{
+      const pc_el=document.getElementById('price-chart'), sc_el=document.getElementById('score-chart');
+      pc.applyOptions({width:pc_el.clientWidth,height:pc_el.clientHeight});
+      sc.applyOptions({width:sc_el.clientWidth,height:sc_el.clientHeight});
+      pc.timeScale().fitContent(); sc.timeScale().fitContent();
+    },30);
+  }
+}));
 
 function renderTradesPanel(){
   const list=document.getElementById('trades-list');
@@ -644,7 +747,7 @@ function renderTradesPanel(){
   }).join('');
 }
 
-function removeTrade(i){trades.splice(i,1);saveTrades(trades);buildMarkers();renderTradesPanel();}
+function removeTrade(i){trades.splice(i,1);saveTrades(trades);renderTables();buildMarkers();renderTradesPanel();}
 
 // ---- Click to mark trade ----
 let pendingTrade=null;
@@ -822,7 +925,27 @@ def generate_html_chart(ticker: str, ohlcv: pd.DataFrame, log: pd.DataFrame,
     else:
         last_info = "No signals yet"
 
+    # Full log rows for the All Logs / Flagged tables
+    rows = []
+    if not log.empty:
+        for _, r in log.iterrows():
+            d = r.get("direction", "WATCH")
+            rows.append({
+                "time": int(r["timestamp_utc"].timestamp()),
+                "ts": r["timestamp_utc"].strftime("%Y-%m-%d %H:%M"),
+                "dir": d,
+                "score": _num(r.get("final_score")),
+                "ml": _num(r.get("ml_confidence")),
+                "price": _num(r.get("price")),
+                "target": _num(r.get("target_price")),
+                "stop": _num(r.get("stop_price")),
+                "rr": _num(r.get("risk_reward")),
+                "flagged": d in ("BUY", "STRONG_BUY", "SELL", "STRONG_SELL"),
+            })
+        rows.reverse()  # newest first
+
     html = (_HTML_TEMPLATE
+            .replace("%%ROWS%%", json.dumps(rows))
             .replace("%%TICKER%%", ticker)
             .replace("%%SYMBOL%%", binance_symbol)
             .replace("%%INTERVAL%%", interval)
