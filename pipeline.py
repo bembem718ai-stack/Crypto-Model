@@ -248,10 +248,10 @@ EXTREME_FEAR_MODES = ("symmetric", "risk_off")
 
 
 def classify_direction(final_score: float, vix_level: float,
-                        strong_buy_bar: float = 75, buy_bar: float = 60,
+                        strong_buy_bar: float = 75, buy_bar: float = 70,
                         sell_bar: float = 40, strong_sell_bar: float = 25,
                         extreme_fear_mode: str = "symmetric",
-                        vix_extreme: float = 35) -> str:
+                        vix_extreme: float = 35, panic_shift: float = 10) -> str:
     """
     Mirrors entry_point_model2.py's validated BUY/STRONG_BUY logic onto a
     SELL/STRONG_SELL side, so the model can express bearish conviction,
@@ -302,13 +302,22 @@ def classify_direction(final_score: float, vix_level: float,
     extreme_fear = pd.notna(vix_level) and vix_level >= vix_extreme
 
     if extreme_fear:
-        # Validated buy-side panic bars (identical to entry_point_model2.py:
-        # STRONG_BUY 80, BUY 70). Sell bars depend on the chosen mode.
-        sb_bar, b_bar = 80, 70
+        # Panic bars are DERIVED from the normal bars (+/- panic_shift away
+        # from neutral), not hardcoded. They used to be literal 80/70, which
+        # silently broke when buy_bar was raised to 70 — the "extreme fear"
+        # bar became identical to the normal one and stopped doing anything.
+        # Deriving them keeps the relationship intact through any future
+        # threshold change.
+        sb_bar = strong_buy_bar + panic_shift
+        b_bar = buy_bar + panic_shift
         if extreme_fear_mode == "risk_off":
-            ss_bar, s_bar = 30, 45     # sell EASIER in a panic (toward neutral)
-        else:                          # "symmetric": exact mirror of 80/70
-            ss_bar, s_bar = 20, 30
+            # Sell EASIER in a panic: bars move TOWARD neutral.
+            ss_bar = strong_sell_bar + panic_shift
+            s_bar = sell_bar + panic_shift
+        else:
+            # "symmetric": bars move AWAY from neutral, mirroring the buys.
+            ss_bar = strong_sell_bar - panic_shift
+            s_bar = sell_bar - panic_shift
     else:
         sb_bar, b_bar = strong_buy_bar, buy_bar
         ss_bar, s_bar = strong_sell_bar, sell_bar
@@ -327,7 +336,7 @@ def classify_direction(final_score: float, vix_level: float,
 def combine_and_decide(step2_result: dict, step3_result: dict,
                         weight_pattern: float = 0.6, weight_indicators: float = 0.4,
                         extreme_fear_mode: str = "symmetric",
-                        ml_weight: float = 0.0, buy_bar: float = 60,
+                        ml_weight: float = 0.0, buy_bar: float = 70,
                         sell_bar: float = 40, ml_veto: float = 25.0,
                         ml_confirm: float = 55.0) -> dict:
     """
@@ -422,7 +431,7 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
                        stop_mult: float = 1.5, target_mult: float = 3.0,
                        use_ml: bool = False, ml_weight: float = 0.0,
                        ml_veto: float = 25.0, ml_confirm: float = 55.0,
-                       buy_bar: float = 60, sell_bar: float = 40,
+                       buy_bar: float = 70, sell_bar: float = 40,
                        short_trend_filter: bool = True,
                        trend_sma_period: int = 50,
                        verbose: bool = True) -> dict:
@@ -597,7 +606,7 @@ def main_run():
     parser.add_argument("--ml-confirm", type=float, default=55.0,
                          help="ML%% at or above which a bullish signal keeps full "
                               "strength (default 55)")
-    parser.add_argument("--buy-bar", type=float, default=60,
+    parser.add_argument("--buy-bar", type=float, default=70,
                          help="BUY threshold (default 60). RAISE this for fewer, "
                               "higher-conviction signals.")
     parser.add_argument("--sell-bar", type=float, default=40)
@@ -767,7 +776,7 @@ def backtest_squeeze_history(ticker: str, target_4h_bars: int = 4000) -> pd.Seri
 def run_backtest(ticker: str, period: str = "2y", forward_days: int = 5,
                   weight_pattern: float = 0.6, weight_indicators: float = 0.4,
                   extreme_fear_mode: str = "symmetric",
-                  buy_bar: float = 60, sell_bar: float = 40) -> pd.DataFrame:
+                  buy_bar: float = 70, sell_bar: float = 40) -> pd.DataFrame:
     print(f"Pulling daily technical/macro history for {ticker}...")
     yahoo_ticker = to_yahoo_crypto_symbol(ticker)
     tech_df = epm.analyze(yahoo_ticker, period=period)
@@ -891,6 +900,7 @@ def backtest_exits(merged, stop_mult: float = 1.5,
         else:
             pnl_r = -1.0
         trades.append({"date": day, "direction": d, "outcome": outcome,
+                       "score": float(row.get("combined_final_score", float("nan"))),
                        "mfe_pct_of_target": round(mfe * 100, 1),
                        "pnl_r": round(pnl_r, 3),
                        "days_held": (idx.index(exit_day) - i) if exit_day is not None else max_hold_days})
@@ -911,6 +921,71 @@ def backtest_exits(merged, stop_mult: float = 1.5,
         "near_miss_rate": (nonwin >= 70).mean() if len(nonwin) else float("nan"),
         "trades": trades,
     }
+
+
+def print_probability_table(res: dict, bucket: float = 10.0, min_n: int = 10):
+    """
+    EMPIRICAL outcome frequencies by score bucket — the calibration layer.
+
+    This is NOT a prediction. It reports what actually happened historically
+    to trades that fired at each score level: how often the ATR target was
+    reached before the stop, how often the stop came first, and the average
+    R outcome. That makes it a genuinely calibrated probability conditioned
+    on your own signal, rather than a model's guess about price direction.
+
+    Why this beats the ML attempt: the ML was asked "will price rise 1.5% in
+    5 days?" (a proxy) and topped out near coin-flip out of sample. This
+    asks "when my signal scored 70-80, how often did the trade work?" —
+    the actual question, answered by counting rather than forecasting.
+
+    min_n guards against reading meaning into thin buckets; anything with
+    fewer than min_n trades is shown but flagged as unreliable.
+    """
+    trades = res.get("trades", [])
+    if not trades:
+        print("\n  No trades to calibrate against.\n")
+        return {}
+    tdf = pd.DataFrame(trades).dropna(subset=["score"])
+    if tdf.empty:
+        print("\n  No scored trades to calibrate against.\n")
+        return {}
+
+    lo = int(tdf["score"].min() // bucket * bucket)
+    hi = int(tdf["score"].max() // bucket * bucket + bucket)
+    edges = [lo + i * bucket for i in range(int((hi - lo) / bucket) + 1)]
+    tdf["band"] = pd.cut(tdf["score"], bins=edges, right=False)
+
+    print(f"\n{'=' * 82}")
+    print(f"  CALIBRATED OUTCOME PROBABILITIES BY SCORE  (bucket={bucket:g})")
+    print(f"  Empirical frequencies from {len(tdf)} simulated trades - not a forecast")
+    print(f"{'=' * 82}")
+    print(f"{'Score band':<15}{'N':>6}{'P(target)':>11}{'P(stop)':>10}"
+          f"{'P(timeout)':>12}{'Expectancy':>12}{'':>6}")
+    print("-" * 82)
+
+    table = {}
+    for band, g in tdf.groupby("band", observed=True):
+        n = len(g)
+        if n == 0:
+            continue
+        p_t = (g["outcome"] == "target").mean()
+        p_s = g["outcome"].isin(["stop", "ambiguous_stop"]).mean()
+        p_o = (g["outcome"] == "timeout").mean()
+        exp = g["pnl_r"].mean()
+        flag = "" if n >= min_n else "  thin"
+        print(f"{str(band):<15}{n:>6}{p_t*100:>10.1f}%{p_s*100:>9.1f}%"
+              f"{p_o*100:>11.1f}%{exp:>+11.2f}R{flag:>6}")
+        table[str(band)] = {"n": n, "p_target": round(p_t, 3), "p_stop": round(p_s, 3),
+                            "p_timeout": round(p_o, 3), "expectancy_r": round(exp, 3)}
+    print("-" * 82)
+    print("  HOW TO USE THIS: when a live signal scores 72, look up the 70-80 row.")
+    print("  That P(target) is your calibrated win probability for this trade -")
+    print("  derived from your own history, no model required. If P(target) does")
+    print("  not RISE with score, the score is not measuring conviction and the")
+    print("  thresholds are decorative.")
+    print("  Buckets marked 'thin' have too few trades to trust.")
+    print(f"{'=' * 82}\n")
+    return table
 
 
 def print_exit_report(res: dict, stop_mult: float, target_mult: float, max_hold_days: int):
@@ -1090,7 +1165,7 @@ def main_backtest():
                          help="Run BOTH extreme_fear_mode settings back to back and "
                               "print a focused diff on extreme-fear days, instead of "
                               "a single run.")
-    parser.add_argument("--buy-bar", type=float, default=60,
+    parser.add_argument("--buy-bar", type=float, default=70,
                          help="BUY threshold to test (default 60). Pair with --exits "
                               "to see whether moving it improves expectancy.")
     parser.add_argument("--sell-bar", type=float, default=40,
@@ -1099,6 +1174,10 @@ def main_backtest():
                          help="Show forward returns by narrow score band, to test "
                               "whether the BUY/SELL bars are placed correctly")
     parser.add_argument("--band-size", type=float, default=2.5)
+    parser.add_argument("--prob-table", action="store_true",
+                         help="Print empirical outcome probabilities by score bucket "
+                              "(the calibration layer). Implies --exits.")
+    parser.add_argument("--prob-bucket", type=float, default=10.0)
     parser.add_argument("--exits", action="store_true",
                          help="Also simulate the ATR target/stop exits on every "
                               "historical signal: hit rates, expectancy, and the "
@@ -1121,7 +1200,7 @@ def main_backtest():
                                     weight_indicators=args.weight_indicators)
         return
 
-    if args.buy_bar != 60 or args.sell_bar != 40:
+    if args.buy_bar != 70 or args.sell_bar != 40:
         print(f"\n[testing modified thresholds: BUY>={args.buy_bar}, SELL<={args.sell_bar}]")
     merged = run_backtest(args.ticker, period=args.period, forward_days=args.forward_days,
                            buy_bar=args.buy_bar, sell_bar=args.sell_bar,
@@ -1133,12 +1212,15 @@ def main_backtest():
     if args.score_bands:
         print_score_buckets(merged, args.forward_days, bucket=args.band_size)
 
-    if args.exits:
+    if args.exits or args.prob_table:
         res = backtest_exits(merged, stop_mult=args.stop_mult,
                              target_mult=args.target_mult,
                              max_hold_days=args.max_hold_days, side=args.side,
                              short_sma_filter=args.short_sma_filter)
-        print_exit_report(res, args.stop_mult, args.target_mult, args.max_hold_days)
+        if args.exits:
+            print_exit_report(res, args.stop_mult, args.target_mult, args.max_hold_days)
+        if args.prob_table:
+            print_probability_table(res, bucket=args.prob_bucket)
 
 
 # ======================================================================
@@ -1172,8 +1254,42 @@ def build_ml_frame(ticker: str, period: str = "3y", with_squeeze: bool = False,
     return out
 
 
+# Named feature sets, smallest first. The theory being tested: with only
+# ~175 EFFECTIVE independent samples (5-day windows overlap 4-in-5), a
+# depth-5 XGBoost can memorize noise from 10 correlated features. Fewer,
+# conceptually distinct features should generalize better.
+FEATURE_SETS = {
+    # Real column names (RSI_PERIODS=[5,10,15], SMA_PERIODS=[5,10,20],
+    # CMF_20, MFI_14, plus dxy_score/vix_score from the macro side).
+    # Each set picks CONCEPTUALLY DISTINCT signals rather than several
+    # views of the same thing - the point is to cut correlated inputs,
+    # since ~175 effective independent samples can't support 11 features.
+    "minimal": ["RSI_15", "MFI_14"],                            # momentum + volume
+    "core3":   ["RSI_15", "SMA_20", "MFI_14"],                  # + trend
+    "core4":   ["RSI_15", "SMA_20", "MFI_14", "vix_score"],     # + macro
+    "core5":   ["RSI_15", "SMA_20", "MFI_14", "vix_score", "CMF_20"],
+    "all":     None,   # None = everything build_feature_target finds
+}
+
+
+def _resolve_features(name, frame):
+    """Resolve a named feature set against columns actually present."""
+    want = FEATURE_SETS.get(name)
+    if want is None:
+        return None, []
+    have = [c for c in want if c in frame.columns]
+    missing = [c for c in want if c not in frame.columns]
+    if not have:
+        # Returning None would silently fall back to ALL features and make
+        # the comparison meaningless - flag it loudly instead.
+        print(f"  [ERROR] feature set resolved to NOTHING (wanted {want}). "
+              f"Available: {sorted(frame.columns)[:15]}...")
+    return (have if have else None), missing
+
+
 def ml_sweep(ticker: str, period: str = "3y", horizons=(5, 7, 10),
-             thresholds=(0.010, 0.015, 0.020), squeeze_variants=(False, True)):
+             thresholds=(0.010, 0.015, 0.020), squeeze_variants=(False, True),
+             feature_sets=("all",), periods=None):
     """
     Sweeps ML target definitions and feature sets, reporting HONEST
     out-of-sample holdout AUC for each. AUC is the metric that matters:
@@ -1181,53 +1297,65 @@ def ml_sweep(ticker: str, period: str = "3y", horizons=(5, 7, 10),
     'accuracy' by always predicting the majority class while learning
     nothing). 0.50 = coin flip.
     """
-    print(f"\nBuilding frames for {ticker} (period={period})...")
-    frames = {}
-    for sq in squeeze_variants:
-        try:
-            frames[sq] = build_ml_frame(ticker, period=period, with_squeeze=sq)
-            print(f"  {'with' if sq else 'without'} squeeze: {len(frames[sq])} rows")
-        except Exception as e:
-            print(f"  {'with' if sq else 'without'} squeeze FAILED: {type(e).__name__}: {e}")
-
-    print(f"\n{'=' * 78}")
-    print(f"  ML TARGET / FEATURE SWEEP — {ticker}   (holdout ROC-AUC; 0.50 = coin flip)")
-    print(f"{'=' * 78}")
-    print(f"{'Features':<12}{'Horizon':>9}{'Thresh':>9}{'PosRate':>10}{'Acc':>8}{'AUC':>9}{'TestN':>8}")
-    print("-" * 78)
-
+    periods = periods or (period,)
     results = []
-    for sq, frame in frames.items():
-        label = "yahoo+sqz" if sq else "yahoo"
-        for h in horizons:
-            for t in thresholds:
-                try:
-                    r = cf.train_ml_model_with_holdout(frame, lookahead_days=h, threshold_pct=t)
-                    auc = r.get("roc_auc"); acc = r.get("accuracy")
-                    y = r.get("y_test")
-                    pos = float(sum(y)) / len(y) if y is not None and len(y) else float("nan")
-                    auc_s = f"{auc:.3f}" if auc is not None and auc == auc else "n/a"
-                    star = "  *" if (auc is not None and auc == auc and auc >= 0.58) else ""
-                    print(f"{label:<12}{h:>9}{t*100:>8.1f}%{pos*100:>9.1f}%"
-                          f"{acc*100:>7.1f}%{auc_s:>9}{len(y):>8}{star}")
-                    results.append({"features": label, "horizon": h, "threshold": t,
-                                    "auc": auc, "accuracy": acc, "pos_rate": pos})
-                except Exception as e:
-                    print(f"{label:<12}{h:>9}{t*100:>8.1f}%   FAILED: {type(e).__name__}")
-    print("-" * 78)
+
+    print(f"\n{'=' * 88}")
+    print(f"  ML SWEEP — {ticker}   (holdout ROC-AUC; 0.50 = coin flip)")
+    print(f"  Testing: fewer features + longer history")
+    print(f"{'=' * 88}")
+    print(f"{'Period':<8}{'Features':<10}{'NFeat':>6}{'Horizon':>9}{'Thresh':>8}"
+          f"{'PosRate':>9}{'AUC':>8}{'TrainN':>8}{'TestN':>7}")
+    print("-" * 88)
+
+    for per in periods:
+        for sq in squeeze_variants:
+            try:
+                frame = build_ml_frame(ticker, period=per, with_squeeze=sq)
+            except Exception as e:
+                print(f"{per:<8}frame build FAILED: {type(e).__name__}: {e}")
+                continue
+            tag_sq = "+sqz" if sq else ""
+            for fs_name in feature_sets:
+                cols, missing = _resolve_features(fs_name, frame)
+                if missing:
+                    print(f"  [note] {fs_name}: missing {missing} — using what's available")
+                for h in horizons:
+                    for t in thresholds:
+                        try:
+                            r = cf.train_ml_model_with_holdout(
+                                frame, lookahead_days=h, threshold_pct=t,
+                                feature_cols=cols)
+                            auc = r.get("roc_auc")
+                            y = r.get("y_test")
+                            pos = float(sum(y)) / len(y) if y is not None and len(y) else float("nan")
+                            nfeat = len(r.get("feature_cols", []))
+                            trn = len(r.get("y_train", []))
+                            auc_s = f"{auc:.3f}" if auc is not None and auc == auc else "n/a"
+                            star = "  *" if (auc is not None and auc == auc and auc >= 0.58) else ""
+                            print(f"{per:<8}{fs_name + tag_sq:<10}{nfeat:>6}{h:>9}{t*100:>7.1f}%"
+                                  f"{pos*100:>8.1f}%{auc_s:>8}{trn:>8}{len(y):>7}{star}")
+                            results.append({"period": per, "features": fs_name + tag_sq,
+                                            "nfeat": nfeat, "horizon": h, "threshold": t,
+                                            "auc": auc, "test_n": len(y)})
+                        except Exception as e:
+                            print(f"{per:<8}{fs_name + tag_sq:<10}{'':>6}{h:>9}{t*100:>7.1f}%"
+                                  f"   FAILED: {type(e).__name__}")
+
+    print("-" * 88)
     ok = [r for r in results if r["auc"] is not None and r["auc"] == r["auc"]]
     if ok:
-        best = max(ok, key=lambda r: r["auc"])
-        print(f"  Best: {best['features']}, horizon={best['horizon']}d, "
-              f"threshold={best['threshold']*100:.1f}%, AUC={best['auc']:.3f}")
-        print(f"  PRE-REGISTERED BAR: AUC must hold >= 0.58 on BOTH tickers to earn")
-        print(f"  veto power. Rows marked * clear it here; verify on the other ticker")
-        print(f"  before trusting any of them - one ticker is easy to curve-fit.")
-        if best["auc"] < 0.58:
-            print(f"  -> NOTHING clears the bar. The honest conclusion would be that")
-            print(f"     daily direction isn't very predictable from these features,")
-            print(f"     and ML should go back to display-only (--ml-weight 0).")
-    print(f"{'=' * 78}\n")
+        top = sorted(ok, key=lambda r: -r["auc"])[:5]
+        print("  Top 5 by AUC:")
+        for r in top:
+            print(f"    {r['auc']:.3f}  {r['period']:<5} {r['features']:<10} "
+                  f"{r['nfeat']} feat, {r['horizon']}d, {r['threshold']*100:.1f}%")
+        print()
+        print(f"  PRE-REGISTERED BAR: >= 0.58 on BOTH tickers, SAME config.")
+        print(f"  A config winning here but not on the other ticker is a")
+        print(f"  multiple-comparisons artifact, not an edge. You are testing")
+        print(f"  {len(ok)} combinations - expect a few to look good by chance.")
+    print(f"{'=' * 88}\n")
     return results
 
 
@@ -1239,11 +1367,17 @@ def main_mlsweep():
     parser.add_argument("--thresholds", default="0.010,0.015,0.020")
     parser.add_argument("--no-squeeze", action="store_true",
                          help="Skip the squeeze-feature variant (Yahoo-only)")
+    parser.add_argument("--periods", default="3y,5y,max",
+                         help="History lengths to test (default 3y,5y,max)")
+    parser.add_argument("--feature-sets", default="minimal,core3,core4,core5,all",
+                         help="Named feature sets: minimal,core3,core4,core5,all")
     args = parser.parse_args()
-    ml_sweep(args.ticker, period=args.period,
+    ml_sweep(args.ticker,
              horizons=tuple(int(x) for x in args.horizons.split(",")),
              thresholds=tuple(float(x) for x in args.thresholds.split(",")),
-             squeeze_variants=((False,) if args.no_squeeze else (False, True)))
+             squeeze_variants=((False,) if args.no_squeeze else (False, True)),
+             feature_sets=tuple(args.feature_sets.split(",")),
+             periods=tuple(args.periods.split(",")))
 
 
 def main():

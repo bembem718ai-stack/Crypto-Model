@@ -218,8 +218,8 @@ class TestDirectionNormalRegime:
 
     @pytest.mark.parametrize("score,expected", [
         (100, "STRONG_BUY"), (80, "STRONG_BUY"), (75, "STRONG_BUY"),  # >= 75
-        (74.9, "BUY"), (65, "BUY"), (60, "BUY"),                      # >= 60
-        (59.9, "WATCH"), (50, "WATCH"), (41, "WATCH"),                # 40 < s < 60
+        (74.9, "BUY"), (72, "BUY"), (70, "BUY"),                      # >= 70
+        (69.9, "WATCH"), (65, "WATCH"), (50, "WATCH"), (41, "WATCH"),  # 40 < s < 70
         (40, "SELL"), (30, "SELL"), (25.1, "SELL"),                   # <= 40
         (25, "STRONG_SELL"), (10, "STRONG_SELL"), (0, "STRONG_SELL"), # <= 25
     ])
@@ -237,19 +237,20 @@ class TestDirectionExtremeFearRegime:
     """Extreme fear (VIX >= 35). Bars: SB>=80, B>=70, S<=30, SS<=20."""
 
     @pytest.mark.parametrize("score,expected", [
-        (85, "STRONG_BUY"), (80, "STRONG_BUY"),
-        (79.9, "BUY"), (70, "BUY"),
-        (69.9, "WATCH"), (50, "WATCH"), (31, "WATCH"),
-        (30, "SELL"), (21, "SELL"),
-        (20, "STRONG_SELL"), (0, "STRONG_SELL"),
+        (90, "STRONG_BUY"), (85, "STRONG_BUY"),
+        (84.9, "BUY"), (80, "BUY"),
+        (79.9, "WATCH"), (50, "WATCH"), (31, "WATCH"),
+        (30, "SELL"), (16, "SELL"),
+        (15, "STRONG_SELL"), (0, "STRONG_SELL"),
     ])
     def test_label_table(self, score, expected):
         assert um.classify_direction(score, EXTREME_VIX) == expected
 
     def test_buying_is_harder_in_panic(self):
-        # A score of 65 is a BUY normally but only a WATCH in extreme fear.
-        assert um.classify_direction(65, NORMAL_VIX) == "BUY"
-        assert um.classify_direction(65, EXTREME_VIX) == "WATCH"
+        # A score of 72 is a BUY normally but only a WATCH in extreme fear
+        # (panic raises the buy bar to 80/70 regardless of the normal bar).
+        assert um.classify_direction(72, NORMAL_VIX) == "BUY"
+        assert um.classify_direction(72, EXTREME_VIX) == "WATCH"
 
 
 class TestDirectionEdgeCases:
@@ -259,7 +260,7 @@ class TestDirectionEdgeCases:
 
     def test_nan_vix_treated_as_normal_regime(self):
         # pd.notna(vix) guards the extreme branch, so NaN VIX -> normal bars.
-        assert um.classify_direction(65, float("nan")) == "BUY"      # normal buy bar
+        assert um.classify_direction(72, float("nan")) == "BUY"      # normal buy bar
         assert um.classify_direction(35, float("nan")) == "SELL"     # normal sell bar
 
     def test_midpoint_is_watch(self):
@@ -268,21 +269,60 @@ class TestDirectionEdgeCases:
 
 
 class TestDirectionMirrorSymmetry:
-    """The SELL side was built by mirroring the validated BUY side around 50.
-    This proves that claim exactly: for every score s, the label of (100 - s)
-    is the mirror label of s — in BOTH regimes."""
+    """The SELL side began as an exact mirror of the BUY side about 50.
+    That is NO LONGER TRUE at the BUY/SELL bar, and the asymmetry is
+    deliberate:
 
-    MIRROR = {"STRONG_BUY": "STRONG_SELL", "BUY": "SELL", "WATCH": "WATCH",
-              "SELL": "BUY", "STRONG_SELL": "STRONG_BUY"}
+      buy_bar was raised 60 -> 70 because raising it REPLICATED on both
+      tickers (BTC +0.17R -> +0.31R, ETH +0.08R -> +0.24R).
+      sell_bar stays at 40 because no equivalent evidence exists for
+      moving it to 30. Changing it purely to restore visual symmetry
+      would be curve-fitting a threshold we never measured.
 
-    @pytest.mark.parametrize("vix", [NORMAL_VIX, EXTREME_VIX])
-    def test_reflection_symmetry_across_full_range(self, vix):
-        for s in range(0, 101):
-            lo = um.classify_direction(float(s), vix)
-            hi = um.classify_direction(float(100 - s), vix)
-            assert self.MIRROR[lo] == hi, (
-                f"Symmetry broken at score={s}, vix={vix}: "
-                f"classify({s})={lo} but classify({100 - s})={hi}")
+    The STRONG bars (75 / 25) remain mirrored, and the extreme-fear
+    regime remains internally mirrored. These tests pin down exactly
+    which symmetries still hold, so a future change can't quietly
+    break one while 'fixing' another."""
+
+    def test_strong_bars_are_still_mirrored(self):
+        assert um.classify_direction(75, NORMAL_VIX) == "STRONG_BUY"
+        assert um.classify_direction(25, NORMAL_VIX) == "STRONG_SELL"
+        assert um.classify_direction(74.9, NORMAL_VIX) != "STRONG_BUY"
+        assert um.classify_direction(25.1, NORMAL_VIX) != "STRONG_SELL"
+
+    def test_panic_bars_are_derived_not_hardcoded(self):
+        """Panic bars = normal bars shifted 10 further from neutral. They
+        used to be hardcoded 80/70, which silently NULLIFIED the panic
+        hardening when buy_bar was raised to 70 (normal bar == panic bar).
+        Deriving them means the relationship survives threshold changes."""
+        assert um.classify_direction(72, NORMAL_VIX) == "BUY"      # normal bar 70
+        assert um.classify_direction(72, EXTREME_VIX) == "WATCH"   # panic bar 80
+        assert um.classify_direction(82, EXTREME_VIX) == "BUY"
+        assert um.classify_direction(86, EXTREME_VIX) == "STRONG_BUY"
+
+    def test_panic_regime_inherits_the_asymmetry(self):
+        """Because the NORMAL bars are deliberately asymmetric (70/40, see
+        class docstring), the derived panic bars are too (80/30). This is a
+        mathematical consequence, not a bug — pinning it down so nobody
+        'fixes' the symmetry by silently moving sell_bar without evidence."""
+        # The break is visible at 21/79: a mirror would require 79 (the
+        # reflection of 21) to be BUY, since 21 is SELL. It is WATCH,
+        # because the buy bar sits at 80 while the sell bar sits at 30.
+        assert um.classify_direction(21, EXTREME_VIX) == "SELL"
+        assert um.classify_direction(79, EXTREME_VIX) == "WATCH"   # not BUY
+        # The STRONG bars do still mirror: 85 <-> 15.
+        assert um.classify_direction(85, EXTREME_VIX) == "STRONG_BUY"
+        assert um.classify_direction(15, EXTREME_VIX) == "STRONG_SELL"
+
+    def test_normal_regime_asymmetry_is_the_documented_one(self):
+        # Scores in [60, 70) used to be BUY; they are now WATCH. Their
+        # mirror image [30, 40] is still SELL. That gap IS the asymmetry.
+        assert um.classify_direction(65, NORMAL_VIX) == "WATCH"
+        assert um.classify_direction(35, NORMAL_VIX) == "SELL"
+
+    def test_sell_bar_unchanged_at_40(self):
+        assert um.classify_direction(40, NORMAL_VIX) == "SELL"
+        assert um.classify_direction(40.1, NORMAL_VIX) == "WATCH"
 
 
 class TestExtremeFearSellSemantics:
@@ -300,24 +340,27 @@ class TestExtremeFearSellSemantics:
             assert um.classify_direction(s, NORMAL_VIX) == "SELL"
             assert um.classify_direction(s, EXTREME_VIX) == "WATCH"
 
-    def test_symmetric_extreme_bars_reflect_the_buy_side(self):
-        # Raised buy bars: STRONG_BUY 80, BUY 70. Their exact reflections
-        # about 50 are STRONG_SELL 20, SELL 30 — which is what the code uses.
-        assert um.classify_direction(70, EXTREME_VIX) == "BUY"
-        assert um.classify_direction(30, EXTREME_VIX) == "SELL"          # mirror of 70
-        assert um.classify_direction(80, EXTREME_VIX) == "STRONG_BUY"
-        assert um.classify_direction(20, EXTREME_VIX) == "STRONG_SELL"   # mirror of 80
+    def test_symmetric_mode_shifts_both_sides_away_from_neutral(self):
+        # Panic bars are derived: buy 70->80, strong_buy 75->85,
+        # sell 40->30, strong_sell 25->15. Both sides move AWAY from
+        # neutral by the same 10, so a panic demands more conviction in
+        # EITHER direction — the original design intent, preserved even
+        # though the bars themselves are no longer mirror images.
+        assert um.classify_direction(80, EXTREME_VIX) == "BUY"
+        assert um.classify_direction(85, EXTREME_VIX) == "STRONG_BUY"
+        assert um.classify_direction(30, EXTREME_VIX) == "SELL"
+        assert um.classify_direction(15, EXTREME_VIX) == "STRONG_SELL"
 
     def test_risk_off_mode_makes_selling_easier_in_panic(self):
         # A score of 42 in a panic: default(symmetric) -> WATCH (needs <=30
         # to sell); risk_off raises the sell bar to 45 -> 42 is now a SELL.
-        assert um.classify_direction(42, EXTREME_VIX, extreme_fear_mode="symmetric") == "WATCH"
-        assert um.classify_direction(42, EXTREME_VIX, extreme_fear_mode="risk_off") == "SELL"
+        assert um.classify_direction(45, EXTREME_VIX, extreme_fear_mode="symmetric") == "WATCH"
+        assert um.classify_direction(45, EXTREME_VIX, extreme_fear_mode="risk_off") == "SELL"
 
     def test_risk_off_keeps_buying_harder(self):
         # risk_off only changes the sell side; the raised buy bars stay put,
         # so 65 is still only a WATCH (not a BUY) in a panic.
-        assert um.classify_direction(65, EXTREME_VIX, extreme_fear_mode="risk_off") == "WATCH"
+        assert um.classify_direction(75, EXTREME_VIX, extreme_fear_mode="risk_off") == "WATCH"
 
     def test_risk_off_does_not_change_the_calm_regime(self):
         # extreme_fear_mode is irrelevant when VIX is below the threshold.
@@ -400,8 +443,13 @@ class TestCombine:
         out = um.combine_and_decide(step2, step3)  # final_score == target
         decision, direction = out["decision"], out["direction"]
 
-        if decision in BULLISH:
-            assert direction in BULLISH, (target, vix, decision, direction)
+        # direction's buy bar (70) is now STRICTER than decision's (60,
+        # from entry_point_model2's own logic), so the implication runs
+        # the other way: a bullish DIRECTION implies a bullish DECISION,
+        # but not vice versa. Scores in [60,70) are legitimately
+        # decision=BUY / direction=WATCH.
+        if direction in BULLISH:
+            assert decision in BULLISH, (target, vix, decision, direction)
         if direction in BEARISH:
             assert decision == "AVOID", (target, vix, decision, direction)
 
@@ -454,7 +502,7 @@ class TestPipelineEndToEndOffline:
 
     @pytest.mark.parametrize("target_score,vix,expected_direction", [
         (85, NORMAL_VIX, "STRONG_BUY"),
-        (65, NORMAL_VIX, "BUY"),
+        (72, NORMAL_VIX, "BUY"),
         (50, NORMAL_VIX, "WATCH"),
         (35, NORMAL_VIX, "SELL"),
         (10, NORMAL_VIX, "STRONG_SELL"),   # <-- the case you can't get on demand live
