@@ -247,8 +247,35 @@ def apply_indicator_step(ticker: str, step2_result: dict, period: str = "2y",
 EXTREME_FEAR_MODES = ("symmetric", "risk_off")
 
 
+# Position size multipliers by score band, from the exit backtest.
+# REPLICATED on both tickers (trade-weighted average of BTC and ETH):
+#     60-70:  BTC 0.63x / ETH 0.19x  -> 0.4x
+#     70-80:  BTC 1.94x / ETH 2.00x  -> 1.9x
+# Derived at quarter-Kelly from measured per-trade R outcomes. These are
+# ESTIMATES from ~110 (60-70) and ~56 (70-80) overlapping-window trades.
+# REGENERATE PERIODICALLY:
+#     pipeline.py backtest BTC --sizing --side long --buy-bar 60
+# and re-check that the bands still rank the same way. If the 70-80 band
+# degrades, this table will keep over-betting it until you update it.
+POSITION_SIZE_BANDS = [
+    (80.0, 999.0, None, "insufficient historical trades above 80 to size"),
+    (70.0,  80.0, 1.9,  ""),
+    (60.0,  70.0, 0.4,  ""),
+]
+
+
+def lookup_position_size(final_score: float):
+    """Returns (multiplier, note). multiplier None = no sized guidance."""
+    if final_score is None or final_score != final_score:
+        return None, "no score"
+    for lo, hi, mult, note in POSITION_SIZE_BANDS:
+        if lo <= final_score < hi:
+            return mult, note
+    return None, "below the 60 entry bar"
+
+
 def classify_direction(final_score: float, vix_level: float,
-                        strong_buy_bar: float = 75, buy_bar: float = 70,
+                        strong_buy_bar: float = 75, buy_bar: float = 60,
                         sell_bar: float = 40, strong_sell_bar: float = 25,
                         extreme_fear_mode: str = "symmetric",
                         vix_extreme: float = 35, panic_shift: float = 10) -> str:
@@ -308,15 +335,19 @@ def classify_direction(final_score: float, vix_level: float,
         # bar became identical to the normal one and stopped doing anything.
         # Deriving them keeps the relationship intact through any future
         # threshold change.
-        sb_bar = strong_buy_bar + panic_shift
+        # STRONG bars shift half as far as the regular bars — reproducing
+        # the original validated 80/70/30/20 at the default thresholds,
+        # while still scaling correctly if a bar is moved later.
+        strong_shift = panic_shift / 2.0
+        sb_bar = strong_buy_bar + strong_shift
         b_bar = buy_bar + panic_shift
         if extreme_fear_mode == "risk_off":
             # Sell EASIER in a panic: bars move TOWARD neutral.
-            ss_bar = strong_sell_bar + panic_shift
+            ss_bar = strong_sell_bar + strong_shift
             s_bar = sell_bar + panic_shift
         else:
             # "symmetric": bars move AWAY from neutral, mirroring the buys.
-            ss_bar = strong_sell_bar - panic_shift
+            ss_bar = strong_sell_bar - strong_shift
             s_bar = sell_bar - panic_shift
     else:
         sb_bar, b_bar = strong_buy_bar, buy_bar
@@ -336,7 +367,7 @@ def classify_direction(final_score: float, vix_level: float,
 def combine_and_decide(step2_result: dict, step3_result: dict,
                         weight_pattern: float = 0.6, weight_indicators: float = 0.4,
                         extreme_fear_mode: str = "symmetric",
-                        ml_weight: float = 0.0, buy_bar: float = 70,
+                        ml_weight: float = 0.0, buy_bar: float = 60,
                         sell_bar: float = 40, ml_veto: float = 25.0,
                         ml_confirm: float = 55.0) -> dict:
     """
@@ -431,7 +462,7 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
                        stop_mult: float = 1.5, target_mult: float = 3.0,
                        use_ml: bool = False, ml_weight: float = 0.0,
                        ml_veto: float = 25.0, ml_confirm: float = 55.0,
-                       buy_bar: float = 70, sell_bar: float = 40,
+                       buy_bar: float = 60, sell_bar: float = 40,
                        short_trend_filter: bool = True,
                        trend_sma_period: int = 50,
                        verbose: bool = True) -> dict:
@@ -531,6 +562,10 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
             atr=step1.get("atr"), stop_mult=stop_mult, target_mult=target_mult)
 
     combined["exit_levels"] = exit_levels
+    if combined["direction"] in ("BUY", "STRONG_BUY"):
+        _mult, _note = lookup_position_size(combined["final_score"])
+        combined["position_size"] = _mult
+        combined["position_size_note"] = _note
     # ML confidence rides along in the output (display-only; not in final_score)
     combined["ml_confidence"] = step3.get("ai_confidence_score") if step3.get("ml_ok") else None
     combined["ml_accuracy"] = step3.get("ml_accuracy") if step3.get("ml_ok") else None
@@ -551,6 +586,13 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
               f"|  DIRECTION: {combined['direction']}")
         if combined.get("trend_filter_note"):
             print(f"  TREND FILTER: {combined['trend_filter_note']}")
+        if combined.get("direction") in ("BUY", "STRONG_BUY"):
+            _m = combined.get("position_size")
+            if _m:
+                print(f"  POSITION SIZE: {_m:.2f}x normal  (score {combined['final_score']} "
+                      f"band; quarter-Kelly from backtested outcomes)")
+            else:
+                print(f"  POSITION SIZE: no guidance — {combined.get('position_size_note','')}")
         if exit_levels.get("applicable"):
             print(f"  EXIT LEVELS ({exit_levels['side'].upper()}, ATR={exit_levels['atr']}, "
                   f"R:R={exit_levels['risk_reward']}):")
@@ -606,7 +648,7 @@ def main_run():
     parser.add_argument("--ml-confirm", type=float, default=55.0,
                          help="ML%% at or above which a bullish signal keeps full "
                               "strength (default 55)")
-    parser.add_argument("--buy-bar", type=float, default=70,
+    parser.add_argument("--buy-bar", type=float, default=60,
                          help="BUY threshold (default 60). RAISE this for fewer, "
                               "higher-conviction signals.")
     parser.add_argument("--sell-bar", type=float, default=40)
@@ -776,7 +818,7 @@ def backtest_squeeze_history(ticker: str, target_4h_bars: int = 4000) -> pd.Seri
 def run_backtest(ticker: str, period: str = "2y", forward_days: int = 5,
                   weight_pattern: float = 0.6, weight_indicators: float = 0.4,
                   extreme_fear_mode: str = "symmetric",
-                  buy_bar: float = 70, sell_bar: float = 40) -> pd.DataFrame:
+                  buy_bar: float = 60, sell_bar: float = 40) -> pd.DataFrame:
     print(f"Pulling daily technical/macro history for {ticker}...")
     yahoo_ticker = to_yahoo_crypto_symbol(ticker)
     tech_df = epm.analyze(yahoo_ticker, period=period)
@@ -921,6 +963,104 @@ def backtest_exits(merged, stop_mult: float = 1.5,
         "near_miss_rate": (nonwin >= 70).mean() if len(nonwin) else float("nan"),
         "trades": trades,
     }
+
+
+def compute_position_sizing(res: dict, bucket: float = 10.0,
+                            kelly_fraction: float = 0.25, max_size: float = 2.0,
+                            min_n: int = 15) -> dict:
+    """
+    Size positions by MEASURED edge instead of trading every signal the same.
+
+    You already paid to learn that score 60-70 was +0.10R and 70-80 was
+    +0.32R. Sizing them identically throws that away. This converts each
+    score band's empirical outcome distribution into a size multiplier.
+
+    METHOD: Kelly's continuous approximation, f* = mean / variance, applied
+    to the actual per-trade R outcomes in each band. Then multiplied by
+    kelly_fraction (default 0.25 = quarter-Kelly).
+
+    WHY FRACTIONAL KELLY, NOT FULL: Kelly assumes you KNOW the true win
+    probability. You don't — you have an estimate from a few dozen
+    overlapping-window trades. Full Kelly on an overestimated edge is a
+    fast route to ruin, and Kelly's own variance is brutal even when the
+    edge is real. Quarter-Kelly gives up a little growth for a large
+    reduction in drawdown, which is the right trade when the inputs are
+    uncertain. Raise it only if the bands hold up over many more trades.
+
+    GUARDRAILS:
+      - bands with fewer than min_n trades get size 0 (not enough evidence)
+      - bands with expectancy <= 0 get size 0 (don't fund a losing bucket)
+      - sizes are capped at max_size
+      - output is normalized so the trade-weighted average size is 1.0,
+        i.e. "relative to your normal position", NOT a % of capital
+    """
+    trades = res.get("trades", [])
+    if not trades:
+        return {}
+    tdf = pd.DataFrame(trades).dropna(subset=["score", "pnl_r"])
+    if tdf.empty:
+        return {}
+
+    lo = int(tdf["score"].min() // bucket * bucket)
+    hi = int(tdf["score"].max() // bucket * bucket + bucket)
+    edges = [lo + i * bucket for i in range(int((hi - lo) / bucket) + 1)]
+    tdf["band"] = pd.cut(tdf["score"], bins=edges, right=False)
+
+    raw = {}
+    for band, g in tdf.groupby("band", observed=True):
+        n = len(g)
+        mean_r = g["pnl_r"].mean()
+        std_r = g["pnl_r"].std()
+        var_r = std_r ** 2 if std_r == std_r and std_r > 0 else float("nan")
+        if n < min_n:
+            raw[band] = {"n": n, "mean_r": mean_r, "std_r": std_r,
+                         "kelly": 0.0, "reason": f"only {n} trades (<{min_n})"}
+        elif mean_r <= 0:
+            raw[band] = {"n": n, "mean_r": mean_r, "std_r": std_r,
+                         "kelly": 0.0, "reason": "expectancy <= 0"}
+        elif var_r != var_r or var_r <= 0:
+            raw[band] = {"n": n, "mean_r": mean_r, "std_r": std_r,
+                         "kelly": 0.0, "reason": "no variance estimate"}
+        else:
+            raw[band] = {"n": n, "mean_r": mean_r, "std_r": std_r,
+                         "kelly": (mean_r / var_r) * kelly_fraction, "reason": ""}
+
+    # Normalize to a multiplier around 1.0, weighted by how often each
+    # band actually occurs — so "1.0x" means your usual size.
+    tradeable = {b: v for b, v in raw.items() if v["kelly"] > 0}
+    if tradeable:
+        tot_n = sum(v["n"] for v in tradeable.values())
+        wavg = sum(v["kelly"] * v["n"] for v in tradeable.values()) / tot_n
+        for v in raw.values():
+            v["size"] = min(max_size, v["kelly"] / wavg) if (wavg > 0 and v["kelly"] > 0) else 0.0
+    else:
+        for v in raw.values():
+            v["size"] = 0.0
+    return {str(b): v for b, v in raw.items()}
+
+
+def print_position_sizing(sizing: dict, kelly_fraction: float):
+    print(f"\n{'=' * 84}")
+    print(f"  POSITION SIZING BY SCORE  ({kelly_fraction:g}-Kelly on measured outcomes)")
+    print(f"{'=' * 84}")
+    if not sizing:
+        print("  No trades to size against.\n")
+        return
+    print(f"{'Score band':<15}{'N':>6}{'Mean R':>10}{'Std R':>9}{'Kelly f*':>11}"
+          f"{'SIZE':>8}   {'note'}")
+    print("-" * 84)
+    for band, v in sizing.items():
+        size_s = f"{v['size']:.2f}x" if v["size"] > 0 else "SKIP"
+        std_s = f"{v['std_r']:.2f}" if v["std_r"] == v["std_r"] else "n/a"
+        print(f"{band:<15}{v['n']:>6}{v['mean_r']:>+10.2f}{std_s:>9}"
+              f"{v['kelly']:>11.3f}{size_s:>8}   {v['reason']}")
+    print("-" * 84)
+    print("  SIZE is RELATIVE to your normal position, not a % of capital.")
+    print("  1.00x = usual size, 0.50x = half, SKIP = don't take the trade.")
+    print("  Quarter-Kelly by default because these probabilities are ESTIMATES")
+    print("  from small, overlapping samples — full Kelly on an overestimated")
+    print("  edge compounds losses fast. Widen only after many more trades.")
+    print(f"{'=' * 84}\n")
 
 
 def print_probability_table(res: dict, bucket: float = 10.0, min_n: int = 10):
@@ -1174,6 +1314,11 @@ def main_backtest():
                          help="Show forward returns by narrow score band, to test "
                               "whether the BUY/SELL bars are placed correctly")
     parser.add_argument("--band-size", type=float, default=2.5)
+    parser.add_argument("--sizing", action="store_true",
+                         help="Print position size multipliers per score band, "
+                              "from measured expectancy (fractional Kelly). Implies --exits.")
+    parser.add_argument("--kelly-fraction", type=float, default=0.25,
+                         help="Fraction of full Kelly to use (default 0.25)")
     parser.add_argument("--prob-table", action="store_true",
                          help="Print empirical outcome probabilities by score bucket "
                               "(the calibration layer). Implies --exits.")
@@ -1200,7 +1345,7 @@ def main_backtest():
                                     weight_indicators=args.weight_indicators)
         return
 
-    if args.buy_bar != 70 or args.sell_bar != 40:
+    if args.buy_bar != 60 or args.sell_bar != 40:
         print(f"\n[testing modified thresholds: BUY>={args.buy_bar}, SELL<={args.sell_bar}]")
     merged = run_backtest(args.ticker, period=args.period, forward_days=args.forward_days,
                            buy_bar=args.buy_bar, sell_bar=args.sell_bar,
@@ -1212,7 +1357,7 @@ def main_backtest():
     if args.score_bands:
         print_score_buckets(merged, args.forward_days, bucket=args.band_size)
 
-    if args.exits or args.prob_table:
+    if args.exits or args.prob_table or args.sizing:
         res = backtest_exits(merged, stop_mult=args.stop_mult,
                              target_mult=args.target_mult,
                              max_hold_days=args.max_hold_days, side=args.side,
@@ -1221,6 +1366,10 @@ def main_backtest():
             print_exit_report(res, args.stop_mult, args.target_mult, args.max_hold_days)
         if args.prob_table:
             print_probability_table(res, bucket=args.prob_bucket)
+        if args.sizing:
+            sz = compute_position_sizing(res, bucket=args.prob_bucket,
+                                         kelly_fraction=args.kelly_fraction)
+            print_position_sizing(sz, args.kelly_fraction)
 
 
 # ======================================================================
