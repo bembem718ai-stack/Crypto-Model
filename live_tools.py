@@ -480,27 +480,60 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .status b{color:var(--text);font-weight:600}
 #live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;margin-left:4px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-#tabbar{display:flex;gap:2px;padding:0 16px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0}
-.tab{padding:9px 18px;font-size:12px;font-weight:600;background:transparent;color:var(--dim);border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s}
-.tab:hover{color:var(--text)}
-.tab.active{color:#fff;border-bottom-color:var(--accent)}
-.tab .count{font-size:10px;opacity:.6;margin-left:5px}
+#header{display:flex;align-items:center;gap:10px;padding:14px 26px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0}
+#header .ticker{font-size:22px;font-weight:700;color:#fff;letter-spacing:.5px}
+#header .spacer{flex:1}
+#header .status{font-size:12px;color:var(--dim);padding:6px 12px;background:#1e293b;border-radius:6px;border:1px solid var(--border)}
+#header .status b{color:var(--text);font-weight:600}
+
+/* --- big tabs across the top --- */
+#tabbar{display:flex;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;padding:0 18px}
+.tab{flex:1;max-width:260px;padding:16px 20px;font-size:14px;font-weight:600;background:transparent;color:var(--dim);border:none;border-bottom:3px solid transparent;cursor:pointer;transition:all .15s;letter-spacing:.3px}
+.tab:hover{color:var(--text);background:#151f2e}
+.tab.active{color:#fff;border-bottom-color:var(--accent);background:#16202f}
+.tab .count{display:inline-block;font-size:11px;font-weight:700;margin-left:9px;padding:2px 8px;border-radius:10px;background:#1e293b;color:var(--dim)}
+.tab.active .count{background:var(--accent);color:#fff}
+
 .pane{display:none;flex:1;min-height:0;flex-direction:column}
 .pane.active{display:flex}
-.tablewrap{flex:1;overflow-y:auto;padding:0 16px 16px}
-table.logs{width:100%;border-collapse:collapse;font-size:12px}
-table.logs th{position:sticky;top:0;background:var(--panel);text-align:left;padding:9px 8px;color:var(--dim);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid var(--border);z-index:5}
-table.logs td{padding:8px;border-bottom:1px solid #16202e}
-table.logs tr:hover td{background:#131c28}
-.dirbadge{font-weight:700;font-size:11px;padding:2px 7px;border-radius:3px}
+
+/* --- chart controls: only rendered inside the Chart pane --- */
+#chart-toolbar{display:flex;align-items:center;gap:8px;padding:12px 26px;border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+#chart-toolbar .sep{width:1px;height:22px;background:var(--border);margin:0 6px}
+#chart-toolbar .spacer{flex:1}
+.btn-group{display:flex;gap:1px;background:var(--border);border-radius:6px;overflow:hidden}
+.btn{padding:7px 15px;font-size:12px;font-weight:600;background:#1e293b;color:var(--dim);border:none;cursor:pointer;transition:all .15s}
+.btn:hover{background:#2d3748;color:var(--text)}
+.btn.active{background:var(--accent);color:#fff}
+#reset-zoom-btn{border-radius:6px;border:1px solid var(--border)}
+.toggle{display:flex;align-items:center;gap:6px;padding:7px 12px;font-size:12px;color:var(--dim);cursor:pointer;border-radius:6px;user-select:none;transition:all .15s}
+.toggle:hover{background:#1e293b}
+.toggle.on{color:var(--text)}
+.toggle .dot{width:8px;height:8px;border-radius:50%;background:var(--dim);transition:background .15s}
+.toggle.on .dot{background:#22c55e}
+
+/* --- log rows as stacked cards, newest on top --- */
+.tablewrap{flex:1;overflow-y:auto;padding:20px 26px 26px}
+.logcard{display:flex;align-items:center;gap:18px;padding:14px 18px;margin-bottom:9px;background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--border);border-radius:8px;transition:all .15s}
+.logcard:hover{background:#16202f;border-color:#2d3a4d;transform:translateX(2px)}
+.logcard.marked{border-left-color:#f59e0b;background:#1a1710}
+.logcard.c-STRONG_BUY,.logcard.c-BUY{border-left-color:#22c55e}
+.logcard.c-SELL,.logcard.c-STRONG_SELL{border-left-color:#ef4444}
+.lc-time{font-size:12px;color:var(--dim);font-family:ui-monospace,Consolas,monospace;min-width:118px}
+.lc-dir{font-weight:700;font-size:12px;padding:5px 11px;border-radius:5px;min-width:104px;text-align:center}
 .d-STRONG_BUY{background:#052e16;color:#22c55e}.d-BUY{background:#08301a;color:#4ade80}
-.d-WATCH{background:#1e293b;color:#94a3b8}
+.d-WATCH{background:#1e293b;color:#8b98a9}
 .d-SELL{background:#3a2408;color:#fb923c}.d-STRONG_SELL{background:#3b0d0d;color:#ef4444}
-.mono{font-family:ui-monospace,Consolas,monospace}
-.markbtn{padding:4px 11px;font-size:11px;font-weight:600;border:1px solid var(--border);background:#1e293b;color:var(--dim);border-radius:4px;cursor:pointer;transition:all .15s}
-.markbtn:hover{background:#2d3748;color:var(--text)}
+.lc-stat{display:flex;flex-direction:column;gap:3px;min-width:82px}
+.lc-label{font-size:9px;color:#5b6675;text-transform:uppercase;letter-spacing:.8px}
+.lc-val{font-size:13px;color:var(--text);font-family:ui-monospace,Consolas,monospace}
+.lc-val.up{color:#22c55e}.lc-val.down{color:#ef4444}.lc-val.dim{color:#5b6675}
+.lc-spacer{flex:1}
+.markbtn{padding:9px 18px;font-size:12px;font-weight:600;border:1px solid var(--border);background:#1e293b;color:var(--dim);border-radius:6px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.markbtn:hover{background:#2d3748;color:var(--text);border-color:#3d4a5d}
 .markbtn.marked{background:#78350f;border-color:#f59e0b;color:#fbbf24}
-.empty{padding:50px;text-align:center;color:var(--dim);font-size:13px}
+.markbtn.marked:hover{background:#8b3f10}
+.empty{padding:70px;text-align:center;color:var(--dim);font-size:14px}
 #price-wrap{flex:1;min-height:0;position:relative}
 #price-chart{width:100%;height:100%}
 #divider{height:3px;background:var(--border);cursor:ns-resize;flex-shrink:0}
@@ -536,27 +569,8 @@ table.logs tr:hover td{background:#131c28}
 </style>
 </head>
 <body>
-<div id="toolbar">
+<div id="header">
   <span class="ticker">%%TICKER%%</span>
-  <div class="btn-group" id="interval-btns">
-    <button class="btn" data-iv="1h">1H</button>
-    <button class="btn" data-iv="4h">4H</button>
-    <button class="btn" data-iv="1d">1D</button>
-    <button class="btn" data-iv="1w">1W</button>
-  </div>
-  <span class="sep"></span>
-  <div class="btn-group">
-    <button class="btn active" data-chart="candle">Candles</button>
-    <button class="btn" data-chart="line">Line</button>
-    <button class="btn" data-chart="area">Area</button>
-  </div>
-  <span class="sep"></span>
-  <div class="toggle on" id="tog-vol"><span class="dot"></span>Vol</div>
-  <div class="toggle on" id="tog-sig"><span class="dot"></span>Signals</div>
-  <div class="toggle on" id="tog-lvl"><span class="dot"></span>Levels</div>
-  <div class="toggle" id="tog-trades"><span class="dot"></span>Trades</div>
-  <span class="sep"></span>
-  <button class="btn" id="reset-zoom-btn" title="Fit all data / reset zoom">Reset Zoom</button>
   <span class="spacer"></span>
   <span class="status">Last: <b>%%LAST_INFO%%</b></span>
   <div id="live-dot" title="Live connection"></div>
@@ -572,6 +586,27 @@ table.logs tr:hover td{background:#131c28}
 <div class="pane" id="pane-flag"><div class="tablewrap"><div id="tbl-flag"></div></div></div>
 
 <div class="pane" id="pane-chart">
+<div id="chart-toolbar">
+  <div class="btn-group" id="interval-btns">
+    <button class="btn" data-iv="1h">1H</button>
+    <button class="btn" data-iv="4h">4H</button>
+    <button class="btn" data-iv="1d">1D</button>
+    <button class="btn" data-iv="1w">1W</button>
+  </div>
+  <span class="sep"></span>
+  <div class="btn-group">
+    <button class="btn active" data-chart="candle">Candles</button>
+    <button class="btn" data-chart="line">Line</button>
+    <button class="btn" data-chart="area">Area</button>
+  </div>
+  <span class="sep"></span>
+  <div class="toggle on" id="tog-vol"><span class="dot"></span>Volume</div>
+  <div class="toggle on" id="tog-sig"><span class="dot"></span>Signals</div>
+  <div class="toggle on" id="tog-lvl"><span class="dot"></span>Levels</div>
+  <div class="toggle" id="tog-trades"><span class="dot"></span>Trade list</div>
+  <span class="spacer"></span>
+  <button class="btn" id="reset-zoom-btn" title="Fit all data">Reset Zoom</button>
+</div>
 <div id="price-wrap">
   <div id="price-chart"></div>
   <div id="trades-panel">
@@ -693,25 +728,31 @@ function fmt(v,d){ return (v===null||v===undefined) ? '—' : Number(v).toLocale
 function renderTable(rows, elId){
   const el=document.getElementById(elId);
   if(!rows.length){ el.innerHTML='<div class="empty">Nothing logged yet.</div>'; return; }
-  el.innerHTML = '<table class="logs"><thead><tr>'+
-    '<th>Time (UTC)</th><th>Direction</th><th>Score</th><th>ML</th>'+
-    '<th>Price</th><th>Target</th><th>Stop</th><th>R:R</th><th></th>'+
-    '</tr></thead><tbody>' +
-    rows.map(r=>{
-      const m=isMarked(r.time);
-      return '<tr>'+
-        '<td class="mono" style="color:#94a3b8">'+r.ts+'</td>'+
-        '<td><span class="dirbadge d-'+r.dir+'">'+r.dir.replace('_',' ')+'</span></td>'+
-        '<td class="mono">'+fmt(r.score,2)+'</td>'+
-        '<td class="mono">'+(r.ml===null?'—':fmt(r.ml,0)+'%')+'</td>'+
-        '<td class="mono">'+fmt(r.price,2)+'</td>'+
-        '<td class="mono" style="color:#22c55e">'+fmt(r.target,2)+'</td>'+
-        '<td class="mono" style="color:#ef4444">'+fmt(r.stop,2)+'</td>'+
-        '<td class="mono">'+fmt(r.rr,1)+'</td>'+
-        '<td><button class="markbtn'+(m?' marked':'')+'" onclick="toggleMark('+r.time+')">'+
-          (m?'✓ Marked':'Mark Trade')+'</button></td>'+
-      '</tr>';
-    }).join('') + '</tbody></table>';
+  // rows arrive newest-first; render as stacked cards so the most recent
+  // check is always at the top of the list.
+  el.innerHTML = rows.map(r=>{
+    const m=isMarked(r.time);
+    const tgt = r.target===null||r.target===undefined ? '<span class="lc-val dim">—</span>'
+              : '<span class="lc-val up">'+fmt(r.target,2)+'</span>';
+    const stp = r.stop===null||r.stop===undefined ? '<span class="lc-val dim">—</span>'
+              : '<span class="lc-val down">'+fmt(r.stop,2)+'</span>';
+    const ml  = r.ml===null||r.ml===undefined ? '<span class="lc-val dim">—</span>'
+              : '<span class="lc-val">'+fmt(r.ml,0)+'%</span>';
+    return '<div class="logcard c-'+r.dir+(m?' marked':'')+'">'+
+      '<span class="lc-time">'+r.ts+'</span>'+
+      '<span class="lc-dir d-'+r.dir+'">'+r.dir.replace('_',' ')+'</span>'+
+      '<div class="lc-stat"><span class="lc-label">Score</span>'+
+        '<span class="lc-val">'+fmt(r.score,2)+'</span></div>'+
+      '<div class="lc-stat"><span class="lc-label">ML</span>'+ml+'</div>'+
+      '<div class="lc-stat"><span class="lc-label">Price</span>'+
+        '<span class="lc-val">'+fmt(r.price,2)+'</span></div>'+
+      '<div class="lc-stat"><span class="lc-label">Target</span>'+tgt+'</div>'+
+      '<div class="lc-stat"><span class="lc-label">Stop</span>'+stp+'</div>'+
+      '<span class="lc-spacer"></span>'+
+      '<button class="markbtn'+(m?' marked':'')+'" onclick="toggleMark('+r.time+')">'+
+        (m?'✓ Marked':'Mark Trade')+'</button>'+
+    '</div>';
+  }).join('');
 }
 
 function renderTables(){
