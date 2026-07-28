@@ -326,7 +326,10 @@ def classify_direction(final_score: float, vix_level: float,
 
 def combine_and_decide(step2_result: dict, step3_result: dict,
                         weight_pattern: float = 0.6, weight_indicators: float = 0.4,
-                        extreme_fear_mode: str = "symmetric") -> dict:
+                        extreme_fear_mode: str = "symmetric",
+                        ml_weight: float = 0.0, buy_bar: float = 60,
+                        sell_bar: float = 40, ml_veto: float = 25.0,
+                        ml_confirm: float = 55.0) -> dict:
     """
     Blends the pattern+sentiment score (Steps 1-2) with the indicator
     score (Step 3). Default weighting favors the pattern side (0.6) over
@@ -339,7 +342,42 @@ def combine_and_decide(step2_result: dict, step3_result: dict,
     gated_score = step2_result["gated_score"]
     indicator_score = step3_result["indicator_final_score"]
 
-    final_score = weight_pattern * gated_score + weight_indicators * indicator_score
+    base_score = weight_pattern * gated_score + weight_indicators * indicator_score
+    base_score = max(0.0, min(100.0, base_score))
+
+    # --- ML as a CONFIDENCE SCALER (not an average) --------------------
+    # A flat blend fails the obvious sanity test: a 99 score with 1% ML
+    # would average to ~74 and still read BUY, even though the two signals
+    # flatly contradict each other. Instead the ML scales how far the score
+    # is ALLOWED to sit from neutral (50):
+    #
+    #     final = 50 + (base - 50) * multiplier
+    #
+    # For a BULLISH base (>50), ML is P(up-move), so:
+    #     ML >= ml_confirm (55) -> factor 1.0  (full strength)
+    #     ML <= ml_veto    (25) -> factor 0.0  (collapses to 50 = WATCH)
+    #     in between            -> linear ramp
+    # For a BEARISH base (<50) it mirrors: a LOW ML confirms bearishness,
+    # a HIGH ML vetoes it.
+    #
+    # ml_weight controls how much of this scaling to apply: 0 = off
+    # (score untouched), 1.0 = full kill power. At 1.0, a 99/1% signal
+    # lands exactly on 50 — nowhere near qualifying, which is the point.
+    ml_conf = step3_result.get("ai_confidence_score")
+    ml_applied = False
+    final_score = base_score
+    if ml_weight and ml_weight > 0 and ml_conf is not None and ml_conf == ml_conf:
+        ml_conf = float(ml_conf)
+        deviation = base_score - 50.0
+        span = max(1e-9, ml_confirm - ml_veto)
+        if deviation >= 0:                      # bullish base
+            factor = (ml_conf - ml_veto) / span
+        else:                                   # bearish base (mirrored)
+            factor = ((100.0 - ml_conf) - ml_veto) / span
+        factor = max(0.0, min(1.0, factor))
+        multiplier = (1.0 - ml_weight) + ml_weight * factor
+        final_score = 50.0 + deviation * multiplier
+        ml_applied = True
     final_score = max(0.0, min(100.0, final_score))
     vix_level = step3_result["vix_level"]
 
@@ -354,12 +392,18 @@ def combine_and_decide(step2_result: dict, step3_result: dict,
     # docstring for the thresholds and the important caveat that this
     # still isn't a literal trade/short instruction.
     direction = classify_direction(final_score, vix_level,
+                                    buy_bar=buy_bar, sell_bar=sell_bar,
                                     extreme_fear_mode=extreme_fear_mode)
 
     return {
         "final_score": round(final_score, 2),
         "decision": decision,
         "direction": direction,
+        "base_score": round(base_score, 2),
+        "ml_weight": ml_weight,
+        "ml_applied": ml_applied,
+        "ml_veto": ml_veto,
+        "ml_confirm": ml_confirm,
         "weight_pattern": weight_pattern,
         "weight_indicators": weight_indicators,
         "gated_score_contribution": round(gated_score * weight_pattern, 2),
@@ -376,7 +420,10 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
                        weight_pattern: float = 0.6, weight_indicators: float = 0.4,
                        extreme_fear_mode: str = "symmetric",
                        stop_mult: float = 1.5, target_mult: float = 3.0,
-                       use_ml: bool = False, short_trend_filter: bool = True,
+                       use_ml: bool = False, ml_weight: float = 0.0,
+                       ml_veto: float = 25.0, ml_confirm: float = 55.0,
+                       buy_bar: float = 60, sell_bar: float = 40,
+                       short_trend_filter: bool = True,
                        trend_sma_period: int = 50,
                        verbose: bool = True) -> dict:
     """
@@ -441,9 +488,16 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
     assert timestamps == sorted(timestamps), \
         "Step timestamps are not strictly increasing — steps ran out of order!"
 
+    # Blending ML into the score requires the ML to actually be computed.
+    if ml_weight and ml_weight > 0 and not use_ml:
+        raise ValueError("ml_weight > 0 requires use_ml=True (the ML score must be "
+                         "computed before it can be blended into the final score).")
     combined = combine_and_decide(step2, step3, weight_pattern=weight_pattern,
                                    weight_indicators=weight_indicators,
-                                   extreme_fear_mode=extreme_fear_mode)
+                                   extreme_fear_mode=extreme_fear_mode,
+                                   ml_weight=ml_weight, buy_bar=buy_bar,
+                                   sell_bar=sell_bar, ml_veto=ml_veto,
+                                   ml_confirm=ml_confirm)
 
     # --- Exit levels: ATR-based profit target + stop-loss for the ---
     # --- direction we just produced. Volatility bands, not predictions. ---
@@ -475,6 +529,13 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
         print(f"  COMBINED: {combined['gated_score_contribution']} (pattern+reddit, "
               f"weight={weight_pattern}) + {combined['indicator_score_contribution']} "
               f"(indicators, weight={weight_indicators})")
+        if combined.get("ml_applied"):
+            _mlc = step3.get('ai_confidence_score', 0)
+            _killed = combined['final_score'] < combined['base_score'] - 5 if combined['base_score'] > 50 else False
+            print(f"  ML SCALING: base {combined['base_score']} x ML {_mlc:.1f}% "
+                  f"(veto<={combined['ml_veto']:.0f}, confirm>={combined['ml_confirm']:.0f}, "
+                  f"weight {combined['ml_weight']}) -> {combined['final_score']}"
+                  f"{'   <- ML SUPPRESSED THIS SIGNAL' if _killed else ''}")
         print(f"  FINAL SCORE: {combined['final_score']}  ->  ENTRY DECISION: {combined['decision']}  "
               f"|  DIRECTION: {combined['direction']}")
         if combined.get("trend_filter_note"):
@@ -524,6 +585,20 @@ def main_run():
                          help="Disable the validated short trend filter (allows "
                               "counter-trend shorts, which backtested at ~0R)")
     parser.add_argument("--trend-sma-period", type=int, default=50)
+    parser.add_argument("--ml-weight", type=float, default=0.0,
+                         help="How much the ML probability scales the score, 0-1. "
+                              "0=off (display-only), 1.0=full kill power (a high "
+                              "score with very low ML collapses to neutral). Implies --ml.")
+    parser.add_argument("--ml-veto", type=float, default=25.0,
+                         help="ML%% at or below which a bullish signal is fully "
+                              "suppressed (default 25)")
+    parser.add_argument("--ml-confirm", type=float, default=55.0,
+                         help="ML%% at or above which a bullish signal keeps full "
+                              "strength (default 55)")
+    parser.add_argument("--buy-bar", type=float, default=60,
+                         help="BUY threshold (default 60). RAISE this for fewer, "
+                              "higher-conviction signals.")
+    parser.add_argument("--sell-bar", type=float, default=40)
     parser.add_argument("--ml", action="store_true",
                          help="Also train + show the XGBoost ML confidence score "
                               "(Yahoo-derived features, honest holdout; display-only, "
@@ -546,7 +621,10 @@ def main_run():
                 weight_indicators=args.weight_indicators,
                 extreme_fear_mode=args.extreme_fear_mode,
                 stop_mult=args.stop_mult, target_mult=args.target_mult,
-                use_ml=args.ml,
+                use_ml=args.ml or args.ml_weight > 0,
+                ml_weight=args.ml_weight, ml_veto=args.ml_veto,
+                ml_confirm=args.ml_confirm,
+                buy_bar=args.buy_bar, sell_bar=args.sell_bar,
                 short_trend_filter=not args.no_short_trend_filter,
                 trend_sma_period=args.trend_sma_period,
             )
