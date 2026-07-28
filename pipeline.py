@@ -686,7 +686,8 @@ def backtest_squeeze_history(ticker: str, target_4h_bars: int = 4000) -> pd.Seri
 
 def run_backtest(ticker: str, period: str = "2y", forward_days: int = 5,
                   weight_pattern: float = 0.6, weight_indicators: float = 0.4,
-                  extreme_fear_mode: str = "symmetric") -> pd.DataFrame:
+                  extreme_fear_mode: str = "symmetric",
+                  buy_bar: float = 60, sell_bar: float = 40) -> pd.DataFrame:
     print(f"Pulling daily technical/macro history for {ticker}...")
     yahoo_ticker = to_yahoo_crypto_symbol(ticker)
     tech_df = epm.analyze(yahoo_ticker, period=period)
@@ -715,6 +716,7 @@ def run_backtest(ticker: str, period: str = "2y", forward_days: int = 5,
     # unified_model.classify_direction's docstring for the full rationale.
     merged["direction"] = merged.apply(
         lambda row: classify_direction(row["combined_final_score"], row["vix_level"],
+                                        buy_bar=buy_bar, sell_bar=sell_bar,
                                         extreme_fear_mode=extreme_fear_mode), axis=1
     )
 
@@ -864,6 +866,43 @@ def print_exit_report(res: dict, stop_mult: float, target_mult: float, max_hold_
     print(f"{'=' * 74}\n")
 
 
+def print_score_buckets(merged, forward_days: int, bucket: float = 2.5):
+    """
+    Forward returns by NARROW score band — answers "where should the BUY bar
+    actually be?" The coarse direction table lumps 40-60 into one WATCH
+    bucket; this splits it so you can see whether a 58 behaves like a 62
+    (bar is too strict) or like a 45 (bar is right where it belongs).
+    """
+    df = merged.dropna(subset=["combined_final_score", "forward_return"]).copy()
+    lo = int(df["combined_final_score"].min() // bucket * bucket)
+    hi = int(df["combined_final_score"].max() // bucket * bucket + bucket)
+    edges = [lo + i * bucket for i in range(int((hi - lo) / bucket) + 1)]
+    df["band"] = pd.cut(df["combined_final_score"], bins=edges, right=False)
+
+    print(f"\n{'=' * 74}")
+    print(f"  SCORE BANDS vs {forward_days}-day forward return  (bucket={bucket})")
+    print(f"  Current BUY bar = 60, SELL bar = 40")
+    print(f"{'=' * 74}")
+    print(f"{'Score band':<16}{'Days':>7}{'Avg fwd ret':>14}{'% positive':>13}")
+    print("-" * 74)
+    for band, g in df.groupby("band", observed=True):
+        if len(g) == 0:
+            continue
+        avg = g["forward_return"].mean() * 100
+        pos = (g["forward_return"] > 0).mean() * 100
+        marker = ""
+        left = band.left
+        if left == 60: marker = "  <- BUY bar"
+        elif left == 40: marker = "  <- SELL bar"
+        print(f"{str(band):<16}{len(g):>7}{avg:>13.2f}%{pos:>12.1f}%{marker}")
+    print("-" * 74)
+    print("  Read it this way: if the bands just BELOW 60 look like the bands")
+    print("  just ABOVE it, the bar is too strict and can move down. If they")
+    print("  look like the 40s, the bar is correctly placed and lowering it")
+    print("  would import noise. Overlapping windows - not independent samples.")
+    print(f"{'=' * 74}\n")
+
+
 def summarize(merged: pd.DataFrame, forward_days: int, extreme_fear_mode: str = "symmetric"):
     n_extreme = int((merged["vix_level"] >= 35).sum())
     print(f"\n{'=' * 78}")
@@ -971,6 +1010,15 @@ def main_backtest():
                          help="Run BOTH extreme_fear_mode settings back to back and "
                               "print a focused diff on extreme-fear days, instead of "
                               "a single run.")
+    parser.add_argument("--buy-bar", type=float, default=60,
+                         help="BUY threshold to test (default 60). Pair with --exits "
+                              "to see whether moving it improves expectancy.")
+    parser.add_argument("--sell-bar", type=float, default=40,
+                         help="SELL threshold to test (default 40)")
+    parser.add_argument("--score-bands", action="store_true",
+                         help="Show forward returns by narrow score band, to test "
+                              "whether the BUY/SELL bars are placed correctly")
+    parser.add_argument("--band-size", type=float, default=2.5)
     parser.add_argument("--exits", action="store_true",
                          help="Also simulate the ATR target/stop exits on every "
                               "historical signal: hit rates, expectancy, and the "
@@ -993,11 +1041,17 @@ def main_backtest():
                                     weight_indicators=args.weight_indicators)
         return
 
+    if args.buy_bar != 60 or args.sell_bar != 40:
+        print(f"\n[testing modified thresholds: BUY>={args.buy_bar}, SELL<={args.sell_bar}]")
     merged = run_backtest(args.ticker, period=args.period, forward_days=args.forward_days,
+                           buy_bar=args.buy_bar, sell_bar=args.sell_bar,
                            weight_pattern=args.weight_pattern,
                            weight_indicators=args.weight_indicators,
                            extreme_fear_mode=args.extreme_fear_mode)
     summarize(merged, args.forward_days, extreme_fear_mode=args.extreme_fear_mode)
+
+    if args.score_bands:
+        print_score_buckets(merged, args.forward_days, bucket=args.band_size)
 
     if args.exits:
         res = backtest_exits(merged, stop_mult=args.stop_mult,
