@@ -534,6 +534,22 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 .markbtn.marked{background:#78350f;border-color:#f59e0b;color:#fbbf24}
 .markbtn.marked:hover{background:#8b3f10}
 .empty{padding:70px;text-align:center;color:var(--dim);font-size:14px}
+.logcard{cursor:pointer}
+.lc-hint{font-size:10px;color:#465264;letter-spacing:.5px;margin-right:4px}
+/* --- signal detail panel, shown on the chart tab --- */
+#detail{position:absolute;top:12px;left:12px;z-index:30;width:290px;background:rgba(17,24,39,.97);border:1px solid var(--border);border-radius:10px;padding:16px 18px;box-shadow:0 12px 40px rgba(0,0,0,.55);display:none}
+#detail.open{display:block}
+#detail h4{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px}
+#detail .dtime{font-size:12px;color:var(--text);font-family:ui-monospace,Consolas,monospace;margin-bottom:12px}
+#detail .dbadge{display:inline-block;font-weight:700;font-size:13px;padding:6px 13px;border-radius:6px;margin-bottom:14px}
+#detail .drow{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1b2534;font-size:12px}
+#detail .drow:last-of-type{border:none}
+#detail .dk{color:#5b6675}
+#detail .dv{color:var(--text);font-family:ui-monospace,Consolas,monospace}
+#detail .dv.up{color:#22c55e}#detail .dv.down{color:#ef4444}#detail .dv.dim{color:#5b6675}
+#detail .dsec{font-size:9px;color:#465264;text-transform:uppercase;letter-spacing:1px;margin:13px 0 5px}
+#detail .dclose{position:absolute;top:11px;right:13px;color:#5b6675;cursor:pointer;font-size:17px;line-height:1}
+#detail .dclose:hover{color:var(--text)}
 #price-wrap{flex:1;min-height:0;position:relative}
 #price-chart{width:100%;height:100%}
 #divider{height:3px;background:var(--border);cursor:ns-resize;flex-shrink:0}
@@ -609,6 +625,13 @@ body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,san
 </div>
 <div id="price-wrap">
   <div id="price-chart"></div>
+  <div id="detail">
+    <span class="dclose" onclick="closeDetail()">&times;</span>
+    <h4>Signal detail</h4>
+    <div class="dtime" id="d-time"></div>
+    <div class="dbadge" id="d-dir"></div>
+    <div id="d-body"></div>
+  </div>
   <div id="trades-panel">
     <h4>Marked Trades</h4>
     <div id="trades-list"></div>
@@ -642,7 +665,7 @@ const initCandles=%%CANDLES%%, initVolumes=%%VOLUMES%%, signalMarkers=%%MARKERS%
 let currentInterval='%%INTERVAL%%';
 
 // ---- Chart setup ----
-const OPTS={layout:{background:{type:'solid',color:'#0a0e17'},textColor:'#9ca3af',fontSize:11},grid:{vertLines:{color:'#1f293720'},horzLines:{color:'#1f293720'}},crosshair:{mode:LightweightCharts.CrosshairMode.Normal,vertLine:{color:'#3b82f640',labelBackgroundColor:'#3b82f6'},horzLine:{color:'#3b82f640',labelBackgroundColor:'#3b82f6'}},rightPriceScale:{borderColor:'#1f2937',scaleMargins:{top:0.05,bottom:0.12}},timeScale:{borderColor:'#1f2937',timeVisible:true,secondsVisible:false},handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{mouseWheel:true,pinch:true,axisPressedMouseMove:{time:true,price:true},axisDoubleClickReset:{time:true,price:true}},kineticScroll:{touch:true,mouse:false}};
+const OPTS={layout:{background:{type:'solid',color:'#0a0e17'},textColor:'#9ca3af',fontSize:11},grid:{vertLines:{color:'#1f293720'},horzLines:{color:'#1f293720'}},crosshair:{mode:LightweightCharts.CrosshairMode.Normal,vertLine:{color:'#3b82f640',labelBackgroundColor:'#3b82f6'},horzLine:{color:'#3b82f640',labelBackgroundColor:'#3b82f6'}},rightPriceScale:{borderColor:'#1f2937',scaleMargins:{top:0.05,bottom:0.12}},timeScale:{borderColor:'#1f2937',timeVisible:true,secondsVisible:false},handleScroll:{mouseWheel:true,pressedMouseMove:true,horzTouchDrag:true,vertTouchDrag:true},handleScale:{mouseWheel:false,pinch:true,axisPressedMouseMove:{time:true,price:true},axisDoubleClickReset:{time:true,price:true}},kineticScroll:{touch:true,mouse:false}};
 
 const pc=LightweightCharts.createChart(document.getElementById('price-chart'),OPTS);
 let candleSeries=pc.addCandlestickSeries({upColor:'#22c55e',downColor:'#ef4444',borderUpColor:'#22c55e',borderDownColor:'#ef4444',wickUpColor:'#22c55e80',wickDownColor:'#ef444480'});
@@ -738,7 +761,7 @@ function renderTable(rows, elId){
               : '<span class="lc-val down">'+fmt(r.stop,2)+'</span>';
     const ml  = r.ml===null||r.ml===undefined ? '<span class="lc-val dim">—</span>'
               : '<span class="lc-val">'+fmt(r.ml,0)+'%</span>';
-    return '<div class="logcard c-'+r.dir+(m?' marked':'')+'">'+
+    return '<div class="logcard c-'+r.dir+(m?' marked':'')+'" onclick="openDetail('+r.time+')">'+
       '<span class="lc-time">'+r.ts+'</span>'+
       '<span class="lc-dir d-'+r.dir+'">'+r.dir.replace('_',' ')+'</span>'+
       '<div class="lc-stat"><span class="lc-label">Score</span>'+
@@ -749,7 +772,8 @@ function renderTable(rows, elId){
       '<div class="lc-stat"><span class="lc-label">Target</span>'+tgt+'</div>'+
       '<div class="lc-stat"><span class="lc-label">Stop</span>'+stp+'</div>'+
       '<span class="lc-spacer"></span>'+
-      '<button class="markbtn'+(m?' marked':'')+'" onclick="toggleMark('+r.time+')">'+
+      '<span class="lc-hint">click for detail</span>'+
+      '<button class="markbtn'+(m?' marked':'')+'" onclick="event.stopPropagation();toggleMark('+r.time+')">'+
         (m?'✓ Marked':'Mark Trade')+'</button>'+
     '</div>';
   }).join('');
@@ -762,6 +786,73 @@ function renderTables(){
   document.getElementById('c-all').textContent = LOGROWS.length;
   document.getElementById('c-flag').textContent = flagged.length;
 }
+
+function fmtOr(v,d,cls){
+  if(v===null||v===undefined) return '<span class="dv dim">—</span>';
+  return '<span class="dv'+(cls?' '+cls:'')+'">'+fmt(v,d)+'</span>';
+}
+function drow(k,v){ return '<div class="drow"><span class="dk">'+k+'</span>'+v+'</div>'; }
+
+function openDetail(time){
+  const r = LOGROWS.find(x=>x.time===time);
+  if(!r) return;
+  // Jump to the Chart tab first so the chart has real dimensions to work with
+  document.querySelector('.tab[data-pane="chart"]').click();
+
+  document.getElementById('d-time').textContent = r.ts + ' UTC';
+  const badge = document.getElementById('d-dir');
+  badge.textContent = r.dir.replace('_',' ');
+  badge.className = 'dbadge d-' + r.dir;
+
+  let h = '';
+  h += '<div class="dsec">Score build-up</div>';
+  h += drow('Step 1 · pattern', fmtOr(r.initial,2));
+  h += drow('Step 2 · after gate', fmtOr(r.gated,2));
+  h += drow('Step 3 · indicators', fmtOr(r.indicator,2));
+  h += drow('Final score', fmtOr(r.score,2));
+  h += '<div class="dsec">Context</div>';
+  h += drow('Decision', '<span class="dv">'+(r.decision||'—')+'</span>');
+  h += drow('Sentiment gate', '<span class="dv">'+(r.gate||'—')+
+            (r.gate_mult!==null&&r.gate_mult!==undefined?' ×'+fmt(r.gate_mult,2):'')+'</span>');
+  h += drow('ML confidence', r.ml===null||r.ml===undefined?fmtOr(null):'<span class="dv">'+fmt(r.ml,0)+'%</span>');
+  h += drow('VIX', fmtOr(r.vix,1));
+  h += drow('ATR', fmtOr(r.atr,2));
+  h += '<div class="dsec">Trade levels</div>';
+  h += drow('Price at signal', fmtOr(r.price,2));
+  h += drow('Target', fmtOr(r.target,2,'up'));
+  h += drow('Stop', fmtOr(r.stop,2,'down'));
+  h += drow('Risk : reward', fmtOr(r.rr,1));
+  document.getElementById('d-body').innerHTML = h;
+  document.getElementById('detail').classList.add('open');
+
+  // Centre the chart on that moment (~40 bars of context either side)
+  setTimeout(()=>{
+    const bar = (C.length>1) ? (C[1].time - C[0].time) : 14400;
+    pc.timeScale().setVisibleRange({from: time - bar*40, to: time + bar*40});
+  }, 60);
+}
+function closeDetail(){ document.getElementById('detail').classList.remove('open'); }
+
+// --- Wheel zoom anchored to the CURSOR, not the chart edge -------------
+// The built-in mouseWheel scaling is disabled below so these don't fight;
+// this keeps whatever is under the pointer pinned while zooming around it.
+(function(){
+  const el = document.getElementById('price-chart');
+  el.addEventListener('wheel', e => {
+    const r = pc.timeScale().getVisibleLogicalRange();
+    if(!r) return;
+    e.preventDefault();
+    const rect = el.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const span = r.to - r.from;
+    const anchor = r.from + span * frac;      // logical index under the cursor
+    const k = e.deltaY > 0 ? 1.15 : 1/1.15;   // out : in
+    pc.timeScale().setVisibleLogicalRange({
+      from: anchor - (anchor - r.from) * k,
+      to:   anchor + (r.to - anchor) * k
+    });
+  }, {passive:false});
+})();
 
 // Tab switching — charts need a resize nudge when their pane becomes visible
 document.querySelectorAll('.tab').forEach(b=>b.addEventListener('click',()=>{
@@ -982,6 +1073,15 @@ def generate_html_chart(ticker: str, ohlcv: pd.DataFrame, log: pd.DataFrame,
                 "stop": _num(r.get("stop_price")),
                 "rr": _num(r.get("risk_reward")),
                 "flagged": d in ("BUY", "STRONG_BUY", "SELL", "STRONG_SELL"),
+                # full model output, for the detail view
+                "decision": r.get("decision"),
+                "initial": _num(r.get("initial_score")),
+                "gated": _num(r.get("gated_score")),
+                "indicator": _num(r.get("indicator_final_score")),
+                "vix": _num(r.get("vix_level")),
+                "gate": r.get("gate_decision"),
+                "gate_mult": _num(r.get("gate_multiplier")),
+                "atr": _num(r.get("atr")),
             })
         rows.reverse()  # newest first
 
