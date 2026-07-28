@@ -476,8 +476,10 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
                       f"(XGBoost prob. of +{step3['ml_threshold_pct']*100:.0f}% avg move "
                       f"over next {step3['ml_lookahead_days']} days)")
                 print(f"     -> out-of-sample holdout: accuracy={acc_str}, "
-                      f"ROC-AUC={auc_str}, tested on {step3.get('ml_test_n')} days "
-                      f"[DISPLAY ONLY — not in the score]")
+                      f"ROC-AUC={auc_str}, tested on {step3.get('ml_test_n')} days")
+                if auc is not None and auc == auc and auc < 0.55:
+                    print(f"     -> CAUTION: ROC-AUC {auc:.3f} is close to coin-flip (0.50). "
+                          f"Treat this probability as weak evidence.")
             else:
                 print(f"  ML confidence: unavailable ({step3.get('ml_error', 'training failed')})")
 
@@ -1143,12 +1145,114 @@ def main_backtest():
 # CLI DISPATCHER — subcommands: run / multi / backtest
 # ======================================================================
 
+def build_ml_frame(ticker: str, period: str = "3y", with_squeeze: bool = False,
+                   interval: str = "4h"):
+    """
+    Builds the daily indicator frame the ML trains on. With with_squeeze=True,
+    joins in Step 1's Bollinger squeeze features (BB_WIDTH_PCTL,
+    SQUEEZE_DURATION) resampled from Binance 4h bars — a genuinely different
+    SOURCE and TIMEFRAME than the Yahoo daily indicators, so it's new
+    information rather than another transform of the same price series.
+    """
+    yahoo_ticker = to_yahoo_crypto_symbol(ticker)
+    df = epm.analyze(yahoo_ticker, period=period)
+    if not with_squeeze:
+        return df
+    symbol = cf.to_binance_symbol(ticker)
+    klines = cf.fetch_klines_paginated(symbol, interval=interval, target_bars=4000)
+    sq = cf.add_squeeze_features(klines).dropna(subset=["BB_WIDTH_PCTL"])
+    daily = sq[["BB_WIDTH_PCTL", "SQUEEZE_DURATION"]].resample("D").last()
+    daily.index = daily.index.normalize()
+    df.index = pd.to_datetime(df.index).normalize()
+    out = df.join(daily, how="left")
+    # These names don't match the RSI_/SMA_/_score patterns, so rename them
+    # into the _score convention to get picked up by build_feature_target.
+    out["squeeze_width_score"] = out["BB_WIDTH_PCTL"]
+    out["squeeze_duration_score"] = out["SQUEEZE_DURATION"]
+    return out
+
+
+def ml_sweep(ticker: str, period: str = "3y", horizons=(5, 7, 10),
+             thresholds=(0.010, 0.015, 0.020), squeeze_variants=(False, True)):
+    """
+    Sweeps ML target definitions and feature sets, reporting HONEST
+    out-of-sample holdout AUC for each. AUC is the metric that matters:
+    accuracy is inflated by class imbalance (a model can score 90%
+    'accuracy' by always predicting the majority class while learning
+    nothing). 0.50 = coin flip.
+    """
+    print(f"\nBuilding frames for {ticker} (period={period})...")
+    frames = {}
+    for sq in squeeze_variants:
+        try:
+            frames[sq] = build_ml_frame(ticker, period=period, with_squeeze=sq)
+            print(f"  {'with' if sq else 'without'} squeeze: {len(frames[sq])} rows")
+        except Exception as e:
+            print(f"  {'with' if sq else 'without'} squeeze FAILED: {type(e).__name__}: {e}")
+
+    print(f"\n{'=' * 78}")
+    print(f"  ML TARGET / FEATURE SWEEP — {ticker}   (holdout ROC-AUC; 0.50 = coin flip)")
+    print(f"{'=' * 78}")
+    print(f"{'Features':<12}{'Horizon':>9}{'Thresh':>9}{'PosRate':>10}{'Acc':>8}{'AUC':>9}{'TestN':>8}")
+    print("-" * 78)
+
+    results = []
+    for sq, frame in frames.items():
+        label = "yahoo+sqz" if sq else "yahoo"
+        for h in horizons:
+            for t in thresholds:
+                try:
+                    r = cf.train_ml_model_with_holdout(frame, lookahead_days=h, threshold_pct=t)
+                    auc = r.get("roc_auc"); acc = r.get("accuracy")
+                    y = r.get("y_test")
+                    pos = float(sum(y)) / len(y) if y is not None and len(y) else float("nan")
+                    auc_s = f"{auc:.3f}" if auc is not None and auc == auc else "n/a"
+                    star = "  *" if (auc is not None and auc == auc and auc >= 0.58) else ""
+                    print(f"{label:<12}{h:>9}{t*100:>8.1f}%{pos*100:>9.1f}%"
+                          f"{acc*100:>7.1f}%{auc_s:>9}{len(y):>8}{star}")
+                    results.append({"features": label, "horizon": h, "threshold": t,
+                                    "auc": auc, "accuracy": acc, "pos_rate": pos})
+                except Exception as e:
+                    print(f"{label:<12}{h:>9}{t*100:>8.1f}%   FAILED: {type(e).__name__}")
+    print("-" * 78)
+    ok = [r for r in results if r["auc"] is not None and r["auc"] == r["auc"]]
+    if ok:
+        best = max(ok, key=lambda r: r["auc"])
+        print(f"  Best: {best['features']}, horizon={best['horizon']}d, "
+              f"threshold={best['threshold']*100:.1f}%, AUC={best['auc']:.3f}")
+        print(f"  PRE-REGISTERED BAR: AUC must hold >= 0.58 on BOTH tickers to earn")
+        print(f"  veto power. Rows marked * clear it here; verify on the other ticker")
+        print(f"  before trusting any of them - one ticker is easy to curve-fit.")
+        if best["auc"] < 0.58:
+            print(f"  -> NOTHING clears the bar. The honest conclusion would be that")
+            print(f"     daily direction isn't very predictable from these features,")
+            print(f"     and ML should go back to display-only (--ml-weight 0).")
+    print(f"{'=' * 78}\n")
+    return results
+
+
+def main_mlsweep():
+    parser = argparse.ArgumentParser(description="Sweep ML target/feature definitions")
+    parser.add_argument("ticker")
+    parser.add_argument("--period", default="3y")
+    parser.add_argument("--horizons", default="5,7,10")
+    parser.add_argument("--thresholds", default="0.010,0.015,0.020")
+    parser.add_argument("--no-squeeze", action="store_true",
+                         help="Skip the squeeze-feature variant (Yahoo-only)")
+    args = parser.parse_args()
+    ml_sweep(args.ticker, period=args.period,
+             horizons=tuple(int(x) for x in args.horizons.split(",")),
+             thresholds=tuple(float(x) for x in args.thresholds.split(",")),
+             squeeze_variants=((False,) if args.no_squeeze else (False, True)))
+
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "multi", "backtest"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "multi", "backtest", "mlsweep"):
         print("Usage: python pipeline.py <run|multi|backtest> [args...]\n"
               "  run BTC ...        - single-ticker pipeline (was unified_model.py)\n"
               "  multi BTC ETH ...  - batch across tickers   (was run_multi_ticker.py)\n"
               "  backtest BTC ...   - historical backtest    (was backtest_direction.py)\n"
+              "  mlsweep BTC        - sweep ML target/feature definitions by holdout AUC\n"
               "Run 'python pipeline.py <command> --help' for that command's options.")
         sys.exit(1)
 
@@ -1159,6 +1263,8 @@ def main():
         main_multi()
     elif command == "backtest":
         main_backtest()
+    elif command == "mlsweep":
+        main_mlsweep()
 
 
 if __name__ == "__main__":
