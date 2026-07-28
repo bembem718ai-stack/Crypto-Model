@@ -1455,7 +1455,7 @@ def run_ml_probabilistic_engine(df_with_features):
     return df_with_features
 
 
-def build_feature_target(df_with_features, feature_cols=None, lookahead_days=10, threshold_pct=0.02):
+def build_feature_target(df_with_features, feature_cols=None, lookahead_days=5, threshold_pct=0.02):
     """
     Shared helper: builds the feature matrix X and target vector y from a
     dataframe that already has indicators/scores computed. Used by both
@@ -1499,7 +1499,8 @@ def build_feature_target(df_with_features, feature_cols=None, lookahead_days=10,
 
 
 def train_ml_model_with_holdout(df_with_features, test_size=0.2, xgb_params=None,
-                                 lookahead_days=10, threshold_pct=0.02):
+                                 lookahead_days=5, threshold_pct=0.02,
+                                 feature_cols=None):
     """
     The "actually train it properly" version of run_ml_probabilistic_engine.
 
@@ -1518,7 +1519,8 @@ def train_ml_model_with_holdout(df_with_features, test_size=0.2, xgb_params=None
     from sklearn.metrics import classification_report, accuracy_score, roc_auc_score
 
     X, y, feature_cols, ml_df = build_feature_target(
-        df_with_features, lookahead_days=lookahead_days, threshold_pct=threshold_pct
+        df_with_features, feature_cols=feature_cols,
+        lookahead_days=lookahead_days, threshold_pct=threshold_pct
     )
 
     split_idx = int(len(ml_df) * (1 - test_size))
