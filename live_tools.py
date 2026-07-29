@@ -995,7 +995,7 @@ new ResizeObserver(()=>{pc.applyOptions({width:document.getElementById('price-ch
 
 // ---- Init ----
 document.querySelectorAll('[data-iv]').forEach(b=>b.classList.toggle('active',b.dataset.iv===currentInterval));
-buildMarkers();renderTradesPanel();
+renderTables();buildMarkers();renderTradesPanel();
 </script>
 </body>
 </html>"""
