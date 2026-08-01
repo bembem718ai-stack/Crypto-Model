@@ -49,12 +49,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run confluence check
+      - name: Run Signal check
         env:
           ADANOS_API_KEY: ${{ secrets.ADANOS_API_KEY }}
         run: >
-          python live_tools.py check BTC --confluence --log-all
-          --ml-bull-min 55 --ml-bear-max 45
+        
+        python live_tools.py check BTC --log-all --confirm-days 2
 
       - name: Build hosted charts (docs/ folder, served by GitHub Pages)
         run: |
