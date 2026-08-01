@@ -77,6 +77,58 @@ def fire_alert(ticker: str, direction: str, decision: str, final_score: float):
               f"winsound is Windows-only, this is expected on Mac/Linux")
 
 
+def check_persistence(log_path: str, ticker: str, direction: str,
+                      confirm_days: int = 2) -> dict:
+    """
+    Live counterpart to the backtest's --confirm-days filter: require the
+    SAME direction on `confirm_days` consecutive DAYS before a signal counts.
+
+    Validated on both tickers (3.0xATR/1.5x, long side, bar 60):
+        BTC  116 trades +0.17R  ->  62 trades +0.28R
+        ETH  104 trades +0.08R  ->  51 trades +0.23R
+    Pooled: 220 trades +0.127R -> 113 trades +0.258R, with total return
+    slightly HIGHER from half the exposure. What it removes is not losers
+    but non-contributors (the dropped BTC trades averaged +0.04R each).
+
+    WHY DAYS, NOT CHECKS: Step 1 uses 4h bars and Step 3 uses DAILY data,
+    so two hourly checks are one observation sampled twice. Days are the
+    shortest spacing at which the inputs have actually refreshed.
+
+    Reads the shared signal log, collapses it to one reading per calendar
+    day (the last of each day), and compares the most recent
+    `confirm_days` days. If there aren't that many distinct days on
+    record yet, it returns confirmed=False — being unable to verify is
+    treated as not confirmed, never as confirmed.
+    """
+    if confirm_days <= 1:
+        return {"confirmed": True, "reason": "persistence filter off"}
+
+    try:
+        log = load_log(log_path, ticker=ticker)
+    except Exception as e:  # noqa: BLE001
+        return {"confirmed": False, "reason": f"could not read log ({type(e).__name__})"}
+
+    if log.empty:
+        return {"confirmed": False, "reason": "no history logged yet"}
+
+    daily = (log.set_index("timestamp_utc")
+                .sort_index()["direction"]
+                .resample("D").last()
+                .dropna())
+    if len(daily) < confirm_days - 1:
+        return {"confirmed": False,
+                "reason": f"only {len(daily)} day(s) of history, need "
+                          f"{confirm_days - 1} prior day(s)"}
+
+    prior = list(daily.iloc[-(confirm_days - 1):])
+    if all(d == direction for d in prior):
+        return {"confirmed": True,
+                "reason": f"{direction} held {confirm_days} days running"}
+    return {"confirmed": False,
+            "reason": f"{direction} today but prior day(s) were "
+                      f"{', '.join(prior)} — not {confirm_days} days running"}
+
+
 def passes_confluence(result: dict, ml_bull_min: float = 55.0,
                       ml_bear_max: float = 45.0, long_only: bool = False) -> dict:
     """
@@ -129,7 +181,7 @@ def passes_confluence(result: dict, ml_bull_min: float = 55.0,
 def run_single_check(tickers: list, log_file: str = "signal_log.csv",
                      confluence: bool = False, ml_bull_min: float = 55.0,
                      ml_bear_max: float = 45.0, log_all: bool = False,
-                     long_only: bool = False) -> list:
+                     long_only: bool = False, confirm_days: int = 1) -> list:
     """
     ONE pass over `tickers` — no loop, no sleep, no desktop alerts. Built for
     headless/scheduled environments (GitHub Actions, cron, etc.) where an
@@ -167,6 +219,13 @@ def run_single_check(tickers: list, log_file: str = "signal_log.csv",
             final_score = result["combined"]["final_score"]
             ml_conf = result["combined"].get("ml_confidence")
             ml_str = f", ML={ml_conf:.0f}%" if ml_conf is not None else ""
+
+            # Persistence check runs BEFORE logging, so today's own entry
+            # can't be mistaken for yesterday's confirmation.
+            persist = check_persistence(log_file, ticker, direction, confirm_days)
+            if confirm_days > 1 and direction in ("BUY", "STRONG_BUY", "SELL", "STRONG_SELL"):
+                mark = "confirmed" if persist["confirmed"] else "UNCONFIRMED"
+                print(f"      persistence: {mark} — {persist['reason']}")
 
             should_log = True
             if confluence:
@@ -1247,6 +1306,10 @@ def main_check():
                               "which ones qualified, while keeping full history.")
     parser.add_argument("--ml-bull-min", type=float, default=55.0)
     parser.add_argument("--ml-bear-max", type=float, default=45.0)
+    parser.add_argument("--confirm-days", type=int, default=1,
+                         help="Require the same direction N days running before a "
+                              "signal counts as confirmed (1 = off). Validated at 2 "
+                              "on both BTC and ETH.")
     parser.add_argument("--long-only", action="store_true",
                          help="Suppress SELL/STRONG_SELL qualifications (short side "
                               "showed ~0R edge in the exit backtest)")
@@ -1254,7 +1317,8 @@ def main_check():
 
     run_single_check(args.tickers, log_file=args.log_file, confluence=args.confluence,
                      ml_bull_min=args.ml_bull_min, ml_bear_max=args.ml_bear_max,
-                     log_all=args.log_all, long_only=args.long_only)
+                     log_all=args.log_all, long_only=args.long_only,
+                     confirm_days=args.confirm_days)
 
 
 # ======================================================================

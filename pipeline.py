@@ -859,7 +859,8 @@ def run_backtest(ticker: str, period: str = "2y", forward_days: int = 5,
 
 def backtest_exits(merged, stop_mult: float = 1.5,
                    target_mult: float = 3.0, max_hold_days: int = 15,
-                   side: str = "both", short_sma_filter: int = 0) -> dict:
+                   side: str = "both", short_sma_filter: int = 0,
+                   confirm_days: int = 1) -> dict:
     """
     Simulates the ATR exit levels on every historical actionable signal:
     entry at that day's close, then walk forward daily bars until the
@@ -889,9 +890,33 @@ def backtest_exits(merged, stop_mult: float = 1.5,
     if short_sma_filter and short_sma_filter > 0:
         df["_trend_sma"] = df["Close"].rolling(short_sma_filter).mean()
 
+    # PERSISTENCE FILTER: require the SAME direction on confirm_days
+    # consecutive days before entering. confirm_days=1 is the current
+    # behavior (enter the moment the signal appears).
+    #
+    # Why days and not minutes: Step 1 uses 4h bars and Step 3 uses DAILY
+    # data, so two checks 20 minutes apart are the same observation sampled
+    # twice, not two pieces of evidence. Daily spacing is the shortest
+    # interval where the inputs have actually refreshed.
+    #
+    # The cost is entry delay. Trades here resolve in ~9 days on average,
+    # so waiting 2-3 days can eat a meaningful part of the move - which is
+    # exactly what this measures rather than assumes.
+    dirs = df["direction"].tolist()
+
+    def _confirmed(i):
+        if confirm_days <= 1:
+            return True
+        if i < confirm_days - 1:
+            return False
+        window = dirs[i - confirm_days + 1: i + 1]
+        return all(d == window[-1] for d in window)
+
     trades = []
     idx = df.index.to_list()
     for i, (day, row) in enumerate(df.iterrows()):
+        if not _confirmed(i):
+            continue
         d = row["direction"]
         if d not in ("BUY", "STRONG_BUY", "SELL", "STRONG_SELL"):
             continue
@@ -948,11 +973,12 @@ def backtest_exits(merged, stop_mult: float = 1.5,
                        "days_held": (idx.index(exit_day) - i) if exit_day is not None else max_hold_days})
 
     if not trades:
-        return {"n": 0, "trades": trades}
+        return {"n": 0, "trades": trades, "confirm_days": confirm_days}
     tdf = pd.DataFrame(trades)
     nonwin = tdf.loc[tdf["outcome"] != "target", "mfe_pct_of_target"]
     return {
         "n": len(tdf),
+        "confirm_days": confirm_days,
         "target_rate": (tdf["outcome"] == "target").mean(),
         "stop_rate": tdf["outcome"].isin(["stop", "ambiguous_stop"]).mean(),
         "ambiguous_n": int((tdf["outcome"] == "ambiguous_stop").sum()),
@@ -1132,6 +1158,8 @@ def print_exit_report(res: dict, stop_mult: float, target_mult: float, max_hold_
     print(f"\n{'=' * 74}")
     print(f"  EXIT BACKTEST - target {target_mult}xATR / stop {stop_mult}xATR, "
           f"max hold {max_hold_days} days")
+    if res.get("confirm_days", 1) > 1:
+        print(f"  Persistence filter: same direction {res['confirm_days']} days running")
     print(f"{'=' * 74}")
     if res["n"] == 0:
         print("  No actionable signals with enough forward data to simulate.")
@@ -1305,7 +1333,7 @@ def main_backtest():
                          help="Run BOTH extreme_fear_mode settings back to back and "
                               "print a focused diff on extreme-fear days, instead of "
                               "a single run.")
-    parser.add_argument("--buy-bar", type=float, default=70,
+    parser.add_argument("--buy-bar", type=float, default=60,
                          help="BUY threshold to test (default 60). Pair with --exits "
                               "to see whether moving it improves expectancy.")
     parser.add_argument("--sell-bar", type=float, default=40,
@@ -1333,6 +1361,10 @@ def main_backtest():
                          help="Timeout for the exit simulation (default 15 trading days)")
     parser.add_argument("--side", choices=("both", "long", "short"), default="both",
                          help="Restrict the exit simulation to one side (default both)")
+    parser.add_argument("--confirm-days", type=int, default=1,
+                         help="Require the same direction N days running before "
+                              "entering (1 = enter immediately, current behavior). "
+                              "Tests whether persistence filtering beats speed.")
     parser.add_argument("--short-sma-filter", type=int, default=0,
                          help="Only take SHORT trades when Close is below this N-day "
                               "SMA (0 = off). Tests the 'only short downtrends' fix.")
@@ -1361,7 +1393,8 @@ def main_backtest():
         res = backtest_exits(merged, stop_mult=args.stop_mult,
                              target_mult=args.target_mult,
                              max_hold_days=args.max_hold_days, side=args.side,
-                             short_sma_filter=args.short_sma_filter)
+                             short_sma_filter=args.short_sma_filter,
+                             confirm_days=args.confirm_days)
         if args.exits:
             print_exit_report(res, args.stop_mult, args.target_mult, args.max_hold_days)
         if args.prob_table:
