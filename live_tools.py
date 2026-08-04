@@ -409,6 +409,9 @@ LOG_COLUMNS = [
     "indicator_final_score", "final_score", "decision", "direction",
     "vix_level", "gate_decision", "gate_multiplier",
     "target_price", "stop_price", "atr", "risk_reward", "ml_confidence",
+    # Added 2026-08: raw sentiment (makes the never-fired gate evaluable)
+    # and cache provenance. append_ping_to_log migrates old headers.
+    "sentiment_score", "sentiment_mentions", "gate_cache_hit",
 ]
 
 # How each direction label is drawn on the price panel.
@@ -459,12 +462,263 @@ def append_ping_to_log(result: dict, log_path: str = DEFAULT_LOG,
         "atr": exits.get("atr") if exits.get("applicable") else step1.get("atr"),
         "risk_reward": exits.get("risk_reward") if exits.get("applicable") else None,
         "ml_confidence": combined.get("ml_confidence"),
+        "sentiment_score": step2.get("sentiment_score"),
+        "sentiment_mentions": step2.get("sentiment_mentions"),
+        "gate_cache_hit": step2.get("gate_cache_hit"),
     }
 
     header_needed = not os.path.exists(log_path) or os.path.getsize(log_path) == 0
+    if not header_needed:
+        # ONE-TIME MIGRATION: if the file predates newer LOG_COLUMNS,
+        # appending wider rows would silently misalign every column.
+        # Rewrite once with the new header; old rows get NaN in new cols.
+        existing_cols = list(pd.read_csv(log_path, nrows=0).columns)
+        if existing_cols != LOG_COLUMNS:
+            old = pd.read_csv(log_path)
+            for c in LOG_COLUMNS:
+                if c not in old.columns:
+                    old[c] = None
+            old[LOG_COLUMNS].to_csv(log_path, index=False)
+            print(f"  [log] migrated {log_path} to {len(LOG_COLUMNS)}-column schema")
     pd.DataFrame([row], columns=LOG_COLUMNS).to_csv(
         log_path, mode="a", header=header_needed, index=False)
     return row
+
+
+# ======================================================================
+# OUTCOME TRACKING — scoring the LIVE system (weakness #3)
+# ======================================================================
+# The log had 373 rows and zero outcome columns: nothing ever recorded
+# whether a signal hit its target or its stop. Worse, the 30-minute
+# cadence logs the same standing signal dozens of times, so "43 BUY
+# rows" was really ~4 events. This section fixes both:
+#
+#   1. extract_episodes() collapses consecutive same-family rows into
+#      EPISODES — one tradeable event each, entered at the first row's
+#      logged price/target/stop.
+#   2. resolve_episode() walks daily bars AFTER the entry date using the
+#      SAME rules as backtest_exits (target if High>=target, stop if
+#      Low<=stop, both in one bar = ambiguous_stop, pessimistic), so
+#      live results are directly comparable to backtest results. Any
+#      rule drift here would make the comparison meaningless.
+#   3. resolve_outcomes() writes/updates signal_outcomes.csv. Costs ZERO
+#      Adanos requests — daily klines only.
+#
+# Live forward outcomes are the one kind of evidence immune to every
+# in-sample problem the backtests have. This file is the project's
+# ground truth from now on; it just needs months to accumulate.
+
+OUTCOMES_FILE = "signal_outcomes.csv"
+_LONG_FAMILY = ("BUY", "STRONG_BUY")
+_SHORT_FAMILY = ("SELL", "STRONG_SELL")
+
+
+def _family(direction: str):
+    if direction in _LONG_FAMILY:
+        return "long"
+    if direction in _SHORT_FAMILY:
+        return "short"
+    return None
+
+
+def extract_episodes(log_df: pd.DataFrame) -> list:
+    """Collapse the ping log into signal episodes. Pure.
+
+    An episode starts when a ticker's direction ENTERS the long or short
+    family and ends when it LEAVES that family (WATCH/AVOID or the
+    opposite family). Strength changes within a family (BUY ->
+    STRONG_BUY) do NOT start a new episode — same position, higher
+    conviction. Entry price/target/stop are the FIRST row's logged
+    values: that is what a follower of the system would actually have
+    acted on. Episodes without logged target+stop are skipped (WATCH
+    rows carry none)."""
+    if log_df is None or log_df.empty:
+        return []
+    df = log_df.copy()
+    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], format="mixed")
+    episodes = []
+    for ticker, g in df.groupby("ticker"):
+        g = g.sort_values("timestamp_utc")
+        cur = None
+        for _, row in g.iterrows():
+            fam = _family(row.get("direction"))
+            if cur is None:
+                if fam is not None:
+                    cur = {"row": row, "fam": fam,
+                           "last_ts": row["timestamp_utc"],
+                           "n_rows": 1, "peak_dir": row["direction"]}
+            else:
+                if fam == cur["fam"]:
+                    cur["last_ts"] = row["timestamp_utc"]
+                    cur["n_rows"] += 1
+                    if str(row["direction"]).startswith("STRONG"):
+                        cur["peak_dir"] = row["direction"]
+                else:
+                    episodes.append(cur)
+                    cur = ({"row": row, "fam": fam,
+                            "last_ts": row["timestamp_utc"],
+                            "n_rows": 1, "peak_dir": row["direction"]}
+                           if fam is not None else None)
+        if cur is not None:
+            episodes.append(cur)
+
+    out = []
+    for ep in episodes:
+        r = ep["row"]
+        tgt, stp = r.get("target_price"), r.get("stop_price")
+        if tgt != tgt or stp != stp or tgt is None or stp is None:
+            continue  # no exit levels logged (e.g. WATCH-band entries)
+        out.append({
+            "episode_id": f"{r['ticker']}_{r['timestamp_utc'].strftime('%Y%m%dT%H%M%S')}",
+            "ticker": r["ticker"],
+            "side": ep["fam"],
+            "entry_time_utc": r["timestamp_utc"].isoformat(),
+            "entry_direction": r["direction"],
+            "peak_direction": ep["peak_dir"],
+            "entry_price": float(r["price"]),
+            "target_price": float(tgt),
+            "stop_price": float(stp),
+            "entry_score": float(r["final_score"]),
+            "atr": float(r["atr"]) if r.get("atr") == r.get("atr") else float("nan"),
+            "vix_level": float(r["vix_level"]) if r.get("vix_level") == r.get("vix_level") else float("nan"),
+            "n_log_rows": ep["n_rows"],
+            "signal_last_seen_utc": ep["last_ts"].isoformat(),
+        })
+    return out
+
+
+def resolve_episode(episode: dict, bars: pd.DataFrame,
+                     max_hold_days: int = 15, now=None,
+                     bars_per_day: int = 6) -> dict:
+    """Resolve one episode against OHLC bars. Pure.
+
+    *** GRANULARITY MUST MATCH THE LEVELS. *** Live exit levels come from
+    4h ATR: stops sit ~1.2% from entry. A DAILY bar routinely spans more
+    than that, so scanning daily bars marks almost every episode as an
+    immediate stop no matter what the market did — an artifact, not a
+    result. (This was a real bug here: the first live run reported 4/4
+    stops, every one on day 1.) So live episodes are resolved against 4h
+    bars, matching the 4h ATR their levels were built from. The backtest
+    is internally consistent the other way: daily ATR, daily bars.
+
+    bars_per_day converts the max_hold_days budget into bars (6 for 4h).
+
+    Rules otherwise mirror backtest_exits: scan bars strictly AFTER the
+    entry timestamp, target/stop both touched in one bar ->
+    ambiguous_stop (pessimistic), budget exhausted -> timeout at last
+    close, not enough bars yet -> "open" with MFE so far. Intraday
+    timestamps let us cut at the exact entry moment rather than dropping
+    the whole entry day, so this is if anything less conservative than
+    the daily backtest — noted so the comparison stays honest."""
+    now = now or datetime.now(timezone.utc)
+    entry_ts = pd.to_datetime(episode["entry_time_utc"])
+    if entry_ts.tzinfo is not None:
+        entry_ts = entry_ts.tz_localize(None)
+    entry = episode["entry_price"]
+    target, stop = episode["target_price"], episode["stop_price"]
+    is_long = episode["side"] == "long"
+    tgt_dist = abs(target - entry)
+    stop_dist = abs(entry - stop)
+
+    d = bars.copy()
+    d.index = pd.to_datetime(d.index)
+    if getattr(d.index, "tz", None) is not None:
+        d.index = d.index.tz_localize(None)
+    max_bars = max(1, int(max_hold_days * bars_per_day))
+    fwd = d[d.index > entry_ts].iloc[:max_bars]
+
+    res = dict(episode)
+    res.update({"status": "open", "outcome": None, "exit_date": None,
+                "bars_held": len(fwd),
+                "days_held": round(len(fwd) / bars_per_day, 2), "pnl_r": None,
+                "mfe_pct_of_target": 0.0, "resolved_at_utc": now.isoformat()})
+    mfe = 0.0
+    for day, row in fwd.iterrows():
+        hi, lo = row["High"], row["Low"]
+        fav = (hi - entry) if is_long else (entry - lo)
+        if tgt_dist:
+            mfe = max(mfe, fav / tgt_dist)
+        hit_t = hi >= target if is_long else lo <= target
+        hit_s = lo <= stop if is_long else hi >= stop
+        if hit_t or hit_s:
+            if hit_t and hit_s:
+                outcome, pnl_r = "ambiguous_stop", -1.0
+            elif hit_t:
+                outcome, pnl_r = "target", (tgt_dist / stop_dist if stop_dist else float("nan"))
+            else:
+                outcome, pnl_r = "stop", -1.0
+            n_bars = list(fwd.index).index(day) + 1
+            res.update({"status": "closed", "outcome": outcome,
+                        "exit_date": day.isoformat(),
+                        "bars_held": n_bars,
+                        "days_held": round(n_bars / bars_per_day, 2),
+                        "pnl_r": round(pnl_r, 3),
+                        "mfe_pct_of_target": round(mfe * 100, 1)})
+            return res
+    if len(fwd) >= max_bars:
+        last_close = fwd.iloc[-1]["Close"]
+        pnl = ((last_close - entry) if is_long else (entry - last_close))
+        res.update({"status": "closed", "outcome": "timeout",
+                    "exit_date": fwd.index[-1].isoformat(),
+                    "bars_held": max_bars, "days_held": max_hold_days,
+                    "pnl_r": round(pnl / stop_dist, 3) if stop_dist else None,
+                    "mfe_pct_of_target": round(mfe * 100, 1)})
+    else:
+        res["mfe_pct_of_target"] = round(mfe * 100, 1)
+    return res
+
+
+def resolve_outcomes(log_path: str = DEFAULT_LOG, out_path: str = OUTCOMES_FILE,
+                      max_hold_days: int = 15, fetcher=None, now=None,
+                      interval: str = "4h", bars_per_day: int = 6) -> pd.DataFrame:
+    """Extract episodes from the log, resolve each against 4h klines, and
+    write signal_outcomes.csv. Open episodes are re-resolved every run;
+    closed ones can only stay closed (past bars don't change).
+
+    4h, not daily: live levels come from 4h ATR (see resolve_episode)."""
+    need = int(max_hold_days * bars_per_day) + 40
+    fetcher = fetcher or (lambda tkr: cf.fetch_klines(
+        cf.to_binance_symbol(tkr), interval=interval, limit=min(need, 1000)))
+    log_df = pd.read_csv(log_path)
+    episodes = extract_episodes(log_df)
+    if not episodes:
+        print("No resolvable episodes in the log yet.")
+        return pd.DataFrame()
+    daily_by_ticker, results = {}, []
+    for ep in episodes:
+        t = ep["ticker"]
+        if t not in daily_by_ticker:
+            daily_by_ticker[t] = fetcher(t)
+        results.append(resolve_episode(ep, daily_by_ticker[t],
+                                        max_hold_days=max_hold_days, now=now,
+                                        bars_per_day=bars_per_day))
+    out = pd.DataFrame(results)
+    out.to_csv(out_path, index=False)
+    closed = out[out["status"] == "closed"]
+    print(f"{len(out)} episodes ({len(closed)} closed, {len(out)-len(closed)} open) "
+          f"-> {out_path}")
+    if len(closed):
+        print(f"  closed: target {(closed['outcome']=='target').mean()*100:.0f}%, "
+              f"stop {(closed['outcome'].isin(['stop','ambiguous_stop'])).mean()*100:.0f}%, "
+              f"mean {closed['pnl_r'].mean():+.2f}R over {len(closed)} episodes")
+    return out
+
+
+def compare_live_to_backtest(outcomes_df: pd.DataFrame, min_n: int = 15) -> str:
+    """Live target-rate by score band vs the empirical calibration table.
+    Honest by construction: below min_n closed episodes total it says so
+    and refuses to draw conclusions."""
+    closed = outcomes_df[outcomes_df["status"] == "closed"] if len(outcomes_df) else outcomes_df
+    lines = ["LIVE vs BACKTEST calibration", "=" * 34]
+    if len(closed) < min_n:
+        lines.append(f"INSUFFICIENT: {len(closed)} closed episodes (need {min_n}). "
+                     f"No conclusions yet — this is the file to watch, not a verdict.")
+        return "\n".join(lines)
+    band = (closed["entry_score"] // 10 * 10).astype(int)
+    for b, g in closed.groupby(band):
+        lines.append(f"  score {b}-{b+10}: n={len(g)}, target {(g['outcome']=='target').mean()*100:.0f}%, "
+                     f"mean {g['pnl_r'].mean():+.2f}R")
+    return "\n".join(lines)
 
 
 def load_log(log_path: str = DEFAULT_LOG, ticker: str = None) -> pd.DataFrame:
@@ -1326,7 +1580,7 @@ def main_check():
 # ======================================================================
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("monitor", "graph", "check"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("monitor", "graph", "check", "outcomes"):
         print("Usage: python live_tools.py <monitor|graph|check> [args...]\n"
               "  monitor BTC ETH ...  - continuous loop + desktop alerts (needs a machine that stays on)\n"
               "  graph BTC            - interactive chart with live price\n"
@@ -1337,6 +1591,20 @@ def main():
     command = sys.argv.pop(1)
     if command == "monitor":
         main_monitor()
+    elif command == "outcomes":
+        import argparse as _ap
+        p = _ap.ArgumentParser(description="Resolve live signal episodes against "
+                                            "daily bars and write signal_outcomes.csv "
+                                            "(0 Adanos requests)")
+        p.add_argument("--log-file", default=DEFAULT_LOG)
+        p.add_argument("--out", default=OUTCOMES_FILE)
+        p.add_argument("--max-hold-days", type=int, default=15)
+        p.add_argument("--compare", action="store_true",
+                       help="Also print live-vs-backtest calibration by score band")
+        a = p.parse_args(sys.argv[2:])
+        odf = resolve_outcomes(a.log_file, a.out, max_hold_days=a.max_hold_days)
+        if a.compare and len(odf):
+            print("\n" + compare_live_to_backtest(odf))
     elif command == "graph":
         main_graph()
     elif command == "check":

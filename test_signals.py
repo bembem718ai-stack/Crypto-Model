@@ -44,6 +44,7 @@ import sys
 from datetime import datetime, timezone
 
 import pytest
+import pandas as pd
 
 # Make the pipeline modules importable no matter where pytest is invoked
 # from, as long as this test file sits beside them.
@@ -723,3 +724,1041 @@ class TestConfluenceGate:
         import live_tools as lt
         assert lt.passes_confluence(self._mk("BUY", 50), ml_bull_min=50.0)["qualifies"]
         assert lt.passes_confluence(self._mk("SELL", 50), ml_bear_max=50.0)["qualifies"]
+
+
+# ======================================================================
+# ROBUSTNESS VALIDATION LOGIC (pipeline.py robustness command)
+# ======================================================================
+# The verdict functions are the pre-registered test for the 4-year
+# failure's rescue candidates. They MUST behave exactly as documented:
+# any under-sampled cell forces INSUFFICIENT_DATA (never a silent pass),
+# and the VIX edge only replicates if it holds in BOTH halves on EVERY
+# ticker. All synthetic, all offline.
+
+class TestRobustnessValidation:
+
+    @staticmethod
+    def _trade(date, direction, pnl_r, outcome="target", vix=20.0):
+        import pandas as pd
+        return {"date": pd.Timestamp(date), "direction": direction,
+                "outcome": outcome, "pnl_r": pnl_r, "vix_level": vix,
+                "score": 65.0, "mfe_pct_of_target": 50.0, "days_held": 5}
+
+    def _cells(self, trades):
+        return um.split_trades(trades, vix_threshold=25.0)
+
+    def _bulk(self, start_year, direction, pnl_r, vix, n=12, outcome=None):
+        if outcome is None:
+            outcome = "target" if pnl_r > 0 else "stop"
+        return [self._trade(f"{start_year}-01-{d+1:02d}", direction, pnl_r,
+                             outcome=outcome, vix=vix) for d in range(n)]
+
+    def test_subset_stats_basic(self):
+        trades = [self._trade("2024-01-01", "BUY", 2.0, "target"),
+                  self._trade("2024-01-02", "BUY", -1.0, "stop"),
+                  self._trade("2024-01-03", "BUY", -1.0, "ambiguous_stop"),
+                  self._trade("2024-01-04", "BUY", 0.3, "timeout")]
+        st = um.subset_stats(trades)
+        assert st["n"] == 4
+        assert st["target_rate"] == pytest.approx(0.25)
+        assert st["stop_rate"] == pytest.approx(0.5)   # stop + ambiguous_stop
+        assert st["timeout_rate"] == pytest.approx(0.25)
+        assert st["expectancy_r"] == pytest.approx(0.075)
+
+    def test_subset_stats_empty(self):
+        assert um.subset_stats([])["n"] == 0
+
+    def test_split_halves_by_date_range_not_count(self):
+        # 3 early trades, 1 late trade, 4-year span: the midpoint is
+        # time-based, so the lone 2025 trade must sit alone in h2.
+        trades = [self._trade("2022-01-01", "BUY", 1.0),
+                  self._trade("2022-02-01", "BUY", 1.0),
+                  self._trade("2022-03-01", "BUY", 1.0),
+                  self._trade("2025-12-01", "BUY", 1.0)]
+        cells = self._cells(trades)
+        assert len(cells["h1"]) == 3 and len(cells["h2"]) == 1
+
+    def test_split_vix_threshold_boundary(self):
+        trades = [self._trade("2024-01-01", "BUY", 1.0, vix=25.0),   # inclusive
+                  self._trade("2024-01-02", "BUY", 1.0, vix=24.99)]
+        cells = self._cells(trades)
+        assert len(cells["vix_stressed"]) == 1
+        assert len(cells["vix_normal"]) == 1
+
+    def test_split_nan_vix_excluded_from_vix_cells(self):
+        trades = [self._trade("2024-01-01", "BUY", 1.0, vix=float("nan"))]
+        cells = self._cells(trades)
+        assert len(cells["vix_stressed"]) == 0 and len(cells["vix_normal"]) == 0
+        assert len(cells["all"]) == 1  # still counted overall
+
+    def test_vix_verdict_replicated(self):
+        trades = (self._bulk(2022, "BUY", +2.0, vix=30) +   # h1 stressed +
+                  self._bulk(2022, "BUY", -1.0, vix=15) +   # h1 normal  -
+                  self._bulk(2025, "BUY", +2.0, vix=30) +   # h2 stressed +
+                  self._bulk(2025, "BUY", -1.0, vix=15))    # h2 normal  -
+        v = um.vix_replication_verdict({"BTC": self._cells(trades)})
+        assert v["verdict"] == "REPLICATED"
+
+    def test_vix_verdict_fails_if_one_half_fails(self):
+        trades = (self._bulk(2022, "BUY", +2.0, vix=30) +
+                  self._bulk(2022, "BUY", -1.0, vix=15) +
+                  self._bulk(2025, "BUY", -0.5, vix=30) +   # h2 stressed NEGATIVE
+                  self._bulk(2025, "BUY", -1.0, vix=15))
+        v = um.vix_replication_verdict({"BTC": self._cells(trades)})
+        assert v["verdict"] == "NOT_REPLICATED"
+
+    def test_vix_verdict_stressed_must_be_positive_not_just_better(self):
+        # stressed -0.2R "beats" normal -1.0R but is still a losing gate
+        trades = (self._bulk(2022, "BUY", -0.2, vix=30) +
+                  self._bulk(2022, "BUY", -1.0, vix=15) +
+                  self._bulk(2025, "BUY", -0.2, vix=30) +
+                  self._bulk(2025, "BUY", -1.0, vix=15))
+        v = um.vix_replication_verdict({"BTC": self._cells(trades)})
+        assert v["verdict"] == "NOT_REPLICATED"
+
+    def test_vix_verdict_insufficient_forces_no_conclusion(self):
+        # Only 3 stressed trades in h2: below MIN_N -> INSUFFICIENT_DATA
+        trades = (self._bulk(2022, "BUY", +2.0, vix=30) +
+                  self._bulk(2022, "BUY", -1.0, vix=15) +
+                  self._bulk(2025, "BUY", +2.0, vix=30, n=3) +
+                  self._bulk(2025, "BUY", -1.0, vix=15))
+        v = um.vix_replication_verdict({"BTC": self._cells(trades)})
+        assert v["verdict"] == "INSUFFICIENT_DATA"
+
+    def test_vix_verdict_every_ticker_must_pass(self):
+        good = (self._bulk(2022, "BUY", +2.0, vix=30) +
+                self._bulk(2022, "BUY", -1.0, vix=15) +
+                self._bulk(2025, "BUY", +2.0, vix=30) +
+                self._bulk(2025, "BUY", -1.0, vix=15))
+        bad = (self._bulk(2022, "BUY", -1.0, vix=30) +
+               self._bulk(2022, "BUY", -1.0, vix=15) +
+               self._bulk(2025, "BUY", -1.0, vix=30) +
+               self._bulk(2025, "BUY", -1.0, vix=15))
+        v = um.vix_replication_verdict({"BTC": self._cells(good),
+                                        "SOL": self._cells(bad)})
+        assert v["verdict"] == "NOT_REPLICATED"
+
+    def test_short_verdict_majority_rule(self):
+        pos = (self._bulk(2022, "SELL", +0.5, vix=20) +
+               self._bulk(2025, "SELL", +0.5, vix=20))
+        neg = (self._bulk(2022, "SELL", -0.5, vix=20) +
+               self._bulk(2025, "SELL", -0.5, vix=20))
+        v = um.short_side_verdict({"BTC": self._cells(pos),
+                                   "ETH": self._cells(pos),
+                                   "SOL": self._cells(neg)})
+        assert v["verdict"] == "SHORTS_HOLD_UP" and v["tickers_passing"] == 2
+        v2 = um.short_side_verdict({"BTC": self._cells(neg),
+                                    "ETH": self._cells(neg),
+                                    "SOL": self._cells(pos)})
+        assert v2["verdict"] == "RECOMMEND_LONG_ONLY"
+
+    def test_report_renders_and_states_criteria(self):
+        trades = (self._bulk(2022, "BUY", +2.0, vix=30) +
+                  self._bulk(2025, "SELL", -1.0, vix=15))
+        report = um.build_robustness_report({"BTC": self._cells(trades)},
+                                            years=4, vix_threshold=25.0,
+                                            config_desc="test config")
+        assert "Pre-registered criteria" in report
+        assert "No defaults were changed" in report
+        assert "| All trades |" in report and "Verdicts" in report
+
+    def test_period_to_years(self):
+        assert um._period_to_years("2y") == pytest.approx(2.0)
+        assert um._period_to_years("6mo") == pytest.approx(0.5)
+        assert um._period_to_years("max") == pytest.approx(8.0)
+        assert um._period_to_years("garbage") == pytest.approx(2.0)  # safe fallback
+
+    def test_attach_vix_missing_date_gets_nan(self):
+        import pandas as pd
+        merged = pd.DataFrame({"vix_level": [22.0]},
+                              index=[pd.Timestamp("2024-01-01")])
+        trades = [{"date": pd.Timestamp("2024-01-01")},
+                  {"date": pd.Timestamp("2024-06-01")}]
+        out = um.attach_vix_to_trades(trades, merged)
+        assert out[0]["vix_level"] == 22.0
+        assert out[1]["vix_level"] != out[1]["vix_level"]  # NaN
+
+
+# ======================================================================
+# AUDIT HARNESS (audit.py)
+# ======================================================================
+# The audit is what gets trusted when deciding whether a finding still
+# holds, so its classification logic needs testing as much as the model
+# does. Two failure modes matter most:
+#   1. a check that PASSES on insufficient data (false comfort)
+#   2. a check that FAILS on intentional design (false alarm — this
+#      already happened once with STRONG_* conviction scaling)
+# Both are covered below. All offline.
+
+class TestAuditHarness:
+
+    @staticmethod
+    def _audit():
+        import audit
+        audit._results.clear()   # module-level accumulator
+        return audit
+
+    @staticmethod
+    def _trades(direction, pnl_r, n, start_year=2024, score=65.0):
+        import pandas as pd
+        return [{"date": pd.Timestamp(f"{start_year}-01-01") + pd.Timedelta(days=d),
+                 "direction": direction, "pnl_r": pnl_r, "score": score,
+                 "outcome": "target" if pnl_r > 0 else "stop",
+                 "vix_level": 20.0, "mfe_pct_of_target": 50.0, "days_held": 5}
+                for d in range(n)]
+
+    # --- structural checks must not fire on intentional design ---------
+
+    def test_exit_math_accepts_conviction_scaling(self):
+        # STRONG_* targets are 1.333x wider with the same stop, so R:R is
+        # 2.667 BY DESIGN. A naive "must equal 2.0" check false-alarms here.
+        a = self._audit()
+        assert a.check_exit_math() == a.PASS
+
+    def test_ml_display_only_is_behavioral_not_grep(self):
+        # ml_confidence legitimately appears as an OUTPUT field, so the
+        # check must test behavior: varying ML must not move the score.
+        a = self._audit()
+        assert a.check_ml_is_display_only() == a.PASS
+
+    def test_ml_check_would_catch_a_rearmed_engine(self):
+        # Directly verify the property the check relies on: with ml_weight
+        # turned up, ML DOES move the score — so the check has real teeth.
+        step2 = {"gated_score": 72.0}
+        def score(ml):
+            return um.combine_and_decide(
+                step2, {"indicator_final_score": 68.0, "vix_level": 18.0,
+                        "ai_confidence_score": ml, "ml_ok": True},
+                ml_weight=1.0)["final_score"]
+        assert score(1.0) != score(99.0)
+
+    def test_squeeze_depth_regression_guard(self):
+        a = self._audit()
+        assert a.check_squeeze_depth_scaling() == a.PASS
+
+    # --- live-data checks must not pass on thin or bad data ------------
+
+    def test_param_check_insufficient_not_pass(self):
+        a = self._audit()
+        import pipeline as um_
+        # Force both arms to return too few trades
+        orig = um_.backtest_exits
+        try:
+            um_.backtest_exits = lambda *ar, **kw: {"n": 3, "expectancy_r": 5.0}
+            st = a.check_param_helps(
+                "BTC", None, "fake filter",
+                {"confirm_days": 1}, {"confirm_days": 2})
+        finally:
+            um_.backtest_exits = orig
+        assert st == a.INSUFFICIENT   # NOT pass, despite a huge fake gain
+
+    def test_param_check_grades_gain_correctly(self):
+        a = self._audit()
+        import pipeline as um_
+        orig = um_.backtest_exits
+        outcomes = {}
+        try:
+            for label, on_exp in (("big", 0.50), ("small", 0.02), ("negative", -0.20)):
+                seq = iter([{"n": 40, "expectancy_r": 0.0},
+                            {"n": 40, "expectancy_r": on_exp}])
+                um_.backtest_exits = lambda *ar, **kw: next(seq)
+                outcomes[label] = a.check_param_helps(
+                    "BTC", None, f"{label} filter", {"confirm_days": 1}, {"confirm_days": 2})
+        finally:
+            um_.backtest_exits = orig
+        assert outcomes["big"] == a.PASS
+        assert outcomes["small"] == a.DEGRADED   # positive but under the bar
+        assert outcomes["negative"] == a.FAIL
+
+    def test_headline_check_fails_on_sign_flip(self):
+        a = self._audit()
+        cells = {"h1_long": self._trades("BUY", -0.5, 20, 2022),
+                 "h2_long": self._trades("BUY", +0.5, 20, 2025)}
+        cells["all"] = cells["h1_long"] + cells["h2_long"]
+        assert a.check_headline_degradation("BTC", cells) == a.FAIL
+
+    def test_headline_check_flags_regime_dependence_as_degraded(self):
+        a = self._audit()
+        cells = {"h1_long": self._trades("BUY", +0.05, 20, 2022),
+                 "h2_long": self._trades("BUY", +1.20, 20, 2025)}
+        cells["all"] = cells["h1_long"] + cells["h2_long"]
+        # Both halves positive but far apart -> works, but regime-dependent
+        assert a.check_headline_degradation("BTC", cells) == a.DEGRADED
+
+    def test_headline_check_insufficient_on_thin_halves(self):
+        a = self._audit()
+        cells = {"h1_long": self._trades("BUY", +1.0, 4, 2022),
+                 "h2_long": self._trades("BUY", +1.0, 4, 2025)}
+        cells["all"] = cells["h1_long"] + cells["h2_long"]
+        assert a.check_headline_degradation("BTC", cells) == a.INSUFFICIENT
+
+    def test_score_band_check_fails_when_score_does_not_rank(self):
+        a = self._audit()
+        # Higher band does WORSE -> the buy bar is arbitrary
+        cells = {"all": (self._trades("BUY", +0.6, 20, score=65.0) +
+                         self._trades("BUY", -0.6, 20, score=75.0))}
+        assert a.check_score_bands("BTC", cells) == a.FAIL
+
+    def test_score_band_check_passes_when_score_ranks(self):
+        a = self._audit()
+        cells = {"all": (self._trades("BUY", -0.2, 20, score=65.0) +
+                         self._trades("BUY", +0.8, 20, score=75.0))}
+        assert a.check_score_bands("BTC", cells) == a.PASS
+
+    def test_sizing_replication_insufficient_with_one_ticker(self):
+        a = self._audit()
+        assert a.check_sizing_replication({"BTC": {"trades": []}}) == a.INSUFFICIENT
+
+    # --- report must never hide a failure ------------------------------
+
+    def test_report_counts_every_status(self):
+        a = self._audit()
+        a.record("X", "pass check", a.PASS, "ok")
+        a.record("X", "fail check", a.FAIL, "bad")
+        a.record("X", "skip check", a.SKIP, "no network")
+        rep = a.render_report(["BTC"], 4)
+        assert "| FAIL | 1 |" in rep and "| SKIP | 1 |" in rep
+        assert "Never read a SKIP as a PASS" in rep
+        assert "fail check" in rep
+
+
+# ======================================================================
+# SENTIMENT CACHING + LAZY CALLING (the Adanos quota fix)
+# ======================================================================
+# Adanos is the binding constraint on the whole project (200 req/month
+# free tier vs ~1023 being spent). These tests lock in the two things
+# that could go wrong with the fix:
+#   1. caching an ERROR result, which would silently disable the gate
+#      for hours while looking like it was working
+#   2. a hardcoded skip cutoff that rots when the buy bar or the
+#      weights change
+
+class TestSentimentCaching:
+
+    @staticmethod
+    def _gate(decision="PROCEED", mult=1.0):
+        return {"decision": decision, "gate_multiplier": mult, "reason": "test"}
+
+    def _tmp(self, tmp_path):
+        return str(tmp_path / "sentiment_cache.json")
+
+    def test_first_call_fetches_and_caches(self, tmp_path):
+        calls = []
+        def fetcher(t, **kw):
+            calls.append(t)
+            return self._gate()
+        g = ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=self._tmp(tmp_path),
+                                      fetcher=fetcher)
+        assert calls == ["BTC"] and g["cache_hit"] is False
+        assert ads._load_sentiment_cache(self._tmp(tmp_path))["BTC"]["gate"]["decision"] == "PROCEED"
+
+    def test_second_call_within_ttl_costs_zero_requests(self, tmp_path):
+        calls = []
+        def fetcher(t, **kw):
+            calls.append(t)
+            return self._gate("VETO", 0.5)
+        p = self._tmp(tmp_path)
+        ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=p, fetcher=fetcher)
+        g = ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=p, fetcher=fetcher)
+        assert len(calls) == 1                  # THE POINT: no second request
+        assert g["cache_hit"] is True
+        assert g["gate_multiplier"] == 0.5      # and the real reading survived
+
+    def test_expired_ttl_refetches(self, tmp_path):
+        import datetime as dt
+        calls = []
+        def fetcher(t, **kw):
+            calls.append(t)
+            return self._gate()
+        p = self._tmp(tmp_path)
+        t0 = dt.datetime(2026, 8, 1, 0, 0, tzinfo=dt.timezone.utc)
+        ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=p, fetcher=fetcher, now=t0)
+        later = t0 + dt.timedelta(hours=5)
+        ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=p, fetcher=fetcher, now=later)
+        assert len(calls) == 2
+
+    def test_ttl_zero_disables_caching(self, tmp_path):
+        calls = []
+        def fetcher(t, **kw):
+            calls.append(t); return self._gate()
+        p = self._tmp(tmp_path)
+        for _ in range(3):
+            ads.cached_sentiment_check("BTC", ttl_hours=0, cache_path=p, fetcher=fetcher)
+        assert len(calls) == 3   # original behaviour preserved
+
+    def test_error_results_are_NOT_cached(self, tmp_path):
+        # A LOW_CONFIDENCE from an upstream failure is not a reading.
+        # Caching it would silently switch the gate off for the whole TTL.
+        calls = []
+        def fetcher(t, **kw):
+            calls.append(t); return self._gate("LOW_CONFIDENCE", 1.0)
+        p = self._tmp(tmp_path)
+        ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=p, fetcher=fetcher)
+        ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=p, fetcher=fetcher)
+        assert len(calls) == 2                        # retried, did not cache
+        assert ads._load_sentiment_cache(p) == {}
+
+    def test_tickers_cached_independently(self, tmp_path):
+        calls = []
+        def fetcher(t, **kw):
+            calls.append(t); return self._gate()
+        p = self._tmp(tmp_path)
+        ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=p, fetcher=fetcher)
+        ads.cached_sentiment_check("ETH", ttl_hours=4, cache_path=p, fetcher=fetcher)
+        ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=p, fetcher=fetcher)
+        assert calls == ["BTC", "ETH"]
+
+    def test_stale_cache_used_when_live_call_fails(self, tmp_path):
+        # Going neutral on a failure silently disables the gate. An old
+        # reading is better, but the caller must be able to SEE it is old.
+        import datetime as dt
+        p = self._tmp(tmp_path)
+        t0 = dt.datetime(2026, 8, 1, 0, 0, tzinfo=dt.timezone.utc)
+        ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=p, now=t0,
+                                  fetcher=lambda t, **kw: self._gate("VETO", 0.5))
+        def broken(t, **kw):
+            raise ConnectionError("adanos down")
+        g = ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=p, fetcher=broken,
+                                      now=t0 + dt.timedelta(hours=9))
+        assert g["stale_fallback"] is True
+        assert g["gate_multiplier"] == 0.5
+        assert g["cache_age_hours"] == pytest.approx(9.0, abs=0.1)
+
+    def test_failure_with_no_cache_raises(self, tmp_path):
+        def broken(t, **kw):
+            raise ConnectionError("adanos down")
+        with pytest.raises(ConnectionError):
+            ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=self._tmp(tmp_path),
+                                      fetcher=broken)
+
+    def test_corrupt_cache_file_is_survivable(self, tmp_path):
+        p = self._tmp(tmp_path)
+        open(p, "w").write("{not json")
+        g = ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=p,
+                                      fetcher=lambda t, **kw: self._gate())
+        assert g["cache_hit"] is False
+
+
+class TestLazySentiment:
+
+    def test_cutoff_is_derived_from_bar_and_weights(self):
+        # Production: (60 - 0.4*100) / 0.6 = 33.33
+        assert um.sentiment_call_cutoff(60.0, 0.6, 0.4) == pytest.approx(33.333, abs=0.01)
+
+    def test_cutoff_moves_with_the_buy_bar(self):
+        # THE POINT of deriving it: raising the bar must raise the cutoff,
+        # so the relationship survives a threshold change instead of rotting.
+        lo = um.sentiment_call_cutoff(60.0, 0.6, 0.4)
+        hi = um.sentiment_call_cutoff(70.0, 0.6, 0.4)
+        assert hi > lo
+
+    def test_cutoff_moves_with_the_weights(self):
+        assert um.sentiment_call_cutoff(60.0, 0.8, 0.2) != \
+               um.sentiment_call_cutoff(60.0, 0.6, 0.4)
+
+    def test_cutoff_degenerate_weights_never_skip(self):
+        assert um.sentiment_call_cutoff(60.0, 0.0, 1.0) == 0.0
+
+    def test_lazy_off_by_default_always_calls(self):
+        call, _ = um.should_call_sentiment(5.0)          # no lazy arg
+        assert call is True
+
+    def test_lazy_skips_only_below_cutoff(self):
+        assert um.should_call_sentiment(20.0, lazy=True)[0] is False
+        assert um.should_call_sentiment(40.0, lazy=True)[0] is True
+
+    def test_lazy_boundary_calls_at_cutoff(self):
+        cutoff = um.sentiment_call_cutoff()
+        assert um.should_call_sentiment(cutoff, lazy=True)[0] is True
+        assert um.should_call_sentiment(cutoff - 0.01, lazy=True)[0] is False
+
+    def test_skip_reason_is_explanatory(self):
+        _, why = um.should_call_sentiment(10.0, lazy=True)
+        assert "cutoff" in why and "quota" in why
+
+
+# ======================================================================
+# OUTCOME TRACKING (live_tools.py outcomes — weakness #3)
+# ======================================================================
+# The rules here MUST mirror backtest_exits exactly, or live-vs-backtest
+# comparison is meaningless. Episode extraction must collapse the 30-min
+# ping spam into single events, or "43 BUYs" keeps meaning 4.
+
+import live_tools as lt
+
+
+def _log_rows(rows):
+    cols = ["timestamp_utc","ticker","price","final_score","direction",
+            "target_price","stop_price","atr","vix_level"]
+    return pd.DataFrame([dict(zip(cols, r)) for r in rows])
+
+
+def _daily(start, bars):
+    """4h bars (live exit levels come from 4h ATR, so resolution must
+    match). Kept under the old name so existing cases read unchanged;
+    each 'bar' is now 4 hours, and bars_per_day=6 in the tests below."""
+    idx = pd.date_range(start, periods=len(bars), freq="4h")
+    return pd.DataFrame(bars, index=idx, columns=["High","Low","Close"])
+
+
+class TestEpisodeExtraction:
+
+    def test_consecutive_pings_collapse_to_one_episode(self):
+        rows = [(f"2026-08-01T{h:02d}:00:00","BTC",100.0,65,"BUY",106.0,97.0,2.0,20)
+                for h in range(6)]
+        eps = lt.extract_episodes(_log_rows(rows))
+        assert len(eps) == 1
+        assert eps[0]["n_log_rows"] == 6
+        assert eps[0]["entry_price"] == 100.0   # FIRST row's values
+
+    def test_strength_change_does_not_split_episode(self):
+        rows = [("2026-08-01T10:00:00","BTC",100.0,65,"BUY",106.0,97.0,2.0,20),
+                ("2026-08-01T10:30:00","BTC",101.0,72,"STRONG_BUY",106.0,97.0,2.0,20)]
+        eps = lt.extract_episodes(_log_rows(rows))
+        assert len(eps) == 1 and eps[0]["peak_direction"] == "STRONG_BUY"
+
+    def test_leaving_family_ends_episode_and_reentry_starts_new(self):
+        rows = [("2026-08-01T10:00:00","BTC",100.0,65,"BUY",106.0,97.0,2.0,20),
+                ("2026-08-01T10:30:00","BTC",100.0,50,"WATCH",None,None,2.0,20),
+                ("2026-08-01T11:00:00","BTC",99.0,66,"BUY",105.0,96.0,2.0,20)]
+        eps = lt.extract_episodes(_log_rows(rows))
+        assert len(eps) == 2 and eps[1]["entry_price"] == 99.0
+
+    def test_direct_flip_long_to_short_is_two_episodes(self):
+        rows = [("2026-08-01T10:00:00","BTC",100.0,65,"BUY",106.0,97.0,2.0,20),
+                ("2026-08-01T10:30:00","BTC",100.0,30,"SELL",94.0,103.0,2.0,20)]
+        eps = lt.extract_episodes(_log_rows(rows))
+        assert [e["side"] for e in eps] == ["long","short"]
+
+    def test_tickers_do_not_bleed_into_each_other(self):
+        rows = [("2026-08-01T10:00:00","BTC",100.0,65,"BUY",106.0,97.0,2.0,20),
+                ("2026-08-01T10:10:00","ETH",50.0,64,"BUY",53.0,48.5,1.0,20),
+                ("2026-08-01T10:30:00","BTC",100.5,66,"BUY",106.0,97.0,2.0,20)]
+        eps = lt.extract_episodes(_log_rows(rows))
+        assert len(eps) == 2 and {e["ticker"] for e in eps} == {"BTC","ETH"}
+
+    def test_rows_without_exit_levels_are_skipped(self):
+        rows = [("2026-08-01T10:00:00","BTC",100.0,50,"WATCH",None,None,2.0,20)]
+        assert lt.extract_episodes(_log_rows(rows)) == []
+
+
+class TestEpisodeResolution:
+
+    EP = {"episode_id":"BTC_x","ticker":"BTC","side":"long",
+          "entry_time_utc":"2026-08-01T10:00:00","entry_direction":"BUY",
+          "peak_direction":"BUY","entry_price":100.0,"target_price":106.0,
+          "stop_price":97.0,"entry_score":65.0,"atr":2.0,"vix_level":20.0,
+          "n_log_rows":3,"signal_last_seen_utc":"2026-08-01T12:00:00"}
+
+    def test_target_hit(self):
+        d = _daily("2026-08-02", [(103,99,102),(107,101,106)])
+        r = lt.resolve_episode(self.EP, d)
+        assert r["status"]=="closed" and r["outcome"]=="target"
+        assert r["pnl_r"] == pytest.approx(2.0)   # 6 gained / 3 risked
+        assert r["bars_held"] == 2                # 2 four-hour bars
+
+    def test_stop_hit(self):
+        d = _daily("2026-08-02", [(101,96.5,98)])
+        r = lt.resolve_episode(self.EP, d)
+        assert r["outcome"]=="stop" and r["pnl_r"] == -1.0
+
+    def test_both_in_one_bar_is_ambiguous_stop_pessimistic(self):
+        # SAME rule as backtest_exits — the property live/backtest
+        # comparability depends on.
+        d = _daily("2026-08-02", [(107,96,100)])
+        r = lt.resolve_episode(self.EP, d)
+        assert r["outcome"]=="ambiguous_stop" and r["pnl_r"] == -1.0
+
+    def test_bars_before_entry_are_not_scanned(self):
+        # Bars at or before the entry TIMESTAMP must not count. With 4h
+        # data we can cut at the exact entry moment rather than dropping
+        # the whole day, so a 06:00 spike is excluded for a 10:00 entry.
+        d = _daily("2026-08-01T02:00:00", [(110,99,105),(101,99,100),
+                                            (101,99,100)])
+        r = lt.resolve_episode(self.EP, d, max_hold_days=1, bars_per_day=6)
+        assert r["outcome"] != "target", "a pre-entry bar was counted"
+
+    def test_short_side_mirrors(self):
+        ep = dict(self.EP, side="short", entry_direction="SELL",
+                  target_price=94.0, stop_price=103.0)
+        d = _daily("2026-08-02", [(101,93.5,95)])
+        r = lt.resolve_episode(ep, d)
+        assert r["outcome"]=="target" and r["pnl_r"] == pytest.approx(2.0)
+
+    def test_open_when_too_few_bars(self):
+        d = _daily("2026-08-02", [(101,99,100)])
+        r = lt.resolve_episode(self.EP, d, max_hold_days=15)
+        assert r["status"]=="open" and r["pnl_r"] is None
+
+    def test_timeout_pnl_from_last_close(self):
+        # budget = max_hold_days * bars_per_day; use 2 bars exactly
+        d = _daily("2026-08-02", [(101,99,100),(102,100,101.5)])
+        r = lt.resolve_episode(self.EP, d, max_hold_days=1, bars_per_day=2)
+        assert r["outcome"]=="timeout"
+        assert r["pnl_r"] == pytest.approx(0.5)   # +1.5 / 3 risked
+
+    def test_granularity_mismatch_regression(self):
+        # THE BUG THIS SECTION EXISTS FOR: live stops sit ~1.2% from
+        # entry (4h ATR). A DAILY bar routinely spans more than that, so
+        # resolving against daily bars stopped out every episode on bar
+        # one regardless of what happened. A 4h bar that stays inside
+        # both levels must leave the episode OPEN, not stopped.
+        inside = _daily("2026-08-02", [(100.8, 99.4, 100.2)] * 3)
+        r = lt.resolve_episode(self.EP, inside, max_hold_days=15)
+        assert r["status"] == "open" and r["outcome"] is None
+        wide_daily_like = _daily("2026-08-02", [(107, 96, 100)])
+        assert lt.resolve_episode(self.EP, wide_daily_like)["outcome"] \
+            == "ambiguous_stop"
+
+    def test_resolve_outcomes_end_to_end(self, tmp_path):
+        log = tmp_path/"log.csv"
+        _log_rows([("2026-08-01T10:00:00","BTC",100.0,65,"BUY",106.0,97.0,2.0,20),
+                   ("2026-08-01T10:30:00","BTC",100.5,66,"BUY",106.0,97.0,2.0,20)]
+                  ).to_csv(log, index=False)
+        d = _daily("2026-08-02", [(107,101,106)])
+        out = lt.resolve_outcomes(str(log), str(tmp_path/"out.csv"),
+                                  fetcher=lambda t: d)
+        assert len(out)==1 and out.iloc[0]["outcome"]=="target"
+        assert (tmp_path/"out.csv").exists()
+
+    def test_compare_refuses_below_min_n(self):
+        df = pd.DataFrame([{"status":"closed","outcome":"target",
+                            "entry_score":65.0,"pnl_r":2.0}])
+        txt = lt.compare_live_to_backtest(df, min_n=15)
+        assert "INSUFFICIENT" in txt
+
+
+# ======================================================================
+# COST MODELING (weakness #4)
+# ======================================================================
+
+class TestCostModeling:
+
+    @staticmethod
+    def _frame():
+        # One clean long. NOTE: backtest_exits recomputes ATR internally
+        # (14-period) so the frame needs enough warmup bars with real
+        # ranges; constant High-Low of 2 gives ATR ~= 2 after warmup.
+        n = 25
+        idx = pd.date_range("2026-01-01", periods=n, freq="D")
+        df = pd.DataFrame({"Close":[100.0]*n,"High":[101.0]*n,"Low":[99.0]*n,
+                           "direction":["WATCH"]*n,
+                           "combined_final_score":[65.0]*n}, index=idx)
+        df.iloc[20, df.columns.get_loc("direction")] = "BUY"
+        df.iloc[21, df.columns.get_loc("High")] = 107.0   # target hit
+        df.iloc[21, df.columns.get_loc("Low")] = 100.5    # no stop touch either config
+        return df
+
+    def test_cost_r_math(self):
+        # stop = 1.5*ATR = 3 = 3% of entry. round trip 30bps -> 0.003/0.03 = 0.1R
+        r = um.backtest_exits(self._frame(), confirm_days=1,
+                              fee_bps=10.0, slippage_bps=5.0)
+        t = r["trades"][0]
+        assert t["cost_r"] == pytest.approx(0.10, abs=1e-3)
+        assert t["pnl_r_net"] == pytest.approx(t["pnl_r"] - 0.10, abs=1e-3)
+        assert r["expectancy_r_net"] == pytest.approx(r["expectancy_r"] - 0.10, abs=1e-3)
+
+    def test_zero_cost_reproduces_gross(self):
+        r = um.backtest_exits(self._frame(), confirm_days=1,
+                              fee_bps=0.0, slippage_bps=0.0)
+        assert r["expectancy_r_net"] == pytest.approx(r["expectancy_r"])
+
+    def test_tighter_stop_pays_more_cost_in_r(self):
+        # Same friction, half the stop distance -> double the cost in R.
+        wide = um.backtest_exits(self._frame(), confirm_days=1, stop_mult=1.5)
+        tight = um.backtest_exits(self._frame(), confirm_days=1, stop_mult=0.75)
+        assert tight["trades"][0]["cost_r"] == pytest.approx(
+            2*wide["trades"][0]["cost_r"], rel=1e-3)
+
+    def test_gross_keys_unchanged_for_backward_compat(self):
+        r = um.backtest_exits(self._frame(), confirm_days=1)
+        assert "expectancy_r" in r and "expectancy_r_net" in r
+
+
+# ======================================================================
+# DATA INTEGRITY (weakness #5)
+# ======================================================================
+
+class TestDataIntegrity:
+
+    def _clean(self, n=30):
+        idx = pd.date_range("2026-07-01", periods=n, freq="D", tz="UTC")
+        c = pd.Series(100.0, index=idx) + pd.Series(range(n), index=idx)*0.1
+        return pd.DataFrame({"High":c+1,"Low":c-1,"Close":c})
+
+    def test_clean_frame_passes(self):
+        df = self._clean()
+        assert epm.validate_market_data(df, now=df.index[-1]) == []
+
+    def test_catches_high_below_low(self):
+        df = self._clean(); df.iloc[5, df.columns.get_loc("High")] = 0.5
+        assert any("High < Low" in i for i in epm.validate_market_data(df))
+
+    def test_catches_bad_tick_jump(self):
+        df = self._clean(); df.iloc[10, df.columns.get_loc("Close")] = 500.0
+        assert any("bad ticks" in i for i in epm.validate_market_data(df))
+
+    def test_catches_stale_feed(self):
+        df = self._clean()
+        late = df.index[-1] + pd.Timedelta(days=5)
+        assert any("stale" in i for i in
+                   epm.validate_market_data(df, interval_hours=24, now=late))
+
+    def test_catches_nonpositive_and_empty(self):
+        df = self._clean(); df.iloc[0, df.columns.get_loc("Close")] = -1
+        assert any("non-positive" in i for i in epm.validate_market_data(df))
+        assert epm.validate_market_data(df.iloc[0:0]) == ["empty frame"]
+
+    def test_cross_check_within_tolerance(self):
+        assert epm.cross_check_price(100.0, 101.0)["ok"] is True
+
+    def test_cross_check_divergence_fails(self):
+        r = epm.cross_check_price(100.0, 110.0)
+        assert r["ok"] is False and "DISAGREE" in r["reason"]
+
+    def test_cross_check_missing_source_fails(self):
+        assert epm.cross_check_price(100.0, float("nan"))["ok"] is False
+
+
+# ======================================================================
+# LOCKBOX + WALK-FORWARD (weaknesses #1, #2)
+# ======================================================================
+
+class TestLockboxWalkforward:
+
+    def _merged(self, days=400):
+        idx = pd.date_range(end=pd.Timestamp.now().normalize(), periods=days, freq="D")
+        return pd.DataFrame({"Close":[100.0]*days}, index=idx)
+
+    def test_lockbox_seals_recent_months_by_default(self):
+        df = self._merged(400)
+        kept = um.apply_lockbox(df, months=6)
+        assert kept.index.max() < pd.Timestamp.now().normalize() - pd.DateOffset(months=6) 
+        assert len(kept) < len(df)
+
+    def test_lockbox_unlock_returns_everything(self):
+        df = self._merged(400)
+        assert len(um.apply_lockbox(df, months=6, unlock=True)) == len(df)
+
+    def test_folds_are_sequential_and_cover_everything(self):
+        df = self._merged(365)
+        folds = um.walkforward_folds(df, 4)
+        assert sum(len(f) for f in folds) == len(df)
+        for a, b in zip(folds, folds[1:]):
+            assert a.index.max() < b.index.min()   # no overlap, time-ordered
+
+    def test_walkforward_verdict_generalizes_requires_all_folds(self):
+        ok = {"n":20,"expectancy_r_net":0.2}
+        bad = {"n":20,"expectancy_r_net":-0.1}
+        assert um.walkforward_verdict([ok,ok,ok,ok])["verdict"] == "GENERALIZES"
+        assert um.walkforward_verdict([ok,ok,ok,bad])["verdict"] == "REGIME_DEPENDENT"
+        assert um.walkforward_verdict([bad,bad])["verdict"] == "NO_EDGE"
+
+    def test_walkforward_verdict_insufficient_on_thin_folds(self):
+        thin = {"n":3,"expectancy_r_net":0.9}
+        ok = {"n":20,"expectancy_r_net":0.2}
+        assert um.walkforward_verdict([thin,thin,ok])["verdict"] == "INSUFFICIENT_DATA"
+
+    def test_verdict_uses_net_not_gross(self):
+        # Positive gross, negative net must NOT count as generalizing.
+        f = {"n":20,"expectancy_r":0.05,"expectancy_r_net":-0.05}
+        assert um.walkforward_verdict([f,f])["verdict"] == "NO_EDGE"
+
+
+# ======================================================================
+# LOG SCHEMA MIGRATION + SENTIMENT PASSTHROUGH (weakness #6)
+# ======================================================================
+
+class TestLogMigration:
+
+    def test_old_narrow_log_is_migrated_not_misaligned(self, tmp_path):
+        p = str(tmp_path/"log.csv")
+        old_cols = [c for c in lt.LOG_COLUMNS
+                    if c not in ("sentiment_score","sentiment_mentions","gate_cache_hit")]
+        pd.DataFrame([{c: 1 for c in old_cols}]).to_csv(p, index=False)
+        result = {"ticker":"BTC",
+                  "step1_initial_scoring":{"close":100.0,"initial_score":50.0,"atr":2.0},
+                  "step2_reddit_data":{"gated_score":50.0,"gate_decision":"PROCEED",
+                                        "gate_multiplier":1.0,"sentiment_score":0.12,
+                                        "sentiment_mentions":40,"gate_cache_hit":True},
+                  "step3_indicators":{"indicator_final_score":55.0,"vix_level":18.0},
+                  "combined":{"final_score":52.0,"decision":"WATCH","direction":"WATCH",
+                               "exit_levels":{},"ml_confidence":None}}
+        lt.append_ping_to_log(result, p)
+        df = pd.read_csv(p)
+        assert list(df.columns) == lt.LOG_COLUMNS
+        assert len(df) == 2
+        assert df.iloc[1]["sentiment_score"] == pytest.approx(0.12)
+        assert pd.isna(df.iloc[0]["sentiment_score"])   # old row, new col
+
+    def test_gate_result_carries_raw_reading(self):
+        g = epm.sentiment_gate(0.05, 40)
+        # the adanos wrapper adds these; the plain gate needn't — but the
+        # wrapper contract is what the log depends on, so test it via a fake
+        import signal_engines as se
+        orig = se.fetch_token_sentiment
+        try:
+            se.fetch_token_sentiment = lambda t, api_key=None: {
+                "found": True, "sentiment_score": 0.05, "mentions": 40,
+                "bullish_pct": 60, "bearish_pct": 40, "buzz_score": 1}
+            out = se.first_pass_sentiment_check_adanos("BTC")
+        finally:
+            se.fetch_token_sentiment = orig
+        assert out["sentiment_score"] == 0.05 and out["sentiment_mentions"] == 40
+
+
+# ======================================================================
+# EXIT GEOMETRY COMPARISON (options 1 and 2)
+# ======================================================================
+# The comparison decides whether live should adopt daily ATR (option 1)
+# or shorten its horizon (option 2). Two things must hold or the answer
+# is garbage: no lookahead in the ATR used, and identical signal
+# selection across configs so only the geometry varies.
+
+class TestExitGeometry:
+
+    @staticmethod
+    def _bars4h(start, n, base=100.0, rng_pct=0.004):
+        idx = pd.date_range(start, periods=n, freq="4h")
+        c = pd.Series(base, index=idx)
+        return pd.DataFrame({"High": c*(1+rng_pct), "Low": c*(1-rng_pct), "Close": c})
+
+    @staticmethod
+    def _merged(n=40, signal_at=30):
+        idx = pd.date_range("2026-01-01", periods=n, freq="D")
+        df = pd.DataFrame({"Close":[100.0]*n,"High":[101.0]*n,"Low":[99.0]*n,
+                           "direction":["WATCH"]*n,
+                           "combined_final_score":[65.0]*n}, index=idx)
+        df.iloc[signal_at, df.columns.get_loc("direction")] = "BUY"
+        return df
+
+    def test_resolve_on_4h_target_stop_ambiguous(self):
+        b = self._bars4h("2026-02-01", 5)
+        b.iloc[1, b.columns.get_loc("High")] = 110.0
+        r = um.resolve_on_4h(b, pd.Timestamp("2026-01-31"), 100.0, 106.0, 97.0,
+                             True, max_bars=10)
+        assert r["outcome"] == "target" and r["bars"] == 2
+        b2 = self._bars4h("2026-02-01", 5)
+        b2.iloc[0, b2.columns.get_loc("Low")] = 90.0
+        assert um.resolve_on_4h(b2, pd.Timestamp("2026-01-31"), 100.0, 106.0,
+                                97.0, True, 10)["outcome"] == "stop"
+        b3 = self._bars4h("2026-02-01", 5)
+        b3.iloc[0, b3.columns.get_loc("High")] = 110.0
+        b3.iloc[0, b3.columns.get_loc("Low")] = 90.0
+        assert um.resolve_on_4h(b3, pd.Timestamp("2026-01-31"), 100.0, 106.0,
+                                97.0, True, 10)["outcome"] == "ambiguous_stop"
+
+    def test_quiet_bars_leave_it_unresolved_then_timeout(self):
+        b = self._bars4h("2026-02-01", 20)
+        open_r = um.resolve_on_4h(b, pd.Timestamp("2026-01-31"), 100.0, 106.0,
+                                  97.0, True, max_bars=50)
+        assert open_r["outcome"] is None, "ran out of bars but claimed a result"
+        done = um.resolve_on_4h(b, pd.Timestamp("2026-01-31"), 100.0, 106.0,
+                                97.0, True, max_bars=10)
+        assert done["outcome"] == "timeout"
+
+    def test_bars_before_entry_are_never_scanned(self):
+        b = self._bars4h("2026-02-01", 10)
+        b.iloc[0, b.columns.get_loc("High")] = 200.0     # huge spike BEFORE entry
+        r = um.resolve_on_4h(b, b.index[3], 100.0, 106.0, 97.0, True, 10)
+        assert r["outcome"] != "target" or r["bars"] > 0
+        assert not (r["outcome"] == "target" and r["bars"] == 0), "lookahead"
+
+    def test_4h_atr_is_not_taken_from_the_future(self):
+        # The ATR used must come from bars at or before entry. Spike the
+        # bars AFTER entry: the chosen geometry must be unaffected.
+        merged = self._merged()
+        quiet = self._bars4h("2026-01-01", 400)
+        loud = quiet.copy()
+        entry_ts = pd.Timestamp("2026-01-31") + pd.Timedelta(hours=24)
+        after = loud.index > entry_ts
+        loud.loc[after, "High"] = loud.loc[after, "High"] * 3
+        a = um.backtest_exit_geometry(merged, quiet, atr_source="4h",
+                                      confirm_days=1, short_sma_filter=0)
+        b = um.backtest_exit_geometry(merged, loud, atr_source="4h",
+                                      confirm_days=1, short_sma_filter=0)
+        if a["n"] and b["n"]:
+            assert a["trades"][0]["stop_pct"] == pytest.approx(
+                b["trades"][0]["stop_pct"]), "future bars changed the ATR"
+
+    def test_daily_atr_gives_a_wider_stop_than_4h_atr(self):
+        # THE WHOLE POINT of the comparison: option 1 must actually be
+        # the looser geometry, or the test is measuring nothing.
+        merged = self._merged()
+        bars = self._bars4h("2026-01-01", 400)
+        d = um.backtest_exit_geometry(merged, bars, atr_source="daily",
+                                      confirm_days=1, short_sma_filter=0)
+        f = um.backtest_exit_geometry(merged, bars, atr_source="4h",
+                                      confirm_days=1, short_sma_filter=0)
+        if d["n"] and f["n"]:
+            assert d["avg_stop_pct"] > f["avg_stop_pct"]
+
+    def test_shorter_hold_cannot_increase_bars_held(self):
+        merged = self._merged()
+        bars = self._bars4h("2026-01-01", 400)
+        long_h = um.backtest_exit_geometry(merged, bars, atr_source="4h",
+                                           max_hold_days=15, confirm_days=1,
+                                           short_sma_filter=0)
+        short_h = um.backtest_exit_geometry(merged, bars, atr_source="4h",
+                                            max_hold_days=2, confirm_days=1,
+                                            short_sma_filter=0)
+        if long_h["n"] and short_h["n"]:
+            assert short_h["avg_days_held"] <= long_h["avg_days_held"] + 1e-9
+
+    def test_comparison_refuses_a_winner_on_thin_data(self):
+        thin = {"live_current": {"n": 3, "expectancy_r_net": 9.0,
+                                 "expectancy_r": 9.0, "avg_stop_pct": 1.0,
+                                 "target_rate": 1.0, "timeout_rate": 0.0,
+                                 "avg_days_held": 1.0},
+                "match_backtest": {"n": 2, "expectancy_r_net": -1.0,
+                                   "expectancy_r": -1.0, "avg_stop_pct": 2.0,
+                                   "target_rate": 0.0, "timeout_rate": 0.0,
+                                   "avg_days_held": 1.0}}
+        txt = um.compare_exit_geometries(thin, min_n=15)
+        assert "INSUFFICIENT" in txt and "Best NET" not in txt
+
+    def test_comparison_judges_on_net_not_gross(self):
+        res = {"a": {"n": 50, "expectancy_r": 0.30, "expectancy_r_net": 0.05,
+                     "avg_stop_pct": 1.0, "target_rate": 0.4, "timeout_rate": 0.1,
+                     "avg_days_held": 2.0},
+               "b": {"n": 50, "expectancy_r": 0.20, "expectancy_r_net": 0.15,
+                     "avg_stop_pct": 2.5, "target_rate": 0.35, "timeout_rate": 0.2,
+                     "avg_days_held": 8.0}}
+        txt = um.compare_exit_geometries(res, min_n=15)
+        assert "Best NET expectancy: b" in txt   # a wins gross, b wins net
+
+    def test_comparison_warns_about_in_sample_reuse(self):
+        res = {"a": {"n": 50, "expectancy_r": 0.2, "expectancy_r_net": 0.1,
+                     "avg_stop_pct": 1.0, "target_rate": 0.4, "timeout_rate": 0.1,
+                     "avg_days_held": 2.0},
+               "b": {"n": 50, "expectancy_r": 0.1, "expectancy_r_net": 0.05,
+                     "avg_stop_pct": 2.0, "target_rate": 0.3, "timeout_rate": 0.2,
+                     "avg_days_held": 6.0}}
+        txt = um.compare_exit_geometries(res, min_n=15)
+        assert "walkforward" in txt and "candidate, not a validated choice" in txt
+
+
+# ======================================================================
+# EARNINGS OPTIMIZATION (cost sensitivity, band gate, validated search)
+# ======================================================================
+# The optimizer is the most dangerous code in the repo: a search that
+# reports winners. These tests pin the honesty properties — breakevens
+# are exact, thin bands never make the keep-list, and the "recommend"
+# bar requires beating the baseline in EVERY counted fold.
+
+class TestEarningsOptimization:
+
+    @staticmethod
+    def _trades(pnl_r, stop_pct, n, score=65.0, net=None):
+        return [{"pnl_r": pnl_r, "stop_pct": stop_pct, "score": score,
+                 "pnl_r_net": net if net is not None else pnl_r}
+                for _ in range(n)]
+
+    def test_cost_sensitivity_breakeven_is_exact(self):
+        # gross +0.30R, stop 2% -> cost_r per bp = 1/0.02/1e4 = 0.005
+        # breakeven = 0.30 / 0.005 = 60 bps
+        res = {"cfg": {"trades": self._trades(0.30, 2.0, 50)}}
+        txt = um.cost_sensitivity(res)
+        assert "~60bps" in txt
+        # and the 60bp column should be ~0.000
+        assert "+0.000" in txt or "-0.000" in txt
+
+    def test_cost_sensitivity_tighter_stop_dies_sooner(self):
+        res = {"tight": {"trades": self._trades(0.30, 1.0, 50)},
+               "wide":  {"trades": self._trades(0.30, 3.0, 50)}}
+        txt = um.cost_sensitivity(res)
+        t = txt.index("tight: edge survives up to ~30bps")
+        w = txt.index("wide: edge survives up to ~90bps")
+        assert t > 0 and w > 0
+        assert w < t   # sorted best-first: wide listed before tight
+
+    def test_band_analysis_drops_negative_and_keeps_positive(self):
+        trades = (self._trades(0.5, 2.0, 25, score=65, net=0.4) +
+                  self._trades(-0.4, 2.0, 25, score=75, net=-0.5))
+        bands = um.band_edge_analysis(trades, min_n=20)
+        assert bands[60]["status"] == "keep"
+        assert bands[70]["status"] == "drop"
+
+    def test_band_analysis_thin_band_is_insufficient_even_if_stellar(self):
+        trades = (self._trades(0.1, 2.0, 30, score=65, net=0.05) +
+                  self._trades(5.0, 2.0, 4, score=85, net=4.9))
+        bands = um.band_edge_analysis(trades, min_n=20)
+        assert bands[80]["status"] == "insufficient"   # 4 trades of +4.9R != keep
+
+    def test_render_band_analysis_calls_out_drop_bands(self):
+        trades = (self._trades(0.5, 2.0, 25, score=65, net=0.4) +
+                  self._trades(-0.4, 2.0, 25, score=75, net=-0.5))
+        txt = um.render_band_analysis(um.band_edge_analysis(trades, min_n=20))
+        assert "negative-net bands" in txt
+
+    def test_grid_covers_both_atr_sources_and_baseline_shape(self):
+        grid = um._geometry_grid()
+        assert {g["atr_source"] for g in grid} == {"4h", "daily"}
+        assert len(grid) == 2 * 4 * 3
+        assert all("key" in g for g in grid)
+
+
+# ======================================================================
+# WALKFORWARD GEOMETRY MATCHING (the validation-mismatch fix)
+# ======================================================================
+# THE BUG: walkforward called backtest_exits (DAILY ATR) while the live
+# bot builds exits from 4h ATR. It produced a real verdict about a trade
+# the bot never places. These tests pin the contract: LIVE_GEOMETRY is
+# the single source of truth, and the default validation path uses it.
+
+class TestWalkforwardGeometry:
+
+    def test_live_geometry_matches_documented_production_config(self):
+        g = um.LIVE_GEOMETRY
+        assert g["atr_source"] == "4h", "live bot uses 4h ATR for exit levels"
+        assert g["stop_mult"] == 1.5 and g["target_mult"] == 3.0
+        assert g["confirm_days"] == 2 and g["short_sma_filter"] == 50
+        assert g["max_hold_days"] == 15
+
+    def test_concentration_report_flags_single_fold_edge(self):
+        # The BTC shape: three mediocre folds plus one huge one.
+        folds = [{"n": 53, "expectancy_r_net": 0.077},
+                 {"n": 46, "expectancy_r_net": -0.358},
+                 {"n": 62, "expectancy_r_net": -0.113},
+                 {"n": 54, "expectancy_r_net": 0.631}]
+        txt = um.concentration_report(folds)
+        assert "CONCENTRATED" in txt
+        assert "excluding best fold" in txt
+
+    def test_concentration_report_accepts_spread_edge(self):
+        folds = [{"n": 50, "expectancy_r_net": 0.20}] * 4
+        assert "spread across folds" in um.concentration_report(folds)
+
+    def test_concentration_report_needs_three_folds(self):
+        folds = [{"n": 50, "expectancy_r_net": 0.2}, {"n": 3, "expectancy_r_net": 9.0}]
+        assert "needs 3+" in um.concentration_report(folds)
+
+    def test_concentration_excludes_thin_folds_from_the_math(self):
+        # A 2-trade fold at +9R must not rescue the overall number.
+        folds = [{"n": 50, "expectancy_r_net": -0.2},
+                 {"n": 50, "expectancy_r_net": -0.2},
+                 {"n": 50, "expectancy_r_net": -0.2},
+                 {"n": 2, "expectancy_r_net": 9.0}]
+        assert "negative overall" in um.concentration_report(folds)
+
+    def test_folds_use_geometry_not_daily_backtest_exits(self):
+        # Behavioral: the 4h path must produce a TIGHTER stop than daily.
+        # If evaluate_geometry_folds ever reverts to backtest_exits, the
+        # two would be identical and this fails.
+        n = 200
+        idx = pd.date_range("2026-01-01", periods=n, freq="D")
+        merged = pd.DataFrame({"Close": [100.0]*n, "High": [101.0]*n,
+                               "Low": [99.0]*n, "direction": ["BUY"]*n,
+                               "combined_final_score": [65.0]*n}, index=idx)
+        h4 = pd.date_range("2026-01-01", periods=n*6, freq="4h")
+        c = pd.Series(100.0, index=h4)
+        bars = pd.DataFrame({"High": c*1.004, "Low": c*0.996, "Close": c})
+        four = um.evaluate_geometry_folds(merged, bars, 2, "4h", 15, 1.5, 3.0,
+                                          1, 0, 2.0, 2.0, verbose=False)
+        daily = um.evaluate_geometry_folds(merged, bars, 2, "daily", 15, 1.5, 3.0,
+                                           1, 0, 2.0, 2.0, verbose=False)
+        f = [r for r in four if r.get("n", 0)]
+        d = [r for r in daily if r.get("n", 0)]
+        if f and d:
+            assert f[0]["avg_stop_pct"] < d[0]["avg_stop_pct"], \
+                "4h geometry should give a tighter stop than daily"

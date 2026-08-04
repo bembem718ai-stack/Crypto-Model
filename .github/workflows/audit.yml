@@ -1,0 +1,88 @@
+name: Model Audit
+
+# Runs the full-model health check: every known issue, re-measured on
+# current data, with a status table. Manual, plus a weekly run so silent
+# rot (dead cron, drifting edge) surfaces without you remembering to look.
+#
+# COST: zero Adanos requests. Backtests use the neutral-sentiment
+# assumption, so this only touches Binance.US klines and Yahoo Finance.
+#
+# OUTPUT: commits docs/audit.md (human) and docs/audit.json (machine).
+# The job FAILS if any check is FAIL — so the Actions tab goes red when
+# something needs a decision, rather than the report sitting unread.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Tickers (space-separated)"
+        default: "BTC ETH SOL"
+      years:
+        description: "Window length in years"
+        default: "4"
+      skip_ml:
+        description: "Skip the ML holdout re-check (the slow one)"
+        type: boolean
+        default: false
+  schedule:
+    # Sundays 06:00 UTC. GitHub's native cron is unreliable for anything
+    # time-critical, which is why live signal checks go through
+    # cron-job.org — but a weekly audit drifting by an hour is harmless.
+    - cron: '0 6 * * 0'
+
+concurrency:
+  group: model-audit
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # Azure-hosted runners get HTTP 451 from global Binance, same as US
+      # residential IPs. Binance.US is not blocked. The audit's
+      # "Binance route reachable" check verifies this actually worked.
+      BINANCE_REGION: US
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run full audit
+        id: audit
+        continue-on-error: true      # commit the report even when checks fail
+        run: |
+          python audit.py ${{ inputs.tickers || 'BTC ETH SOL' }} \
+            --years ${{ inputs.years || '4' }} \
+            ${{ inputs.skip_ml && '--skip-ml' || '' }} \
+            --out docs/audit.md \
+            --json-out docs/audit.json
+
+      - name: Commit report
+        run: |
+          git config user.name "signal-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git pull --rebase
+          git add docs/audit.md docs/audit.json
+          git diff --cached --quiet || git commit -m "Model audit: $(date -u +'%Y-%m-%d %H:%M UTC') [skip ci]"
+          git push
+
+      - name: Fail the job if any check FAILED
+        if: steps.audit.outcome == 'failure'
+        run: |
+          echo "One or more audit checks FAILED — see docs/audit.md"
+          exit 1

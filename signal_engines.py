@@ -25,6 +25,7 @@ Requires: pip install requests vaderSentiment pandas numpy yfinance
 (xgboost/scikit-learn only needed if you use use_ml=True in analyze())
 """
 
+import json
 import os
 import time
 import argparse
@@ -2245,6 +2246,70 @@ def aggregate_daily_sentiment(df_scored: pd.DataFrame) -> pd.DataFrame:
 # THE GATE — first-pass check, meant to run BEFORE indicators
 # ======================================================================
 
+# ======================================================================
+# DATA INTEGRITY (weakness #5: every source is a single point of failure)
+# ======================================================================
+# A dead cron gets caught by the freshness check; a LIVE feed quietly
+# serving garbage does not. These are cheap structural checks on any
+# OHLC frame, plus a cross-source price comparison — Binance and Yahoo
+# are independent pipes, so agreement between them is real evidence the
+# number is the market's and not one vendor's bug.
+
+def validate_market_data(df: pd.DataFrame, interval_hours: float = 24.0,
+                          now=None, max_jump: float = 0.40) -> list:
+    """Return a list of issue strings (empty = clean). Pure."""
+    issues = []
+    if df is None or len(df) == 0:
+        return ["empty frame"]
+    for col in ("High", "Low", "Close"):
+        if col not in df.columns:
+            issues.append(f"missing column {col}")
+    if issues:
+        return issues
+    if df[["High", "Low", "Close"]].isna().mean().max() > 0.05:
+        issues.append("more than 5% NaN in OHLC")
+    if (df[["High", "Low", "Close"]] <= 0).any().any():
+        issues.append("non-positive prices present")
+    bad_hl = int((df["High"] < df["Low"]).sum())
+    if bad_hl:
+        issues.append(f"{bad_hl} bars with High < Low")
+    if df.index.duplicated().any():
+        issues.append("duplicate timestamps in index")
+    jumps = df["Close"].pct_change().abs()
+    n_jump = int((jumps > max_jump).sum())
+    if n_jump:
+        issues.append(f"{n_jump} close-to-close moves over {max_jump*100:.0f}% "
+                      f"(max {jumps.max()*100:.0f}%) — possible bad ticks")
+    if now is not None:
+        try:
+            last = pd.to_datetime(df.index[-1])
+            if last.tzinfo is None:
+                last = last.tz_localize("UTC")
+            age_h = (pd.Timestamp(now) - last).total_seconds() / 3600
+            if age_h > 3 * interval_hours:
+                issues.append(f"last bar is {age_h:.0f}h old "
+                              f"(> 3x the {interval_hours:g}h interval) — stale feed")
+        except (TypeError, ValueError):
+            issues.append("unparseable index timestamps")
+    return issues
+
+
+def cross_check_price(binance_close: float, yahoo_close: float,
+                       tolerance: float = 0.02) -> dict:
+    """Two independent sources should agree on price within tolerance
+    (default 2%, generous enough for feed timing differences). Pure."""
+    if not binance_close or not yahoo_close or        binance_close != binance_close or yahoo_close != yahoo_close:
+        return {"ok": False, "divergence": None,
+                "reason": "one or both sources returned no price"}
+    div = abs(binance_close - yahoo_close) / ((binance_close + yahoo_close) / 2)
+    return {"ok": div <= tolerance, "divergence": round(div, 4),
+            "reason": (f"sources agree within {tolerance*100:.0f}% "
+                       f"(divergence {div*100:.2f}%)" if div <= tolerance else
+                       f"SOURCES DISAGREE by {div*100:.2f}% "
+                       f"(Binance {binance_close}, Yahoo {yahoo_close}) — "
+                       f"at least one feed is wrong")}
+
+
 def sentiment_gate(sentiment_mean: float, n_mentions: int,
                     bearish_threshold: float = -0.15,
                     extreme_bearish_threshold: float = -0.35,
@@ -2659,6 +2724,123 @@ def fetch_token_sentiment(ticker: str, api_key: str = None, max_retries: int = 3
     raise ConnectionError(f"Failed to fetch {url} after {max_retries} attempts: {last_error}")
 
 
+# ======================================================================
+# SENTIMENT CACHING — the Adanos quota fix
+# ======================================================================
+# EVIDENCE (measured from signal_log.csv, 373 runs over 10.9 days):
+#   - The live trigger fires every ~30 min, not hourly: ~1023 Adanos
+#     requests/month/ticker against a 200/month free tier.
+#   - The gate has NEVER moved a score: gate_multiplier was 1.0 on all
+#     373 runs, because the gate only dampens at sentiment <= -0.15 and
+#     the crowd has not been that bearish in this window.
+# Crowd sentiment does not meaningfully change every 30 minutes, so
+# re-fetching it at that cadence buys nothing. Caching the reading for a
+# few hours cuts usage by ~87% without SKIPPING any evaluation — every
+# run still gets a sentiment reading, just a slightly older one.
+#
+# NOT cached: error/no-data results. A LOW_CONFIDENCE returned because
+# Adanos was unreachable is a failure, not a reading, and caching it
+# would silently disable the gate for hours.
+
+SENTIMENT_CACHE_PATH = os.environ.get("SENTIMENT_CACHE_PATH", "sentiment_cache.json")
+SENTIMENT_TTL_HOURS = float(os.environ.get("SENTIMENT_TTL_HOURS", "4"))
+
+
+def _load_sentiment_cache(path: str = None) -> dict:
+    path = path or SENTIMENT_CACHE_PATH
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_sentiment_cache(cache: dict, path: str = None) -> bool:
+    path = path or SENTIMENT_CACHE_PATH
+    try:
+        with open(path, "w") as f:
+            json.dump(cache, f, indent=2, sort_keys=True)
+        return True
+    except OSError:
+        return False
+
+
+def _is_real_reading(gate: dict) -> bool:
+    """A gate result worth caching. LOW_CONFIDENCE means either too few
+    mentions or an upstream failure — neither is a sentiment reading, and
+    caching it would suppress the gate until the TTL expired."""
+    return gate.get("decision") in ("PROCEED", "CAUTION", "VETO")
+
+
+def cached_sentiment_check(ticker: str, ttl_hours: float = None,
+                            min_mentions_for_confidence: int = 15,
+                            cache_path: str = None, api_key: str = None,
+                            now=None, fetcher=None) -> dict:
+    """first_pass_sentiment_check_adanos() with a time-to-live cache.
+
+    Returns the same gate dict plus:
+        cache_hit          True if no API request was made
+        cache_age_hours    age of the reading being used
+        stale_fallback     True if a live call FAILED and an expired
+                           cached reading was used instead of going
+                           neutral (better than silently disabling the
+                           gate, but you should know it happened)
+
+    ttl_hours=0 disables caching entirely (original behaviour).
+    """
+    ttl = SENTIMENT_TTL_HOURS if ttl_hours is None else ttl_hours
+    now = now or datetime.now(timezone.utc)
+    fetcher = fetcher or first_pass_sentiment_check_adanos
+    key = str(ticker).upper()
+
+    cache = _load_sentiment_cache(cache_path)
+    entry = cache.get(key)
+    age = None
+    if entry:
+        try:
+            fetched = datetime.fromisoformat(entry["fetched_at"])
+            if fetched.tzinfo is None:
+                fetched = fetched.replace(tzinfo=timezone.utc)
+            age = (now - fetched).total_seconds() / 3600.0
+        except (KeyError, ValueError, TypeError):
+            entry, age = None, None
+
+    if ttl > 0 and entry is not None and age is not None and 0 <= age < ttl:
+        gate = dict(entry["gate"])
+        gate.update({"cache_hit": True, "cache_age_hours": round(age, 2),
+                     "stale_fallback": False})
+        print(f"  [sentiment] cache hit for {key} ({age:.1f}h old, TTL {ttl:g}h) "
+              f"— 0 Adanos requests")
+        return gate
+
+    try:
+        gate = fetcher(key, api_key=api_key,
+                       min_mentions_for_confidence=min_mentions_for_confidence)
+    except Exception as e:
+        # Live call failed. An expired cached reading beats going neutral,
+        # because neutral silently turns the gate off.
+        if entry is not None:
+            gate = dict(entry["gate"])
+            gate.update({"cache_hit": True, "cache_age_hours": round(age or 0, 2),
+                         "stale_fallback": True})
+            gate["reason"] = (f"Adanos call failed ({type(e).__name__}); using cached "
+                              f"reading {age:.1f}h old. " + gate.get("reason", ""))
+            print(f"  [sentiment] live call failed, falling back to {age:.1f}h-old cache")
+            return gate
+        raise
+
+    gate = dict(gate)
+    gate.update({"cache_hit": False, "cache_age_hours": 0.0, "stale_fallback": False})
+    if ttl > 0 and _is_real_reading(gate):
+        cache[key] = {"fetched_at": now.isoformat(),
+                      "gate": {k: v for k, v in gate.items()
+                               if k not in ("cache_hit", "cache_age_hours",
+                                            "stale_fallback")}}
+        _save_sentiment_cache(cache, cache_path)
+    return gate
+
+
 def first_pass_sentiment_check_adanos(ticker: str, api_key: str = None,
                                        min_mentions_for_confidence: int = 15) -> dict:
     """
@@ -2694,5 +2876,13 @@ def first_pass_sentiment_check_adanos(ticker: str, api_key: str = None,
             "reason": "Adanos returned no sentiment_score — proceeding on indicators alone.",
         }
 
-    return sentiment_gate(sentiment_score, mentions,
+    gate = sentiment_gate(sentiment_score, mentions,
                            min_mentions_for_confidence=min_mentions_for_confidence)
+    # Pass the RAW reading through (weakness #6): the gate has never
+    # fired, and without the underlying number in the log we cannot even
+    # test whether sentiment carries information about outcomes. Logging
+    # it costs nothing and makes the gate evaluable instead of a black box.
+    gate = dict(gate)
+    gate["sentiment_score"] = sentiment_score
+    gate["sentiment_mentions"] = mentions
+    return gate

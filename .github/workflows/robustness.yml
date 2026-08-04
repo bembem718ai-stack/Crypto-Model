@@ -1,0 +1,71 @@
+name: Robustness Validation
+
+# Manual-only. Click "Run workflow" on the Actions tab whenever you want
+# to re-run the split-sample validation of the 4-year backtest failure
+# and its rescue candidates (VIX regime gate, short-side viability).
+#
+# COST: zero Adanos requests. Backtests use the neutral-sentiment
+# assumption, so this only touches Binance.US klines and Yahoo Finance —
+# both free and unmetered. Run it as often as you like.
+#
+# OUTPUT: commits docs/robustness.md to the repo, viewable rendered at
+#   https://github.com/bembem718ai-stack/Crypto-Model/blob/main/docs/robustness.md
+
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Tickers (space-separated). 3+ recommended for the VIX verdict."
+        default: "BTC ETH SOL"
+      years:
+        description: "Window length in years"
+        default: "4"
+      vix_threshold:
+        description: "VIX level counting as 'stressed'"
+        default: "25"
+
+concurrency:
+  group: robustness
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Azure runners are geo-blocked by global Binance (HTTP 451) just
+      # like US residential IPs; Binance.US is not. Same fix as
+      # signal-check.yml.
+      BINANCE_REGION: US
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run robustness validation
+        run: |
+          python pipeline.py robustness ${{ inputs.tickers }} \
+            --years ${{ inputs.years }} \
+            --vix-threshold ${{ inputs.vix_threshold }} \
+            --out docs/robustness.md
+
+      - name: Commit report
+        run: |
+          git config user.name "signal-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git pull --rebase
+          git add docs/robustness.md
+          git diff --cached --quiet || git commit -m "Robustness report: $(date -u +'%Y-%m-%d %H:%M UTC') [skip ci]"
+          git push

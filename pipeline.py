@@ -107,8 +107,63 @@ def compute_initial_score(ticker: str, interval: str = "4h", klines_limit: int =
 # STEP 2 — REDDIT DATA (sentiment gate, applied to Step 1's score)
 # ======================================================================
 
+# ----------------------------------------------------------------------
+# LAZY SENTIMENT — skip the Adanos call when it provably cannot matter
+# ----------------------------------------------------------------------
+# DERIVED, NOT HARDCODED. The gate can at worst multiply the Step 1 score
+# by max_dampening (0.5 on a VETO). Step 1's score enters the final score
+# with weight_pattern, so the largest drop the gate can cause is
+#   weight_pattern * (1 - max_dampening) * initial_score.
+# Even with PERFECT indicators (100), a Step 1 score below
+#   (buy_bar - weight_indicators * 100) / weight_pattern
+# cannot reach the buy bar at all, so dampening it changes no BUY.
+# Deriving it this way means the relationship survives future changes to
+# the bar or the weights, instead of rotting into a stale constant.
+#
+# HONEST LIMITATION — read before enabling. This bound is sound for the
+# BUY side only. On the SELL side, dampening can PUSH a score down
+# across the sell bar, and whether that is possible depends on the
+# indicator score, which by design is not known yet at Step 2. Measured
+# against signal_log.csv (373 runs), skipping below the cutoff left
+# 0.8% of runs where a maximally-bearish reading could in principle have
+# created a SELL. The actual number of missed flips in that window was
+# zero, because the gate never fired at all. That is a real if small
+# exposure, which is why this defaults to OFF and caching (which skips
+# nothing) is the default saving instead.
+
+
+def sentiment_call_cutoff(buy_bar: float = 60.0, weight_pattern: float = 0.6,
+                           weight_indicators: float = 0.4,
+                           max_dampening: float = 0.5) -> float:
+    """Step 1 score below which the sentiment gate cannot change a BUY.
+    Returns 0.0 (never skip) if the weights make the bound meaningless."""
+    if weight_pattern <= 0:
+        return 0.0
+    cutoff = (buy_bar - weight_indicators * 100.0) / weight_pattern
+    return max(0.0, cutoff)
+
+
+def should_call_sentiment(initial_score: float, lazy: bool = False,
+                           buy_bar: float = 60.0, weight_pattern: float = 0.6,
+                           weight_indicators: float = 0.4,
+                           max_dampening: float = 0.5) -> tuple:
+    """Returns (should_call, reason). With lazy=False always calls."""
+    if not lazy:
+        return True, "lazy sentiment disabled — always calling"
+    cutoff = sentiment_call_cutoff(buy_bar, weight_pattern, weight_indicators,
+                                    max_dampening)
+    if initial_score < cutoff:
+        return False, (f"Step 1 score {initial_score:.1f} is below the derived "
+                       f"cutoff {cutoff:.1f}; even perfect indicators could not "
+                       f"reach the buy bar {buy_bar:g}, so the gate cannot change "
+                       f"a BUY. Skipped to preserve Adanos quota.")
+    return True, f"Step 1 score {initial_score:.1f} >= cutoff {cutoff:.1f}"
+
+
 def apply_reddit_step(ticker: str, step1_result: dict, subreddits: list = None,
-                       limit_per_sub: int = 100, min_mentions: int = 15) -> dict:
+                       limit_per_sub: int = 100, min_mentions: int = 15,
+                       ttl_hours: float = None, lazy: bool = False,
+                       buy_bar: float = 60.0, cache_path: str = None) -> dict:
     """
     STEP 2. Takes STEP 1's initial_score and runs it through the Reddit
     sentiment gate. Requires step1_result to already exist — this is
@@ -129,9 +184,18 @@ def apply_reddit_step(ticker: str, step1_result: dict, subreddits: list = None,
         raise ValueError("apply_reddit_step() requires a valid Step 1 result — "
                           "run compute_initial_score() first.")
 
-    gate = ads.first_pass_sentiment_check_adanos(ticker, min_mentions_for_confidence=min_mentions)
+    initial = step1_result["initial_score"]
+    call, why = should_call_sentiment(initial, lazy=lazy, buy_bar=buy_bar)
+    if not call:
+        print(f"  [sentiment] {why}")
+        gate = {"decision": "SKIPPED", "gate_multiplier": 1.0, "reason": why,
+                "cache_hit": True, "cache_age_hours": None, "stale_fallback": False}
+    else:
+        gate = ads.cached_sentiment_check(
+            ticker, ttl_hours=ttl_hours,
+            min_mentions_for_confidence=min_mentions, cache_path=cache_path)
 
-    gated_score = ads.apply_gate_to_score(gate, step1_result["initial_score"])
+    gated_score = ads.apply_gate_to_score(gate, initial)
 
     return {
         "step": 2,
@@ -141,6 +205,11 @@ def apply_reddit_step(ticker: str, step1_result: dict, subreddits: list = None,
         "gate_decision": gate["decision"],
         "gate_multiplier": gate["gate_multiplier"],
         "gate_reason": gate["reason"],
+        "gate_cache_hit": gate.get("cache_hit", False),
+        "gate_cache_age_hours": gate.get("cache_age_hours"),
+        "gate_stale_fallback": gate.get("stale_fallback", False),
+        "sentiment_score": gate.get("sentiment_score"),
+        "sentiment_mentions": gate.get("sentiment_mentions"),
         "score_before_reddit": step1_result["initial_score"],
         "gated_score": round(gated_score, 2),
     }
@@ -815,18 +884,48 @@ def backtest_squeeze_history(ticker: str, target_4h_bars: int = 4000) -> pd.Seri
     return daily
 
 
+def _period_to_years(period: str) -> float:
+    """Rough length of a yfinance period string in years, for sizing the
+    matching 4h squeeze history. 'max' is treated as 8y (plenty for crypto)."""
+    p = str(period).strip().lower()
+    if p == "max":
+        return 8.0
+    if p == "ytd":
+        return 1.0
+    try:
+        if p.endswith("mo"):
+            return float(p[:-2]) / 12.0
+        if p.endswith("y"):
+            return float(p[:-1])
+        if p.endswith("d"):
+            return float(p[:-1]) / 365.0
+    except ValueError:
+        pass
+    return 2.0
+
+
 def run_backtest(ticker: str, period: str = "2y", forward_days: int = 5,
                   weight_pattern: float = 0.6, weight_indicators: float = 0.4,
                   extreme_fear_mode: str = "symmetric",
-                  buy_bar: float = 60, sell_bar: float = 40) -> pd.DataFrame:
+                  buy_bar: float = 60, sell_bar: float = 40,
+                  squeeze_bars: int = None) -> pd.DataFrame:
     print(f"Pulling daily technical/macro history for {ticker}...")
     yahoo_ticker = to_yahoo_crypto_symbol(ticker)
     tech_df = epm.analyze(yahoo_ticker, period=period)
     tech_df = tech_df.dropna(subset=["final_score"])
     tech_df.index = pd.to_datetime(tech_df.index).normalize()
 
+    # BUG FIX: backtest_squeeze_history's default of 4000 4h bars is only
+    # ~1.8 years. Because the squeeze/technical join below is an INNER join,
+    # that silently capped EVERY backtest at ~1.8y no matter what --period
+    # asked for. Scale the 4h depth to the requested period instead
+    # (6 bars/day, +15% slack for exchange gaps), capped at the paginator's
+    # hard maximum (20 requests x 1500 bars).
+    if squeeze_bars is None:
+        squeeze_bars = min(int(_period_to_years(period) * 365 * 6 * 1.15), 30000)
+
     print(f"Pulling 4h squeeze history for {ticker} (resampled to daily)...")
-    squeeze_daily = backtest_squeeze_history(ticker)
+    squeeze_daily = backtest_squeeze_history(ticker, target_4h_bars=squeeze_bars)
 
     merged = tech_df.join(squeeze_daily.rename("initial_score"), how="inner")
     merged = merged.dropna(subset=["initial_score", "final_score", "Close"])
@@ -860,7 +959,8 @@ def run_backtest(ticker: str, period: str = "2y", forward_days: int = 5,
 def backtest_exits(merged, stop_mult: float = 1.5,
                    target_mult: float = 3.0, max_hold_days: int = 15,
                    side: str = "both", short_sma_filter: int = 0,
-                   confirm_days: int = 1) -> dict:
+                   confirm_days: int = 1,
+                    fee_bps: float = 10.0, slippage_bps: float = 5.0) -> dict:
     """
     Simulates the ATR exit levels on every historical actionable signal:
     entry at that day's close, then walk forward daily bars until the
@@ -966,10 +1066,24 @@ def backtest_exits(merged, stop_mult: float = 1.5,
             pnl_r = lvl["risk_reward"]
         else:
             pnl_r = -1.0
+        # COST MODELING. The gross numbers above assume perfect fills at
+        # the level and zero fees — optimistic in a way that scales with
+        # how tight the stop is: 1R here is stop_mult*ATR of price move,
+        # and a fixed round-trip cost is a LARGER fraction of a smaller R.
+        # cost_r = round-trip (fee+slippage) / stop distance as % of entry.
+        # Defaults (10bps fee + 5bps slippage per side = 30bps round trip)
+        # are deliberately conservative for Binance.US spot; override per
+        # your actual tier. Gross keys are unchanged so every previously
+        # reported number stays comparable; _net keys are the honest ones.
+        stop_frac = (stop_mult * row["atr"]) / entry if entry else float("nan")
+        cost_r = ((2.0 * (fee_bps + slippage_bps) / 1e4) / stop_frac
+                  if stop_frac and stop_frac == stop_frac else 0.0)
         trades.append({"date": day, "direction": d, "outcome": outcome,
                        "score": float(row.get("combined_final_score", float("nan"))),
                        "mfe_pct_of_target": round(mfe * 100, 1),
                        "pnl_r": round(pnl_r, 3),
+                       "cost_r": round(cost_r, 4),
+                       "pnl_r_net": round(pnl_r - cost_r, 3),
                        "days_held": (idx.index(exit_day) - i) if exit_day is not None else max_hold_days})
 
     if not trades:
@@ -984,6 +1098,8 @@ def backtest_exits(merged, stop_mult: float = 1.5,
         "ambiguous_n": int((tdf["outcome"] == "ambiguous_stop").sum()),
         "timeout_rate": (tdf["outcome"] == "timeout").mean(),
         "expectancy_r": tdf["pnl_r"].mean(),
+        "expectancy_r_net": tdf["pnl_r_net"].mean(),
+        "avg_cost_r": tdf["cost_r"].mean(),
         "avg_days_held": tdf["days_held"].mean(),
         "avg_mfe_on_losses": nonwin.mean() if len(nonwin) else float("nan"),
         "near_miss_rate": (nonwin >= 70).mean() if len(nonwin) else float("nan"),
@@ -1406,6 +1522,958 @@ def main_backtest():
 
 
 # ======================================================================
+# EXIT GEOMETRY COMPARISON
+# ======================================================================
+# THE PROBLEM THIS ANSWERS. Live exit levels are built from 4h ATR
+# (stop ~1.1% of price on BTC). The backtest that validated the 3.0x /
+# 1.5x geometry uses DAILY ATR (stop ~2.7%). Both then allow the same
+# 15-day hold. So live has been running the backtest's patience with a
+# ~2.5x tighter stop — a different trade than the one that was
+# validated, under the same name. The first live outcomes (4 stop-outs)
+# are consistent with that, though 4 is far too few to prove anything;
+# what is solid is the arithmetic, and this measures its consequences on
+# history.
+#
+# WHAT IS COMPARED — the three options actually on the table:
+#   live_current  4h ATR,   15-day hold   (what the bot does today)
+#   match_backtest daily ATR, 15-day hold  (option 1: live adopts the
+#                                           geometry that was validated)
+#   match_horizon  4h ATR,   2-day hold    (option 2: keep the tight
+#                                           stop, shorten the patience
+#                                           to fit it)
+#
+# METHOD. Every configuration is resolved against the SAME 4h bars, so
+# the comparison is apples-to-apples and the only thing varying is the
+# geometry. 4h is the finest data available; resolving at that
+# granularity also cuts (does not eliminate) the ambiguous-bar problem,
+# since fewer target+stop pairs fall inside one bar.
+#
+# NO LOOKAHEAD: the ATR used for a signal is the one available at the
+# signal bar, never later. Entry is the first 4h bar strictly after the
+# daily signal close.
+#
+# THIS CHANGES NO DEFAULTS. It produces the evidence for a decision that
+# stays yours.
+
+
+def build_4h_atr(bars_4h: pd.DataFrame, period: int = 14) -> pd.Series:
+    """4h ATR series aligned to the 4h bar index."""
+    return cf.compute_atr(bars_4h, period=period)
+
+
+def resolve_on_4h(bars_4h: pd.DataFrame, entry_ts, entry: float,
+                   target: float, stop: float, is_long: bool,
+                   max_bars: int) -> dict:
+    """Walk 4h bars strictly after entry_ts. Same pessimistic rules as
+    everywhere else: both touched in one bar counts as a stop."""
+    fwd = bars_4h[bars_4h.index > entry_ts].iloc[:max_bars]
+    if fwd.empty:
+        return {"outcome": None, "bars": 0, "pnl_r": None, "mfe": 0.0}
+    tgt_dist, stop_dist = abs(target - entry), abs(entry - stop)
+    mfe = 0.0
+    for n, (_, row) in enumerate(fwd.iterrows(), 1):
+        hi, lo = row["High"], row["Low"]
+        fav = (hi - entry) if is_long else (entry - lo)
+        if tgt_dist:
+            mfe = max(mfe, fav / tgt_dist)
+        hit_t = hi >= target if is_long else lo <= target
+        hit_s = lo <= stop if is_long else hi >= stop
+        if hit_t and hit_s:
+            return {"outcome": "ambiguous_stop", "bars": n, "pnl_r": -1.0, "mfe": mfe}
+        if hit_t:
+            return {"outcome": "target", "bars": n,
+                    "pnl_r": (tgt_dist / stop_dist) if stop_dist else float("nan"),
+                    "mfe": mfe}
+        if hit_s:
+            return {"outcome": "stop", "bars": n, "pnl_r": -1.0, "mfe": mfe}
+    if len(fwd) < max_bars:
+        return {"outcome": None, "bars": len(fwd), "pnl_r": None, "mfe": mfe}
+    last = fwd.iloc[-1]["Close"]
+    pnl = ((last - entry) if is_long else (entry - last))
+    return {"outcome": "timeout", "bars": len(fwd),
+            "pnl_r": (pnl / stop_dist) if stop_dist else float("nan"), "mfe": mfe}
+
+
+def backtest_exit_geometry(merged: pd.DataFrame, bars_4h: pd.DataFrame,
+                            atr_source: str = "daily",
+                            stop_mult: float = 1.5, target_mult: float = 3.0,
+                            max_hold_days: float = 15,
+                            short_sma_filter: int = 50, confirm_days: int = 2,
+                            fee_bps: float = 10.0, slippage_bps: float = 5.0,
+                            bars_per_day: int = 6) -> dict:
+    """Same signals, one geometry knob changed, resolved on 4h bars."""
+    if atr_source not in ("daily", "4h"):
+        raise ValueError("atr_source must be 'daily' or '4h'")
+    df = merged.dropna(subset=["High", "Low", "Close"]).copy()
+    df["_atr_daily"] = cf.compute_atr(df, period=14)
+    if short_sma_filter and short_sma_filter > 0:
+        df["_trend_sma"] = df["Close"].rolling(short_sma_filter).mean()
+    atr4 = build_4h_atr(bars_4h)
+    max_bars = max(1, int(max_hold_days * bars_per_day))
+    dirs = df["direction"].tolist()
+
+    def confirmed(i):
+        if confirm_days <= 1:
+            return True
+        if i < confirm_days - 1:
+            return False
+        w = dirs[i - confirm_days + 1: i + 1]
+        return all(d == w[-1] for d in w)
+
+    trades = []
+    for i, (day, row) in enumerate(df.iterrows()):
+        if not confirmed(i):
+            continue
+        d = row["direction"]
+        if d not in ("BUY", "STRONG_BUY", "SELL", "STRONG_SELL"):
+            continue
+        if (short_sma_filter and d in ("SELL", "STRONG_SELL")
+                and not (row.get("_trend_sma") == row.get("_trend_sma")
+                         and row["Close"] < row["_trend_sma"])):
+            continue
+        # Entry: first 4h bar strictly after the daily close that produced
+        # the signal. Anything earlier would be lookahead.
+        entry_ts = pd.Timestamp(day).normalize() + pd.Timedelta(hours=24)
+        if atr_source == "daily":
+            atr = row["_atr_daily"]
+        else:
+            prior = atr4[atr4.index <= entry_ts]
+            atr = prior.iloc[-1] if len(prior) else float("nan")
+        if not (atr == atr) or atr <= 0:
+            continue
+        lvl = cf.compute_exit_levels(row["Close"], d, atr,
+                                     stop_mult=stop_mult, target_mult=target_mult)
+        if not lvl.get("applicable"):
+            continue
+        entry, target, stop = lvl["entry"], lvl["target"], lvl["stop"]
+        is_long = lvl["side"] == "long"
+        r = resolve_on_4h(bars_4h, entry_ts, entry, target, stop, is_long, max_bars)
+        if r["outcome"] is None:
+            continue  # still open at the end of history — not a result
+        stop_frac = abs(entry - stop) / entry if entry else float("nan")
+        cost_r = ((2.0 * (fee_bps + slippage_bps) / 1e4) / stop_frac
+                  if stop_frac and stop_frac == stop_frac else 0.0)
+        trades.append({"date": day, "direction": d, "outcome": r["outcome"],
+                       "score": float(row.get("combined_final_score", float("nan"))),
+                       "pnl_r": round(r["pnl_r"], 3),
+                       "cost_r": round(cost_r, 4),
+                       "pnl_r_net": round(r["pnl_r"] - cost_r, 3),
+                       "bars_held": r["bars"],
+                       "days_held": round(r["bars"] / bars_per_day, 2),
+                       "stop_pct": round(stop_frac * 100, 3),
+                       "mfe_pct_of_target": round(r["mfe"] * 100, 1)})
+    if not trades:
+        return {"n": 0, "trades": []}
+    t = pd.DataFrame(trades)
+    return {"n": len(t),
+            "target_rate": (t["outcome"] == "target").mean(),
+            "stop_rate": t["outcome"].isin(["stop", "ambiguous_stop"]).mean(),
+            "ambiguous_n": int((t["outcome"] == "ambiguous_stop").sum()),
+            "timeout_rate": (t["outcome"] == "timeout").mean(),
+            "expectancy_r": t["pnl_r"].mean(),
+            "expectancy_r_net": t["pnl_r_net"].mean(),
+            "avg_cost_r": t["cost_r"].mean(),
+            "avg_stop_pct": t["stop_pct"].mean(),
+            "avg_days_held": t["days_held"].mean(),
+            "trades": trades}
+
+
+GEOMETRY_CONFIGS = {
+    "live_current":   {"atr_source": "4h",    "max_hold_days": 15,
+                       "label": "4h ATR, 15d hold (what the bot does now)"},
+    "match_backtest": {"atr_source": "daily", "max_hold_days": 15,
+                       "label": "OPTION 1: daily ATR, 15d hold"},
+    "match_horizon":  {"atr_source": "4h",    "max_hold_days": 2,
+                       "label": "OPTION 2: 4h ATR, 2d hold"},
+}
+
+
+def compare_exit_geometries(results: dict, min_n: int = 15) -> str:
+    """Render the comparison. Refuses to name a winner on thin data, and
+    judges on NET expectancy."""
+    lines = ["", "EXIT GEOMETRY COMPARISON", "=" * 78,
+             f"{'config':<16}{'n':>5}{'stop%':>8}{'target':>8}{'timeout':>9}"
+             f"{'gross':>9}{'NET':>9}{'avg hold':>10}"]
+    lines.append("-" * 78)
+    for key, r in results.items():
+        if not r.get("n"):
+            lines.append(f"{key:<16}{'0':>5}   (no trades)")
+            continue
+        lines.append(
+            f"{key:<16}{r['n']:>5}{r['avg_stop_pct']:>7.2f}%"
+            f"{r['target_rate']*100:>7.0f}%{r['timeout_rate']*100:>8.0f}%"
+            f"{r['expectancy_r']:>+9.3f}{r['expectancy_r_net']:>+9.3f}"
+            f"{r['avg_days_held']:>9.1f}d")
+    lines.append("")
+    usable = {k: r for k, r in results.items() if r.get("n", 0) >= min_n}
+    if len(usable) < 2:
+        lines.append(f"INSUFFICIENT: fewer than 2 configs reached {min_n} trades. "
+                     f"No comparison is honest yet.")
+        return "\n".join(lines)
+    best = max(usable, key=lambda k: usable[k]["expectancy_r_net"])
+    cur = results.get("live_current", {})
+    lines.append(f"Best NET expectancy: {best} "
+                 f"({usable[best]['expectancy_r_net']:+.3f}R over {usable[best]['n']} trades)")
+    if cur.get("n", 0) >= min_n and best != "live_current":
+        gap = usable[best]["expectancy_r_net"] - cur["expectancy_r_net"]
+        lines.append(f"  vs live_current: {gap:+.3f}R per trade difference")
+    lines += ["",
+              "READ THIS BEFORE ACTING:",
+              "- These configs were compared on the SAME history the buy bar,",
+              "  the persistence filter and the SMA filter were tuned on. A",
+              "  winner here is a candidate, not a validated choice.",
+              "- Confirm any winner with:  pipeline.py walkforward  (folds) and",
+              "  robustness (split-sample) before changing live behaviour.",
+              "- NET is the column that matters; a tighter stop pays more cost",
+              "  per R, which is exactly what separates option 2 from option 1.",
+              "- Nothing was changed by this run."]
+    return "\n".join(lines)
+
+
+def main_exitgeometry():
+    parser = argparse.ArgumentParser(
+        description="Compare live vs backtest exit geometries on history")
+    parser.add_argument("ticker")
+    parser.add_argument("--years", type=float, default=2.0)
+    parser.add_argument("--confirm-days", type=int, default=2)
+    parser.add_argument("--short-sma-filter", type=int, default=50)
+    parser.add_argument("--stop-mult", type=float, default=1.5)
+    parser.add_argument("--target-mult", type=float, default=3.0)
+    parser.add_argument("--fee-bps", type=float, default=10.0)
+    parser.add_argument("--slippage-bps", type=float, default=5.0)
+    parser.add_argument("--hold-sweep", default="",
+                        help="Extra 4h-ATR hold budgets in days, e.g. 1,2,3,5")
+    parser.add_argument("--unlock-lockbox", action="store_true")
+    args = parser.parse_args()
+
+    yf_period = next((p for y, p in ((1, "1y"), (2, "2y"), (5, "5y"), (10, "10y"))
+                      if args.years <= y), "max")
+    n_4h = min(int(args.years * 365 * 6 * 1.15), 30000)
+    merged = run_backtest(args.ticker, period=yf_period, squeeze_bars=n_4h)
+    merged = apply_lockbox(merged, unlock=args.unlock_lockbox)
+    print(f"Pulling {n_4h} 4h bars for exit resolution...")
+    bars_4h = cf.fetch_klines_paginated(cf.to_binance_symbol(args.ticker),
+                                        interval="4h", target_bars=n_4h)
+
+    configs = dict(GEOMETRY_CONFIGS)
+    for d in [x for x in args.hold_sweep.split(",") if x.strip()]:
+        configs[f"4h_atr_{d}d"] = {"atr_source": "4h", "max_hold_days": float(d),
+                                   "label": f"4h ATR, {d}d hold"}
+    results = {}
+    for key, cfg in configs.items():
+        print(f"  {key}: {cfg['label']}")
+        results[key] = backtest_exit_geometry(
+            merged, bars_4h, atr_source=cfg["atr_source"],
+            stop_mult=args.stop_mult, target_mult=args.target_mult,
+            max_hold_days=cfg["max_hold_days"],
+            short_sma_filter=args.short_sma_filter,
+            confirm_days=args.confirm_days,
+            fee_bps=args.fee_bps, slippage_bps=args.slippage_bps)
+    print(compare_exit_geometries(results))
+    print(cost_sensitivity(results))
+
+
+# ======================================================================
+# EARNINGS OPTIMIZATION — where the money actually leaks
+# ======================================================================
+# CONTEXT. The 4-year geometry comparison put the live config's NET edge
+# at +0.089R over 326 trades — about one standard error from zero. No
+# parameter sweep manufactures alpha out of that. What is mathematically
+# certain is where the existing edge LEAKS:
+#
+#   1. FRICTION. Live geometry pays ~0.154R/trade at 30bps round trip —
+#      63% of gross. The breakeven between geometries sits near 33bps,
+#      so the user's actual fee tier decides more than any knob here.
+#      -> cost_sensitivity(): NET at every plausible fee level, so the
+#         decision is read off a table instead of argued about.
+#   2. DEAD BANDS. If the edge is concentrated in some score bands, the
+#      signals published from the other bands are noise with fees.
+#      -> band_edge_analysis(): which bands carry net-positive
+#         expectancy, with min_n honesty.
+#   3. UNVALIDATED KNOB-TURNING. Any config found by searching the same
+#      history is a candidate, not an answer.
+#      -> main_optimize(): grid-search on SEALED data only, then the top
+#         candidates must survive walk-forward folds INCLUDING beating
+#         the current live config fold-by-fold before the word
+#         "recommend" appears. Anything less prints as "candidate".
+#
+# Nothing here changes live behavior. This is a signal service: its
+# earnings potential IS the net expectancy of what it publishes, and the
+# fastest way to raise that is to stop publishing negative-EV trades and
+# stop pretending fees are zero — not to find a magic parameter.
+
+COST_LEVELS_BPS = (0, 10, 20, 30, 40, 60, 80)   # round trip
+
+
+def cost_sensitivity(results: dict, levels=COST_LEVELS_BPS) -> str:
+    """NET expectancy of each geometry config at each round-trip cost.
+    Pure arithmetic on the recorded trades — cost_r scales linearly with
+    bps, so net(c) = gross - (c/1e4)/stop_frac per trade."""
+    lines = ["", "COST SENSITIVITY (net R/trade by round-trip cost)",
+             "=" * 72,
+             f"{'config':<16}" + "".join(f"{c:>7}bp" for c in levels)]
+    lines.append("-" * 72)
+    breakevens = {}
+    for key, r in results.items():
+        trades = r.get("trades", [])
+        if not trades:
+            continue
+        row = f"{key:<16}"
+        nets = []
+        for c in levels:
+            net = sum(t["pnl_r"] - (c / 1e4) / (t["stop_pct"] / 100)
+                      for t in trades) / len(trades)
+            nets.append(net)
+            row += f"{net:>+9.3f}"
+        lines.append(row)
+        # linear in c -> exact breakeven where net crosses 0
+        g = sum(t["pnl_r"] for t in trades) / len(trades)
+        k = sum(1.0 / (t["stop_pct"] / 100) for t in trades) / len(trades) / 1e4
+        breakevens[key] = g / k if k else float("inf")
+    lines.append("")
+    for key, be in sorted(breakevens.items(), key=lambda x: -x[1]):
+        if be <= 0:
+            lines.append(f"  {key}: gross is negative — no fee level saves it")
+        else:
+            lines.append(f"  {key}: edge survives up to ~{be:.0f}bps round trip")
+    lines += ["", "  Find your ACTUAL Binance.US taker fee and read your row.",
+              "  If you can enter with maker/limit orders instead of market",
+              "  orders, the round trip can drop dramatically - that single",
+              "  change likely beats every parameter in this file."]
+    return "\n".join(lines)
+
+
+def band_edge_analysis(trades: list, min_n: int = 20,
+                        bucket: float = 10.0) -> dict:
+    """Which score bands carry net-positive expectancy. Bands below min_n
+    are 'insufficient', never included in the keep-list."""
+    bands = {}
+    for t in trades:
+        s = t.get("score")
+        if s != s:
+            continue
+        b = int(s // bucket * bucket)
+        bands.setdefault(b, []).append(t)
+    out = {}
+    for b, ts in sorted(bands.items()):
+        net = sum(t.get("pnl_r_net", t["pnl_r"]) for t in ts) / len(ts)
+        out[b] = {"n": len(ts), "net_r": round(net, 3),
+                  "status": ("insufficient" if len(ts) < min_n else
+                             "keep" if net > 0 else "drop")}
+    return out
+
+
+def render_band_analysis(bands: dict, bucket: float = 10.0) -> str:
+    lines = ["", "EDGE CONCENTRATION BY SCORE BAND", "=" * 50,
+             f"{'band':<12}{'n':>6}{'net R':>10}   status"]
+    lines.append("-" * 50)
+    kept, dropped = 0, 0
+    for b, v in bands.items():
+        lines.append(f"{b:>3}-{int(b+bucket):<7}{v['n']:>6}{v['net_r']:>+10.3f}   {v['status']}")
+        if v["status"] == "keep":
+            kept += v["n"]
+        elif v["status"] == "drop":
+            dropped += v["n"]
+    if dropped:
+        lines += ["", f"  {dropped} of {kept+dropped} decided trades sit in "
+                      f"negative-net bands. Publishing those signals costs",
+                  "  followers money in expectation. The empirical calibration",
+                  "  table already exists for exactly this - the cheapest",
+                  "  earnings improvement is not publishing the drop-bands."]
+    return "\n".join(lines)
+
+
+def _geometry_grid():
+    grid = []
+    for atr_source in ("4h", "daily"):
+        for hold in (2, 5, 10, 15):
+            for confirm in (1, 2, 3):
+                grid.append({"atr_source": atr_source, "max_hold_days": hold,
+                             "confirm_days": confirm,
+                             "key": f"{atr_source}atr_h{hold}_c{confirm}"})
+    return grid
+
+
+def main_optimize():
+    parser = argparse.ArgumentParser(
+        description="Search exit configs on SEALED data, then walk-forward "
+                    "validate the leaders. Prints candidates; changes nothing.")
+    parser.add_argument("ticker")
+    parser.add_argument("--years", type=float, default=4.0)
+    parser.add_argument("--fee-bps", type=float, default=10.0)
+    parser.add_argument("--slippage-bps", type=float, default=5.0)
+    parser.add_argument("--min-n", type=int, default=40)
+    parser.add_argument("--folds", type=int, default=4)
+    parser.add_argument("--top", type=int, default=3)
+    args = parser.parse_args()
+
+    yf_period = next((p for y, p in ((1, "1y"), (2, "2y"), (5, "5y"), (10, "10y"))
+                      if args.years <= y), "max")
+    n_4h = min(int(args.years * 365 * 6 * 1.15), 30000)
+    merged = run_backtest(args.ticker, period=yf_period, squeeze_bars=n_4h)
+    cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=int(args.years * 365))
+    merged = merged[merged.index >= cutoff]
+    merged = apply_lockbox(merged)          # NEVER unlocked here: this is a search
+    bars_4h = cf.fetch_klines_paginated(cf.to_binance_symbol(args.ticker),
+                                        interval="4h", target_bars=n_4h)
+
+    def run_cfg(frame, cfg):
+        return backtest_exit_geometry(
+            frame, bars_4h, atr_source=cfg["atr_source"],
+            max_hold_days=cfg["max_hold_days"], confirm_days=cfg["confirm_days"],
+            fee_bps=args.fee_bps, slippage_bps=args.slippage_bps)
+
+    print(f"\nSTAGE 1 — grid search on sealed history "
+          f"({len(_geometry_grid())} configs, min n={args.min_n})")
+    baseline_cfg = {"atr_source": "4h", "max_hold_days": 15, "confirm_days": 2,
+                    "key": "live_current"}
+    scored = []
+    for cfg in _geometry_grid():
+        r = run_cfg(merged, cfg)
+        if r.get("n", 0) >= args.min_n:
+            scored.append((cfg, r))
+            print(f"  {cfg['key']:<18} n={r['n']:<5} net {r['expectancy_r_net']:+.3f}R")
+        else:
+            print(f"  {cfg['key']:<18} n={r.get('n',0):<5} (below min_n, excluded)")
+    base = run_cfg(merged, baseline_cfg)
+    print(f"  {'live_current':<18} n={base.get('n',0):<5} "
+          f"net {base.get('expectancy_r_net', float('nan')):+.3f}R   <- baseline")
+    if not scored:
+        print("\nNo config reached min_n. Nothing to validate.")
+        return
+    scored.sort(key=lambda x: -x[1]["expectancy_r_net"])
+    leaders = scored[:args.top]
+
+    print(f"\nSTAGE 2 — walk-forward validation of top {len(leaders)} "
+          f"({args.folds} folds; must beat live_current fold-by-fold)")
+    folds = walkforward_folds(merged, args.folds)
+    base_folds = [run_cfg(f, baseline_cfg) for f in folds]
+    recommended = None
+    for cfg, insample in leaders:
+        fold_res = [run_cfg(f, cfg) for f in folds]
+        v = walkforward_verdict(fold_res)
+        beats = sum(1 for fr, br in zip(fold_res, base_folds)
+                    if fr.get("n", 0) >= 10 and br.get("n", 0) >= 10
+                    and fr["expectancy_r_net"] > br["expectancy_r_net"])
+        counted = sum(1 for fr, br in zip(fold_res, base_folds)
+                      if fr.get("n", 0) >= 10 and br.get("n", 0) >= 10)
+        per_fold = " ".join(f"{fr.get('expectancy_r_net', float('nan')):+.2f}"
+                            if fr.get("n", 0) >= 10 else "thin"
+                            for fr in fold_res)
+        print(f"  {cfg['key']:<18} in-sample {insample['expectancy_r_net']:+.3f}R | "
+              f"folds [{per_fold}] | {v['verdict']} | beats baseline {beats}/{counted}")
+        # PRE-REGISTERED BAR: generalizes on its own AND beats the current
+        # config in every counted fold. Anything less is a candidate only.
+        if (recommended is None and v["verdict"] == "GENERALIZES"
+                and counted >= 2 and beats == counted):
+            recommended = cfg
+
+    print()
+    if recommended:
+        print(f"RECOMMENDED CANDIDATE: {recommended['key']}")
+        print("  It generalized across folds and beat live_current in every")
+        print("  counted fold — on SEALED data. Before changing the bot:")
+        print(f"  1. replicate on another ticker (optimize ETH)")
+        print(f"  2. only then consider changing live defaults")
+    else:
+        print("NO CONFIG EARNED A RECOMMENDATION. The honest summary: nothing")
+        print("in this grid reliably beats what the bot already does. That is")
+        print("a real answer — the money is in costs and band selection, not")
+        print("in these knobs.")
+
+    print(render_band_analysis(band_edge_analysis(base.get("trades", []))))
+    both = {"live_current": base}
+    both.update({cfg["key"]: r for cfg, r in leaders})
+    print(cost_sensitivity(both))
+
+
+# ======================================================================
+# LOCKBOX + WALK-FORWARD (weaknesses #1 and #2)
+# ======================================================================
+# Every threshold in this model was tuned against data that overlaps
+# every other threshold's validation. Two standard defenses from real
+# quant practice, adapted:
+#
+# LOCKBOX: the most recent LOCKBOX_MONTHS of data are sealed. Tuning
+# searches (mlsweep) exclude them BY DEFAULT, so there is always a
+# stretch of data no search has ever touched. Opening it (--unlock-
+# lockbox) is a one-way door per question asked of it — once a config
+# has been chosen by looking at lockbox data, that data can never again
+# serve as out-of-sample for that choice. The code cannot enforce the
+# one-way part; it can enforce the default and make opening it loud.
+#
+# WALK-FORWARD: evaluate the FIXED production config on K sequential,
+# non-overlapping folds. No tuning inside — this answers exactly one
+# question: does the config that was chosen once keep working across
+# regimes it was not chosen on? An edge present in 4/4 folds is a very
+# different object from the same average edge concentrated in 1.
+
+LOCKBOX_MONTHS = 6
+
+
+def apply_lockbox(df: pd.DataFrame, months: int = LOCKBOX_MONTHS,
+                   unlock: bool = False, now=None) -> pd.DataFrame:
+    """Trim the sealed window off the end of a time-indexed frame."""
+    if unlock or df is None or len(df) == 0 or months <= 0:
+        if unlock:
+            print("  [LOCKBOX] *** UNLOCKED — this run consumes holdout data. "
+                  "Whatever is decided from it cannot be re-validated on it. ***")
+        return df
+    cutoff = pd.Timestamp.now().normalize() - pd.DateOffset(months=months)
+    kept = df[df.index < cutoff]
+    print(f"  [LOCKBOX] sealed: excluding data on/after {cutoff.date()} "
+          f"({len(df) - len(kept)} rows held out; --unlock-lockbox to open)")
+    return kept
+
+
+def walkforward_folds(merged: pd.DataFrame, n_folds: int = 4) -> list:
+    """Split a time-indexed frame into sequential, equal-duration folds."""
+    if merged is None or len(merged) == 0 or n_folds < 2:
+        return [merged] if merged is not None and len(merged) else []
+    start, end = merged.index.min(), merged.index.max()
+    edges = pd.date_range(start, end, periods=n_folds + 1)
+    return [merged[(merged.index >= edges[i]) & (merged.index < edges[i + 1])]
+            if i < n_folds - 1 else merged[merged.index >= edges[i]]
+            for i in range(n_folds)]
+
+
+def walkforward_verdict(fold_results: list, min_n: int = 10) -> dict:
+    """Folds with n>=min_n count; the edge 'generalizes' only if NET
+    expectancy is positive in EVERY counted fold, and it is INSUFFICIENT
+    if fewer than 2 folds have enough trades."""
+    counted = [f for f in fold_results if f.get("n", 0) >= min_n]
+    if len(counted) < 2:
+        return {"verdict": "INSUFFICIENT_DATA", "folds_counted": len(counted),
+                "folds_total": len(fold_results)}
+    pos = sum(1 for f in counted
+              if f.get("expectancy_r_net", f.get("expectancy_r", 0)) > 0)
+    verdict = ("GENERALIZES" if pos == len(counted) else
+               "REGIME_DEPENDENT" if pos > 0 else "NO_EDGE")
+    return {"verdict": verdict, "folds_positive": pos,
+            "folds_counted": len(counted), "folds_total": len(fold_results)}
+
+
+LIVE_GEOMETRY = {"atr_source": "4h", "max_hold_days": 15, "stop_mult": 1.5,
+                 "target_mult": 3.0, "confirm_days": 2, "short_sma_filter": 50}
+# ^ SINGLE SOURCE OF TRUTH for what the live bot actually does. Validation
+# commands read from this instead of hardcoding their own assumptions.
+#
+# THE BUG THIS FIXES: walkforward called backtest_exits, which computes
+# DAILY ATR. So it was validating the match_backtest geometry (6.03%
+# stops, 9.2d holds) while the bot runs the 4h geometry (2.43% stops,
+# 2.3d holds). The REGIME_DEPENDENT verdict was real, but it was a
+# verdict about a trade the bot never places. Same signals, different
+# strategy. Now the default is the live geometry; --atr-source daily
+# reproduces the old numbers.
+
+
+def evaluate_geometry_folds(merged, bars_4h, folds, atr_source, max_hold_days,
+                             stop_mult, target_mult, confirm_days,
+                             short_sma_filter, fee_bps, slippage_bps,
+                             verbose=True):
+    """Run ONE fixed geometry across sequential folds. No tuning inside."""
+    results = []
+    for k, fold in enumerate(walkforward_folds(merged, folds), 1):
+        if len(fold) == 0:
+            results.append({"n": 0})
+            if verbose:
+                print(f"  fold {k}: empty")
+            continue
+        r = backtest_exit_geometry(
+            fold, bars_4h, atr_source=atr_source, stop_mult=stop_mult,
+            target_mult=target_mult, max_hold_days=max_hold_days,
+            short_sma_filter=short_sma_filter, confirm_days=confirm_days,
+            fee_bps=fee_bps, slippage_bps=slippage_bps)
+        results.append(r)
+        if verbose:
+            if r.get("n", 0):
+                print(f"  fold {k} ({fold.index.min().date()} → "
+                      f"{fold.index.max().date()}): n={r['n']}, "
+                      f"stop {r['avg_stop_pct']:.2f}%, "
+                      f"gross {r['expectancy_r']:+.3f}R, "
+                      f"NET {r['expectancy_r_net']:+.3f}R, "
+                      f"hold {r['avg_days_held']:.1f}d")
+            else:
+                print(f"  fold {k}: no trades")
+    return results
+
+
+def concentration_report(results, min_n=10):
+    """How much of the edge lives in ONE fold. A strategy whose profit
+    vanishes when its best fold is removed has not shown an edge — it has
+    shown one good stretch. This is the number the BTC run made
+    unavoidable (+0.631R in fold 4 vs -0.12R across the other three)."""
+    counted = [r for r in results if r.get("n", 0) >= min_n]
+    if len(counted) < 3:
+        return "  concentration: needs 3+ counted folds to assess"
+    tot_r = sum(r["expectancy_r_net"] * r["n"] for r in counted)
+    tot_n = sum(r["n"] for r in counted)
+    best = max(counted, key=lambda r: r["expectancy_r_net"] * r["n"])
+    rest_n = tot_n - best["n"]
+    overall = tot_r / tot_n if tot_n else float("nan")
+    ex_best = ((tot_r - best["expectancy_r_net"] * best["n"]) / rest_n
+               if rest_n else float("nan"))
+    verdict = ("CONCENTRATED — the edge is essentially one fold"
+               if overall > 0 and ex_best <= 0 else
+               "spread across folds" if overall > 0 else "negative overall")
+    return (f"  all counted folds:  {overall:+.3f}R over {tot_n} trades\n"
+            f"  excluding best fold: {ex_best:+.3f}R over {rest_n} trades\n"
+            f"  concentration: {verdict}")
+
+
+def main_walkforward():
+    parser = argparse.ArgumentParser(
+        description="Evaluate the FIXED production config on sequential "
+                    "non-overlapping folds (no tuning inside)")
+    parser.add_argument("tickers", nargs="+")
+    parser.add_argument("--years", type=float, default=4.0)
+    parser.add_argument("--folds", type=int, default=4)
+    parser.add_argument("--unlock-lockbox", action="store_true")
+    parser.add_argument("--atr-source", choices=("4h", "daily"),
+                        default=LIVE_GEOMETRY["atr_source"],
+                        help="Which ATR builds the exit levels. DEFAULT 4h = "
+                             "what the live bot does. 'daily' reproduces the "
+                             "old (mismatched) numbers.")
+    parser.add_argument("--max-hold-days", type=float,
+                        default=LIVE_GEOMETRY["max_hold_days"])
+    parser.add_argument("--stop-mult", type=float, default=LIVE_GEOMETRY["stop_mult"])
+    parser.add_argument("--target-mult", type=float, default=LIVE_GEOMETRY["target_mult"])
+    parser.add_argument("--confirm-days", type=int, default=LIVE_GEOMETRY["confirm_days"])
+    parser.add_argument("--short-sma-filter", type=int,
+                        default=LIVE_GEOMETRY["short_sma_filter"])
+    parser.add_argument("--fee-bps", type=float, default=2.0,
+                        help="Per side. Binance.US spot taker ~2bps, maker 0.")
+    parser.add_argument("--slippage-bps", type=float, default=2.0, help="Per side.")
+    parser.add_argument("--compare-geometries", action="store_true",
+                        help="Also run the other ATR source for contrast")
+    args = parser.parse_args()
+
+    yf_period = next((p for y, p in ((1, "1y"), (2, "2y"), (5, "5y"), (10, "10y"))
+                      if args.years <= y), "max")
+    n_4h = min(int(args.years * 365 * 6 * 1.15), 30000)
+    cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=int(args.years * 365))
+    live = (args.atr_source == LIVE_GEOMETRY["atr_source"]
+            and args.max_hold_days == LIVE_GEOMETRY["max_hold_days"]
+            and args.stop_mult == LIVE_GEOMETRY["stop_mult"]
+            and args.target_mult == LIVE_GEOMETRY["target_mult"]
+            and args.confirm_days == LIVE_GEOMETRY["confirm_days"]
+            and args.short_sma_filter == LIVE_GEOMETRY["short_sma_filter"])
+
+    for ticker in args.tickers:
+        rt = 2 * (args.fee_bps + args.slippage_bps)
+        print(f"\n=== {ticker} walk-forward ({args.folds} folds, "
+              f"{args.atr_source} ATR, {args.max_hold_days:g}d hold, "
+              f"net of {rt:g}bps round trip) ===")
+        print("  geometry " + ("MATCHES the live bot" if live else
+              "DIFFERS FROM the live bot — this verdict is about a trade "
+              "the bot does not place"))
+        merged = run_backtest(ticker, period=yf_period, squeeze_bars=n_4h)
+        merged = merged[merged.index >= cutoff]
+        merged = apply_lockbox(merged, unlock=args.unlock_lockbox)
+        print(f"Pulling {n_4h} 4h bars for exit resolution...")
+        bars_4h = cf.fetch_klines_paginated(cf.to_binance_symbol(ticker),
+                                            interval="4h", target_bars=n_4h)
+
+        results = evaluate_geometry_folds(
+            merged, bars_4h, args.folds, args.atr_source, args.max_hold_days,
+            args.stop_mult, args.target_mult, args.confirm_days,
+            args.short_sma_filter, args.fee_bps, args.slippage_bps)
+        v = walkforward_verdict(results)
+        print(f"  VERDICT: {v['verdict']} "
+              f"({v.get('folds_positive','—')}/{v['folds_counted']} "
+              f"counted folds net-positive)")
+        print(concentration_report(results))
+
+        if args.compare_geometries:
+            other = "daily" if args.atr_source == "4h" else "4h"
+            print(f"\n  --- same folds, {other} ATR for contrast ---")
+            r2 = evaluate_geometry_folds(
+                merged, bars_4h, args.folds, other, args.max_hold_days,
+                args.stop_mult, args.target_mult, args.confirm_days,
+                args.short_sma_filter, args.fee_bps, args.slippage_bps)
+            v2 = walkforward_verdict(r2)
+            print(f"  VERDICT ({other} ATR): {v2['verdict']} "
+                  f"({v2.get('folds_positive','—')}/{v2['folds_counted']})")
+            print(concentration_report(r2))
+
+
+# ======================================================================
+# ROBUSTNESS VALIDATION — the honest answer to the 4-year failure
+# ======================================================================
+# Context: extending the backtest window to ~4 years showed BUY win rate
+# falling to ~50% and SELL expectancy flipping sign over 2022-2026,
+# meaning the original 2024-2026 validation window may simply have been
+# FAVORABLE to the signal. One rescue candidate was identified but not
+# acted on: trades entered while VIX was stressed showed strongly
+# positive expectancy while normal-VIX trades were negative. A two-ticker
+# check is NOT replication for a market-wide variable like VIX (both
+# tickers see the same VIX days), so the bar here is deliberately higher:
+#
+#   The VIX regime edge counts as REPLICATED only if, with n>=MIN_N
+#   trades per cell, stressed expectancy beats normal expectancy AND is
+#   positive in BOTH time halves of the window on EVERY ticker tested
+#   (>=3 tickers recommended: e.g. BTC ETH SOL).
+#
+# The short side gets its own verdict: shorts (with the production
+# 50-SMA trend filter) must show positive expectancy in both halves on a
+# majority of tickers, otherwise the honest recommendation is long-only.
+#
+# Nothing here changes any default. It produces the evidence; the
+# decision stays with you.
+
+ROBUSTNESS_MIN_N = 10  # below this a cell is "insufficient data", not a pass/fail
+
+
+def attach_vix_to_trades(trades: list, merged: pd.DataFrame) -> list:
+    """Annotate each exit-backtest trade with the VIX level on its entry
+    date (from the merged backtest frame). Trades whose date is missing
+    from the frame get vix_level=NaN and are excluded from VIX splits."""
+    vix_by_date = merged["vix_level"].to_dict() if "vix_level" in merged else {}
+    out = []
+    for t in trades:
+        t = dict(t)
+        t["vix_level"] = float(vix_by_date.get(t["date"], float("nan")))
+        out.append(t)
+    return out
+
+
+def subset_stats(trades: list) -> dict:
+    """Summary stats for a list of trade dicts (as produced by
+    backtest_exits + attach_vix_to_trades). Pure and offline."""
+    n = len(trades)
+    if n == 0:
+        return {"n": 0}
+    wins = sum(1 for t in trades if t["outcome"] == "target")
+    stops = sum(1 for t in trades if t["outcome"] in ("stop", "ambiguous_stop"))
+    timeouts = sum(1 for t in trades if t["outcome"] == "timeout")
+    exp = sum(t["pnl_r"] for t in trades) / n
+    return {"n": n, "target_rate": wins / n, "stop_rate": stops / n,
+            "timeout_rate": timeouts / n, "expectancy_r": exp}
+
+
+def split_trades(trades: list, vix_threshold: float) -> dict:
+    """Split annotated trades into the cells the verdicts need. Time halves
+    are split at the midpoint of the DATE RANGE (not trade count), so a
+    quiet half stays a small-n half instead of being padded."""
+    cells = {"all": trades,
+             "long": [t for t in trades if t["direction"] in ("BUY", "STRONG_BUY")],
+             "short": [t for t in trades if t["direction"] in ("SELL", "STRONG_SELL")]}
+    if trades:
+        dates = sorted(t["date"] for t in trades)
+        mid = dates[0] + (dates[-1] - dates[0]) / 2
+        for half, keep in (("h1", lambda t: t["date"] <= mid),
+                            ("h2", lambda t: t["date"] > mid)):
+            sub = [t for t in trades if keep(t)]
+            cells[half] = sub
+            cells[f"{half}_long"] = [t for t in sub if t["direction"] in ("BUY", "STRONG_BUY")]
+            cells[f"{half}_short"] = [t for t in sub if t["direction"] in ("SELL", "STRONG_SELL")]
+            cells[f"{half}_vix_stressed"] = [t for t in sub
+                                             if t["vix_level"] == t["vix_level"]
+                                             and t["vix_level"] >= vix_threshold]
+            cells[f"{half}_vix_normal"] = [t for t in sub
+                                           if t["vix_level"] == t["vix_level"]
+                                           and t["vix_level"] < vix_threshold]
+        cells["vix_stressed"] = [t for t in trades if t["vix_level"] == t["vix_level"]
+                                 and t["vix_level"] >= vix_threshold]
+        cells["vix_normal"] = [t for t in trades if t["vix_level"] == t["vix_level"]
+                               and t["vix_level"] < vix_threshold]
+    return cells
+
+
+def vix_replication_verdict(per_ticker_cells: dict, min_n: int = ROBUSTNESS_MIN_N) -> dict:
+    """The pre-registered test. For every ticker and both halves:
+    stressed expectancy must beat normal expectancy AND be positive,
+    with n>=min_n in both cells. Any insufficient cell -> the whole
+    verdict is INSUFFICIENT (never a pass by default)."""
+    checks, insufficient = [], False
+    for ticker, cells in per_ticker_cells.items():
+        for half in ("h1", "h2"):
+            s = subset_stats(cells.get(f"{half}_vix_stressed", []))
+            m = subset_stats(cells.get(f"{half}_vix_normal", []))
+            if s["n"] < min_n or m["n"] < min_n:
+                checks.append({"ticker": ticker, "half": half, "status": "insufficient",
+                               "n_stressed": s["n"], "n_normal": m["n"]})
+                insufficient = True
+                continue
+            ok = (s["expectancy_r"] > m["expectancy_r"]) and (s["expectancy_r"] > 0)
+            checks.append({"ticker": ticker, "half": half,
+                           "status": "pass" if ok else "fail",
+                           "stressed_exp": round(s["expectancy_r"], 3),
+                           "normal_exp": round(m["expectancy_r"], 3),
+                           "n_stressed": s["n"], "n_normal": m["n"]})
+    if insufficient:
+        verdict = "INSUFFICIENT_DATA"
+    elif all(c["status"] == "pass" for c in checks):
+        verdict = "REPLICATED"
+    else:
+        verdict = "NOT_REPLICATED"
+    return {"verdict": verdict, "checks": checks}
+
+
+def short_side_verdict(per_ticker_cells: dict, min_n: int = ROBUSTNESS_MIN_N) -> dict:
+    """Shorts must be positive-expectancy in BOTH halves on a MAJORITY of
+    tickers (with the production trend filter already applied upstream).
+    Otherwise the recommendation is long-only."""
+    ticker_ok, checks, insufficient = 0, [], False
+    for ticker, cells in per_ticker_cells.items():
+        halves = []
+        for half in ("h1", "h2"):
+            st = subset_stats(cells.get(f"{half}_short", []))
+            if st["n"] < min_n:
+                checks.append({"ticker": ticker, "half": half, "status": "insufficient",
+                               "n": st["n"]})
+                insufficient = True
+                halves.append(None)
+            else:
+                ok = st["expectancy_r"] > 0
+                halves.append(ok)
+                checks.append({"ticker": ticker, "half": half,
+                               "status": "pass" if ok else "fail",
+                               "expectancy_r": round(st["expectancy_r"], 3), "n": st["n"]})
+        if all(h is True for h in halves):
+            ticker_ok += 1
+    n_tickers = len(per_ticker_cells)
+    if insufficient and ticker_ok <= n_tickers / 2:
+        verdict = "INSUFFICIENT_DATA"
+    elif ticker_ok > n_tickers / 2:
+        verdict = "SHORTS_HOLD_UP"
+    else:
+        verdict = "RECOMMEND_LONG_ONLY"
+    return {"verdict": verdict, "tickers_passing": ticker_ok,
+            "tickers_total": n_tickers, "checks": checks}
+
+
+def _fmt_cell(name: str, st: dict) -> str:
+    if st["n"] == 0:
+        return f"| {name} | 0 | — | — | — | — |"
+    return (f"| {name} | {st['n']} | {st['target_rate']*100:.1f}% "
+            f"| {st['stop_rate']*100:.1f}% | {st['timeout_rate']*100:.1f}% "
+            f"| {st['expectancy_r']:+.3f}R |")
+
+
+def build_robustness_report(per_ticker_cells: dict, years: float,
+                             vix_threshold: float, config_desc: str) -> str:
+    """Render the full markdown report. Pure — takes cells, returns text."""
+    lines = ["# Robustness Report", "",
+             f"Window: last ~{years:g} years · {config_desc}",
+             f"VIX stressed threshold: >= {vix_threshold:g} · "
+             f"min trades per verdict cell: {ROBUSTNESS_MIN_N}",
+             "",
+             "Pre-registered criteria (decided BEFORE looking at results):",
+             "- VIX edge replicates only if stressed beats normal AND is positive",
+             "  in both time halves on every ticker.",
+             "- Shorts hold up only if positive in both halves on a majority of tickers.",
+             "",
+             "No defaults were changed by this run. Evidence only.", ""]
+    for ticker, cells in per_ticker_cells.items():
+        lines += [f"## {ticker}", "",
+                  "| Subset | n | Target | Stop | Timeout | Expectancy |",
+                  "|---|---|---|---|---|---|"]
+        order = ["all", "long", "short", "h1", "h2", "h1_long", "h2_long",
+                 "h1_short", "h2_short", "vix_stressed", "vix_normal",
+                 "h1_vix_stressed", "h1_vix_normal", "h2_vix_stressed",
+                 "h2_vix_normal"]
+        labels = {"all": "All trades", "long": "Long only", "short": "Short only",
+                  "h1": "First half", "h2": "Second half",
+                  "h1_long": "H1 long", "h2_long": "H2 long",
+                  "h1_short": "H1 short", "h2_short": "H2 short",
+                  "vix_stressed": f"VIX >= {vix_threshold:g}",
+                  "vix_normal": f"VIX < {vix_threshold:g}",
+                  "h1_vix_stressed": "H1 VIX stressed", "h1_vix_normal": "H1 VIX normal",
+                  "h2_vix_stressed": "H2 VIX stressed", "h2_vix_normal": "H2 VIX normal"}
+        for key in order:
+            lines.append(_fmt_cell(labels[key], subset_stats(cells.get(key, []))))
+        lines.append("")
+    vv = vix_replication_verdict(per_ticker_cells)
+    sv = short_side_verdict(per_ticker_cells)
+    lines += ["## Verdicts", "", f"**VIX regime edge: {vv['verdict']}**", ""]
+    for c in vv["checks"]:
+        if c["status"] == "insufficient":
+            lines.append(f"- {c['ticker']} {c['half']}: insufficient data "
+                         f"(stressed n={c['n_stressed']}, normal n={c['n_normal']})")
+        else:
+            lines.append(f"- {c['ticker']} {c['half']}: {c['status']} "
+                         f"(stressed {c['stressed_exp']:+.3f}R n={c['n_stressed']} vs "
+                         f"normal {c['normal_exp']:+.3f}R n={c['n_normal']})")
+    lines += ["", f"**Short side: {sv['verdict']}** "
+                  f"({sv['tickers_passing']}/{sv['tickers_total']} tickers positive "
+                  f"in both halves)", ""]
+    for c in sv["checks"]:
+        if c["status"] == "insufficient":
+            lines.append(f"- {c['ticker']} {c['half']}: insufficient data (n={c['n']})")
+        else:
+            lines.append(f"- {c['ticker']} {c['half']}: {c['status']} "
+                         f"({c['expectancy_r']:+.3f}R, n={c['n']})")
+    lines += ["", "### How to read this",
+              "- REPLICATED means the VIX gate earned the right to become an",
+              "  optional entry filter (still your call to enable it).",
+              "- NOT_REPLICATED means the +R on stressed days was likely the",
+              "  2022 bear market wearing a costume — document it and move on.",
+              "- INSUFFICIENT_DATA means no conclusion is honest yet; more",
+              "  tickers or a longer window are needed before deciding.", ""]
+    return "\n".join(lines)
+
+
+def main_robustness():
+    parser = argparse.ArgumentParser(
+        description="Multi-ticker, split-sample robustness validation of the "
+                    "exit backtest, incl. the VIX regime rescue candidate")
+    parser.add_argument("tickers", nargs="+", help="e.g. BTC ETH SOL")
+    parser.add_argument("--years", type=float, default=4.0,
+                         help="Window length in years (default 4). Yahoo is "
+                              "fetched at the next-larger valid period and "
+                              "trimmed, so any value works.")
+    parser.add_argument("--vix-threshold", type=float, default=25.0,
+                         help="VIX level at/above which a trade counts as "
+                              "'stressed' (default 25)")
+    parser.add_argument("--confirm-days", type=int, default=2,
+                         help="Persistence filter, production default 2")
+    parser.add_argument("--short-sma-filter", type=int, default=50,
+                         help="Short trend filter SMA, production default 50")
+    parser.add_argument("--stop-mult", type=float, default=1.5)
+    parser.add_argument("--target-mult", type=float, default=3.0)
+    parser.add_argument("--max-hold-days", type=int, default=15)
+    parser.add_argument("--out", default="docs/robustness.md",
+                         help="Markdown report path (default docs/robustness.md)")
+    args = parser.parse_args()
+
+    # Smallest valid yfinance period covering the window
+    yf_period = next((p for y, p in ((1, "1y"), (2, "2y"), (5, "5y"), (10, "10y"))
+                      if args.years <= y), "max")
+    squeeze_bars = min(int(args.years * 365 * 6 * 1.15), 30000)
+    cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=int(args.years * 365))
+
+    per_ticker_cells = {}
+    for ticker in args.tickers:
+        print(f"\n=== {ticker}: pulling {args.years:g}y of history ===")
+        merged = run_backtest(ticker, period=yf_period, squeeze_bars=squeeze_bars)
+        merged = merged[merged.index >= cutoff]
+        print(f"{ticker}: {len(merged)} joined daily rows from "
+              f"{merged.index.min().date()} to {merged.index.max().date()}")
+        res = backtest_exits(merged, stop_mult=args.stop_mult,
+                             target_mult=args.target_mult,
+                             max_hold_days=args.max_hold_days,
+                             short_sma_filter=args.short_sma_filter,
+                             confirm_days=args.confirm_days)
+        trades = attach_vix_to_trades(res.get("trades", []), merged)
+        per_ticker_cells[ticker] = split_trades(trades, args.vix_threshold)
+
+    config_desc = (f"confirm_days={args.confirm_days}, "
+                   f"short_sma_filter={args.short_sma_filter}, "
+                   f"exits {args.target_mult:g}x/{args.stop_mult:g}x, "
+                   f"max_hold={args.max_hold_days}d")
+    report = build_robustness_report(per_ticker_cells, args.years,
+                                      args.vix_threshold, config_desc)
+    print("\n" + report)
+    if args.out:
+        import os
+        os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+        with open(args.out, "w") as f:
+            f.write(report)
+        print(f"\nReport written to {args.out}")
+
+
+# ======================================================================
 # CLI DISPATCHER — subcommands: run / multi / backtest
 # ======================================================================
 
@@ -1471,7 +2539,7 @@ def _resolve_features(name, frame):
 
 def ml_sweep(ticker: str, period: str = "3y", horizons=(5, 7, 10),
              thresholds=(0.010, 0.015, 0.020), squeeze_variants=(False, True),
-             feature_sets=("all",), periods=None):
+             feature_sets=("all",), periods=None, unlock_lockbox: bool = False):
     """
     Sweeps ML target definitions and feature sets, reporting HONEST
     out-of-sample holdout AUC for each. AUC is the metric that matters:
@@ -1494,6 +2562,7 @@ def ml_sweep(ticker: str, period: str = "3y", horizons=(5, 7, 10),
         for sq in squeeze_variants:
             try:
                 frame = build_ml_frame(ticker, period=per, with_squeeze=sq)
+                frame = apply_lockbox(frame, unlock=unlock_lockbox)
             except Exception as e:
                 print(f"{per:<8}frame build FAILED: {type(e).__name__}: {e}")
                 continue
@@ -1553,22 +2622,32 @@ def main_mlsweep():
                          help="History lengths to test (default 3y,5y,max)")
     parser.add_argument("--feature-sets", default="minimal,core3,core4,core5,all",
                          help="Named feature sets: minimal,core3,core4,core5,all")
+    parser.add_argument("--unlock-lockbox", action="store_true",
+                         help="Sweep INTO the sealed holdout window (loud, one-way)")
     args = parser.parse_args()
     ml_sweep(args.ticker,
              horizons=tuple(int(x) for x in args.horizons.split(",")),
              thresholds=tuple(float(x) for x in args.thresholds.split(",")),
              squeeze_variants=((False,) if args.no_squeeze else (False, True)),
              feature_sets=tuple(args.feature_sets.split(",")),
-             periods=tuple(args.periods.split(",")))
+             periods=tuple(args.periods.split(",")),
+             unlock_lockbox=args.unlock_lockbox)
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "multi", "backtest", "mlsweep"):
-        print("Usage: python pipeline.py <run|multi|backtest> [args...]\n"
-              "  run BTC ...        - single-ticker pipeline (was unified_model.py)\n"
-              "  multi BTC ETH ...  - batch across tickers   (was run_multi_ticker.py)\n"
-              "  backtest BTC ...   - historical backtest    (was backtest_direction.py)\n"
-              "  mlsweep BTC        - sweep ML target/feature definitions by holdout AUC\n"
+    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "multi", "backtest", "mlsweep", "robustness", "walkforward", "exitgeometry", "optimize"):
+        print("Usage: python pipeline.py <run|multi|backtest|robustness> [args...]\n"
+              "  run BTC ...          - single-ticker pipeline (was unified_model.py)\n"
+              "  multi BTC ETH ...    - batch across tickers   (was run_multi_ticker.py)\n"
+              "  backtest BTC ...     - historical backtest    (was backtest_direction.py)\n"
+              "  mlsweep BTC          - sweep ML target/feature definitions by holdout AUC\n"
+              "  optimize BTC         - grid-search exit configs on sealed data, walk-forward\n"
+              "                         validate leaders, show cost + band leakage\n"
+              "  exitgeometry BTC     - compare live (4h ATR) vs backtest (daily ATR) exit\n"
+              "                         geometries on history — options 1 and 2\n"
+              "  walkforward BTC ETH SOL - fixed-config evaluation on sequential folds (lockboxed)\n"
+              "  robustness BTC ETH SOL - split-sample validation of the 4y failure +\n"
+              "                         VIX regime rescue candidate (writes docs/robustness.md)\n"
               "Run 'python pipeline.py <command> --help' for that command's options.")
         sys.exit(1)
 
@@ -1581,6 +2660,14 @@ def main():
         main_backtest()
     elif command == "mlsweep":
         main_mlsweep()
+    elif command == "robustness":
+        main_robustness()
+    elif command == "walkforward":
+        main_walkforward()
+    elif command == "exitgeometry":
+        main_exitgeometry()
+    elif command == "optimize":
+        main_optimize()
 
 
 if __name__ == "__main__":
