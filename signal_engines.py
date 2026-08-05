@@ -2828,7 +2828,31 @@ def cached_sentiment_check(ticker: str, ttl_hours: float = None,
                               f"reading {age:.1f}h old. " + gate.get("reason", ""))
             print(f"  [sentiment] live call failed, falling back to {age:.1f}h-old cache")
             return gate
-        raise
+        # NO cache to fall back on. This used to `raise` — which killed
+        # the ENTIRE pipeline run: no signal, no log row, no schema
+        # migration, nothing. Measured consequence in production (Aug
+        # 2026): the sentiment cache was never persisted (workflow commit
+        # bug), so every run paid a fresh Adanos call, the free-tier
+        # quota exhausted around Aug 3 19:01 UTC, and from that moment
+        # EVERY hourly check died on this raise for 2+ days — a gate that
+        # had never once changed a score (gate_multiplier == 1.0 on all
+        # 419 logged runs) took the whole signal service down with it.
+        # Worse, it was a deadlock: seeding the cache requires one
+        # successful call, which the exhausted quota made impossible.
+        #
+        # Correct degradation: return a VISIBLE neutral gate. The run
+        # proceeds, the row logs with decision "ERROR" so the failure
+        # shows up in the log instead of as silence, and _is_real_reading
+        # already guarantees this result is never cached.
+        print(f"  [sentiment] live call failed with no cache to fall back on "
+              f"({type(e).__name__}: {e}) — proceeding NEUTRAL, gate marked ERROR")
+        return {"decision": "ERROR", "gate_multiplier": 1.0,
+                "reason": (f"Adanos unavailable ({type(e).__name__}) and no "
+                           f"cached reading exists — gate neutral for this "
+                           f"run. If this persists, check quota/key."),
+                "sentiment_score": None, "mentions": None,
+                "cache_hit": False, "cache_age_hours": None,
+                "stale_fallback": False}
 
     gate = dict(gate)
     gate.update({"cache_hit": False, "cache_age_hours": 0.0, "stale_fallback": False})

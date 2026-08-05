@@ -1125,12 +1125,20 @@ class TestSentimentCaching:
         assert g["gate_multiplier"] == 0.5
         assert g["cache_age_hours"] == pytest.approx(9.0, abs=0.1)
 
-    def test_failure_with_no_cache_raises(self, tmp_path):
+    def test_failure_with_no_cache_degrades_visibly(self, tmp_path):
+        # CONTRACT CHANGE (Aug 5, deliberate): this used to assert a
+        # raise. In production the raise killed every hourly run for 2+
+        # days once Adanos quota exhausted — a gate that never changed a
+        # score took the whole service down, and created a deadlock (the
+        # cache that would save quota can only be seeded by a successful
+        # call). Failure with no cache now returns a VISIBLE neutral
+        # gate; TestSentimentFailureDegradation pins the full behavior.
         def broken(t, **kw):
             raise ConnectionError("adanos down")
-        with pytest.raises(ConnectionError):
-            ads.cached_sentiment_check("BTC", ttl_hours=4, cache_path=self._tmp(tmp_path),
-                                      fetcher=broken)
+        g = ads.cached_sentiment_check("BTC", ttl_hours=4,
+                                       cache_path=self._tmp(tmp_path),
+                                       fetcher=broken)
+        assert g["decision"] == "ERROR" and g["gate_multiplier"] == 1.0
 
     def test_corrupt_cache_file_is_survivable(self, tmp_path):
         p = self._tmp(tmp_path)
@@ -2369,3 +2377,354 @@ class TestWorkflowCommitRobustness:
         d = yaml.safe_load(wf.read_text())
         steps = d["jobs"]["check"]["steps"]
         assert any("Commit" in s.get("name", "") for s in steps)
+
+
+class TestRobustnessRewire:
+    """robustness had the same defect walkforward had: it validated
+    daily-ATR exits while the bot runs 4h ATR — verdicts about a trade
+    the bot never places. Now routed through backtest_exit_geometry with
+    LIVE_GEOMETRY defaults, and cells judged on NET pnl."""
+
+    def test_subset_stats_prefers_net_when_available(self):
+        trades = [{"outcome": "target", "pnl_r": 1.0, "pnl_r_net": 0.9},
+                  {"outcome": "stop", "pnl_r": -1.0, "pnl_r_net": -1.1}]
+        s = um.subset_stats(trades)
+        assert s["expectancy_r"] == pytest.approx((0.9 - 1.1) / 2)
+
+    def test_subset_stats_falls_back_to_gross_for_legacy_trades(self):
+        trades = [{"outcome": "target", "pnl_r": 2.0},
+                  {"outcome": "stop", "pnl_r": -1.0}]
+        assert um.subset_stats(trades)["expectancy_r"] == pytest.approx(0.5)
+
+    def test_robustness_defaults_come_from_live_geometry(self):
+        import inspect
+        src = inspect.getsource(um.main_robustness)
+        assert 'LIVE_GEOMETRY["atr_source"]' in src, \
+            "robustness no longer defaults to the live bot's ATR source"
+        assert "backtest_exit_geometry(" in src, \
+            "robustness reverted to backtest_exits (daily-ATR defect)"
+        assert "backtest_exits(" not in src.replace(
+            "backtest_exit_geometry(", ""), \
+            "a bare backtest_exits call is back in robustness"
+
+    def test_robustness_reports_geometry_match_status(self):
+        import inspect
+        src = inspect.getsource(um.main_robustness)
+        assert "MATCHES the live bot" in src
+        assert "DIFFERS FROM the live bot" in src
+
+
+class TestLaunchReadinessAudit:
+    """The audit's D-section turns launch readiness into a checklist.
+    These pin that it exists and checks the right prerequisites."""
+
+    def test_readiness_checks_cover_the_prerequisites(self):
+        import pathlib
+        src = (pathlib.Path(__file__).parent / "audit.py").read_text()
+        assert "check_launch_readiness" in src
+        for needle in ("--long-only", 'if [ -e "$f" ]',
+                       "signal_outcomes.csv", "sentiment_score",
+                       "sentiment_cache.json"):
+            assert needle in src, f"readiness no longer checks {needle!r}"
+
+    def test_readiness_is_wired_into_main(self):
+        import pathlib
+        src = (pathlib.Path(__file__).parent / "audit.py").read_text()
+        assert "check_launch_readiness()" in src.split("def main()")[1]
+
+
+class TestSentimentFailureDegradation:
+    """THE DEADLOCK FIX. cached_sentiment_check used to re-raise when a
+    live call failed with no cache — which killed the ENTIRE hourly run.
+    In production the cache never persisted (workflow bug), quota
+    exhausted Aug 3, and every check for 2+ days died on that raise: a
+    gate that never changed a score took the whole service down. These
+    pin the correct degradation: neutral, VISIBLE, never cached."""
+
+    @staticmethod
+    def _boom(*a, **k):
+        raise ConnectionError("quota exhausted")
+
+    def test_failure_with_no_cache_degrades_instead_of_raising(self, tmp_path):
+        cache = str(tmp_path / "c.json")
+        g = ads.cached_sentiment_check("BTC", cache_path=cache,
+                                      fetcher=self._boom)
+        assert g["decision"] == "ERROR"
+        assert g["gate_multiplier"] == 1.0
+        assert g["stale_fallback"] is False
+        assert "Adanos unavailable" in g["reason"]
+
+    def test_failure_result_is_never_cached(self, tmp_path):
+        import os, json
+        cache = str(tmp_path / "c.json")
+        ads.cached_sentiment_check("BTC", cache_path=cache, fetcher=self._boom)
+        # either no file, or an empty dict — never an ERROR entry
+        if os.path.exists(cache):
+            assert "BTC" not in json.load(open(cache))
+
+    def test_stale_fallback_still_preferred_over_neutral(self, tmp_path):
+        import json
+        from datetime import datetime, timezone, timedelta
+        cache = str(tmp_path / "c.json")
+        old = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat()
+        json.dump({"BTC": {"fetched_at": old,
+                           "gate": {"decision": "PROCEED",
+                                    "gate_multiplier": 1.0,
+                                    "reason": "old reading",
+                                    "sentiment_score": 0.1,
+                                    "mentions": 30}}}, open(cache, "w"))
+        g = ads.cached_sentiment_check("BTC", cache_path=cache,
+                                      fetcher=self._boom, ttl_hours=4)
+        assert g["stale_fallback"] is True
+        assert g["decision"] == "PROCEED"   # the real reading, not ERROR
+
+    def test_pipeline_row_survives_sentiment_failure(self, tmp_path):
+        # End to end at the step level: apply_reddit_step must produce a
+        # loggable step2 even when Adanos is down and no cache exists.
+        import pipeline as um
+        step1 = {"step": 1, "initial_score": 62.0, "close": 63000.0,
+                 "atr": 450.0, "timestamp": 1.0,
+                 "bb_width_pctl": 0.1, "squeeze_duration": 5}
+        orig = ads.cached_sentiment_check
+        ads.cached_sentiment_check = lambda *a, **k: orig(
+            "BTC", cache_path=str(tmp_path / "c.json"), fetcher=self._boom)
+        try:
+            step2 = um.apply_reddit_step("BTC", step1)
+        finally:
+            ads.cached_sentiment_check = orig
+        assert step2["gate_decision"] == "ERROR"
+        assert step2["gate_multiplier"] == 1.0
+        assert step2["gated_score"] == 62.0   # neutral: score untouched
+
+
+class TestBatchTwoGates:
+    """Gate batch 2 (hypotheses #10-13), registered 2026-08-06 with
+    directions fixed before results: atr_expand (expanding better),
+    vix_calm (<25 better), near_high (>=85% of 252d max better),
+    btc_regime (BTC>50d SMA better, identity on BTC). These pin the
+    fixed parameters, no-lookahead, fail-closed, and the BTC identity."""
+
+    @staticmethod
+    def _merged(n=400, trend=0.001, vix=18.0):
+        idx = pd.date_range("2024-01-01", periods=n, freq="D")
+        c = pd.Series(100.0 * (1 + trend) ** np.arange(n), index=idx)
+        return pd.DataFrame({"Close": c, "High": c * 1.01, "Low": c * 0.99,
+                             "vix_level": [vix] * n}, index=idx)
+
+    @staticmethod
+    def _t(d, direction="BUY"):
+        return {"date": d, "direction": direction, "pnl_r": 1.0,
+                "pnl_r_net": 1.0, "score": 65.0}
+
+    def test_parameters_are_fixed_and_documented(self):
+        p = um.OVERLAY_PARAMS
+        assert p["atr_expand_period"] == 14 and p["atr_expand_lookback"] == 5
+        assert p["vix_calm_threshold"] == 25.0     # robustness's own line
+        assert p["near_high_window"] == 252 and p["near_high_frac"] == 0.85
+        assert p["btc_regime_sma"] == 50
+
+    def test_vix_calm_gates_on_threshold_and_fails_closed(self):
+        s_calm = um.build_overlay_series(self._merged(vix=18.0))
+        s_hot = um.build_overlay_series(self._merged(vix=32.0))
+        d = pd.Timestamp("2024-06-01")
+        assert len(um.apply_overlay([self._t(d)], s_calm, "vix_calm")) == 1
+        assert um.apply_overlay([self._t(d)], s_hot, "vix_calm") == []
+        s_none = um.build_overlay_series(
+            self._merged().drop(columns=["vix_level"]))
+        assert um.apply_overlay([self._t(d)], s_none, "vix_calm") == []
+
+    def test_near_high_passes_uptrend_blocks_deep_drawdown(self):
+        up = um.build_overlay_series(self._merged(trend=0.001))
+        d = pd.Timestamp("2024-12-01")
+        assert len(um.apply_overlay([self._t(d)], up, "near_high")) == 1
+        # crash to 60% of the running max -> blocked
+        m = self._merged(trend=0.001)
+        m.loc[m.index[300]:, "Close"] = m["Close"].iloc[299] * 0.60
+        down = um.build_overlay_series(m)
+        assert um.apply_overlay([self._t(m.index[350])], down, "near_high") == []
+
+    def test_atr_expand_has_no_lookahead(self):
+        # A volatility explosion AFTER date d must not change d's flag.
+        base = self._merged(n=300)
+        loud = base.copy()
+        loud.loc[loud.index[250]:, "High"] = loud["Close"] * 1.20
+        loud.loc[loud.index[250]:, "Low"] = loud["Close"] * 0.80
+        d = base.index[200]
+        a = um._sv_daily(um.build_overlay_series(base)["atr_expanding"], d)
+        b = um._sv_daily(um.build_overlay_series(loud)["atr_expanding"], d)
+        assert bool(a) == bool(b), "future volatility changed a past flag"
+
+    def test_btc_regime_identity_on_btc_gates_alts(self):
+        m = self._merged()
+        rising = pd.Series(100.0 * 1.002 ** np.arange(400),
+                            index=m.index)
+        falling = pd.Series(100.0 * 0.998 ** np.arange(400),
+                             index=m.index)
+        d = pd.Timestamp("2024-12-01")
+        s_btc = um.build_overlay_series(m, btc_close=falling)
+        s_btc["_ticker"] = "BTC"
+        assert len(um.apply_overlay([self._t(d)], s_btc, "btc_regime")) == 1, \
+            "BTC must pass through its own regime gate unchanged"
+        s_eth_up = um.build_overlay_series(m, btc_close=rising)
+        s_eth_up["_ticker"] = "ETH"
+        s_eth_dn = um.build_overlay_series(m, btc_close=falling)
+        s_eth_dn["_ticker"] = "ETH"
+        assert len(um.apply_overlay([self._t(d)], s_eth_up, "btc_regime")) == 1
+        assert um.apply_overlay([self._t(d)], s_eth_dn, "btc_regime") == []
+
+    def test_batch_two_is_in_the_default_overlay_set(self):
+        import inspect
+        default = inspect.signature(um.overlay_fold_table).parameters["overlays"].default
+        for g in ("atr_expand", "vix_calm", "near_high", "btc_regime"):
+            assert g in default
+
+
+class TestBatchThreeGates:
+    """Batch 3 (hyp. #14-16), registered 2026-08-06: score_rising
+    (signal's own momentum, 3d), strong_close ((C-L)/(H-L) >= 0.70),
+    fresh_signal (no stop-exit within 5d before entry). Pins: fixed
+    params, fail-closed, and — critically for fresh_signal — that only
+    exits BEFORE the entry can block it (no lookahead)."""
+
+    @staticmethod
+    def _merged(n=100):
+        idx = pd.date_range("2024-01-01", periods=n, freq="D")
+        c = pd.Series(np.linspace(100, 120, n), index=idx)
+        return pd.DataFrame({"Close": c, "High": c + 2.0, "Low": c - 2.0,
+                             "final_score": np.linspace(50, 80, n),
+                             "vix_level": [18.0] * n}, index=idx)
+
+    @staticmethod
+    def _t(d, direction="BUY"):
+        return {"date": d, "direction": direction, "pnl_r": 1.0,
+                "pnl_r_net": 1.0, "score": 65.0}
+
+    def test_params_fixed(self):
+        p = um.OVERLAY_PARAMS
+        assert p["score_rising_days"] == 3
+        assert p["strong_close_frac"] == 0.70
+        assert p["fresh_signal_cooldown_days"] == 5
+
+    def test_score_rising_gates_on_signal_momentum(self):
+        m = self._merged()                       # score rises steadily
+        s = um.build_overlay_series(m)
+        d = pd.Timestamp("2024-03-01")
+        assert len(um.apply_overlay([self._t(d)], s, "score_rising")) == 1
+        m2 = self._merged()
+        m2["final_score"] = np.linspace(80, 50, 100)   # falling
+        s2 = um.build_overlay_series(m2)
+        assert um.apply_overlay([self._t(d)], s2, "score_rising") == []
+
+    def test_strong_close_uses_position_in_daily_range(self):
+        m = self._merged()
+        d = pd.Timestamp("2024-03-01")
+        # Close is dead-centre of High=C+2/Low=C-2 -> frac 0.5 -> blocked
+        s = um.build_overlay_series(m)
+        assert um.apply_overlay([self._t(d)], s, "strong_close") == []
+        m.loc[d, "High"] = m.loc[d, "Close"] + 0.5     # close near top
+        m.loc[d, "Low"] = m.loc[d, "Close"] - 4.5
+        s2 = um.build_overlay_series(m)
+        assert len(um.apply_overlay([self._t(d)], s2, "strong_close")) == 1
+
+    def test_fresh_signal_blocks_after_recent_stop_only_backward(self):
+        s = um.build_overlay_series(self._merged())
+        entry = pd.Timestamp("2024-03-10")
+        # a stop that EXITED 2 days before entry -> blocked
+        s["_stop_exits"] = (pd.Timestamp("2024-03-08"),)
+        assert um.apply_overlay([self._t(entry)], s, "fresh_signal") == []
+        # a stop 10 days before -> outside cooldown -> passes
+        s["_stop_exits"] = (pd.Timestamp("2024-02-28"),)
+        assert len(um.apply_overlay([self._t(entry)], s, "fresh_signal")) == 1
+        # a stop AFTER the entry must never block it (lookahead guard)
+        s["_stop_exits"] = (pd.Timestamp("2024-03-12"),)
+        assert len(um.apply_overlay([self._t(entry)], s, "fresh_signal")) == 1
+
+    def test_batch_three_in_default_set(self):
+        import inspect
+        default = inspect.signature(
+            um.overlay_fold_table).parameters["overlays"].default
+        for g in ("score_rising", "strong_close", "fresh_signal"):
+            assert g in default
+
+
+class TestBatchFourInverseGates:
+    """Batch 4 (hyp. #18-20): the INVERSES of unanimously-failed gates.
+    Epistemically weakest class — derived from observed failures, not
+    literature. Tests pin that each is a genuine complement of its
+    failed counterpart (so the pair partitions the trades), and that no
+    NEW threshold was invented beyond the documented reuse."""
+
+    @staticmethod
+    def _merged(n=120, rising=True):
+        idx = pd.date_range("2024-01-01", periods=n, freq="D")
+        c = pd.Series(np.linspace(100, 120, n), index=idx)
+        fs = np.linspace(50, 80, n) if rising else np.linspace(80, 50, n)
+        return pd.DataFrame({"Close": c, "High": c + 2.0, "Low": c - 2.0,
+                             "final_score": fs,
+                             "vix_level": [18.0] * n}, index=idx)
+
+    @staticmethod
+    def _t(d):
+        return {"date": d, "direction": "BUY", "pnl_r": 1.0,
+                "pnl_r_net": 1.0, "score": 65.0}
+
+    def test_score_fading_is_the_exact_complement_of_score_rising(self):
+        d = pd.Timestamp("2024-03-01")
+        for rising in (True, False):
+            s = um.build_overlay_series(self._merged(rising=rising))
+            up = um.apply_overlay([self._t(d)], s, "score_rising")
+            dn = um.apply_overlay([self._t(d)], s, "score_fading")
+            assert len(up) + len(dn) == 1, "gates overlap or leave a gap"
+
+    def test_recent_stop_is_the_exact_complement_of_fresh_signal(self):
+        s = um.build_overlay_series(self._merged())
+        entry = pd.Timestamp("2024-03-10")
+        for exits in ((pd.Timestamp("2024-03-08"),),      # inside window
+                      (pd.Timestamp("2024-02-20"),),      # outside window
+                      ()):                                 # none at all
+            s["_stop_exits"] = exits
+            fresh = um.apply_overlay([self._t(entry)], s, "fresh_signal")
+            recent = um.apply_overlay([self._t(entry)], s, "recent_stop")
+            assert len(fresh) + len(recent) == 1
+
+    def test_recent_stop_ignores_future_exits(self):
+        s = um.build_overlay_series(self._merged())
+        entry = pd.Timestamp("2024-03-10")
+        s["_stop_exits"] = (pd.Timestamp("2024-03-12"),)   # AFTER entry
+        assert um.apply_overlay([self._t(entry)], s, "recent_stop") == [], \
+            "a future stop-exit satisfied recent_stop — lookahead"
+
+    def test_quiet_entry_requires_both_conditions(self):
+        idx = pd.date_range("2024-01-01", periods=60 * 6, freq="4h")
+        c = pd.Series(100.0, index=idx)
+        # Steep decline: a -5/day slope only reaches RVOL 0.74, above the
+        # 0.70 line — the fixture has to be genuinely quiet to test the
+        # gate rather than the gate's edge case.
+        vols = []
+        for day in range(60):
+            v = max(1.0, 400.0 * (0.93 ** day))
+            vols.extend([v / 6] * 6)
+        bars = pd.DataFrame({"High": c, "Low": c, "Close": c,
+                             "Volume": vols}, index=idx)
+        d = pd.Timestamp("2024-02-20")
+        quiet_falling = um.build_overlay_series(
+            self._merged(n=60, rising=False), bars)
+        quiet_rising = um.build_overlay_series(
+            self._merged(n=60, rising=True), bars)
+        # low rvol + falling score -> passes; low rvol + rising -> blocked
+        assert len(um.apply_overlay([self._t(d)], quiet_falling,
+                                     "quiet_entry")) == 1
+        assert um.apply_overlay([self._t(d)], quiet_rising,
+                                 "quiet_entry") == []
+
+    def test_quiet_threshold_reuses_the_observed_median_not_a_new_number(self):
+        # 0.70 rounds up the measured signal-day RVOL medians (0.60-0.66).
+        # If this ever gets "tuned", the weak-class defense is gone.
+        assert um.OVERLAY_PARAMS["quiet_rvol_max"] == 0.70
+
+    def test_batch_four_in_default_set(self):
+        import inspect
+        default = inspect.signature(
+            um.overlay_fold_table).parameters["overlays"].default
+        for g in ("quiet_entry", "score_fading", "recent_stop"):
+            assert g in default

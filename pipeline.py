@@ -2293,15 +2293,20 @@ def attach_vix_to_trades(trades: list, merged: pd.DataFrame) -> list:
 
 
 def subset_stats(trades: list) -> dict:
-    """Summary stats for a list of trade dicts (as produced by
-    backtest_exits + attach_vix_to_trades). Pure and offline."""
+    """Summary stats for a list of trade dicts. Pure and offline.
+
+    Judges on NET pnl (pnl_r_net) when the trades carry it — the same
+    standard as walkforward/optimize/overlays. Falls back to gross for
+    old-style trades that predate cost modelling, so historical tests
+    still pass, but any modern (geometry) trade stream is judged after
+    costs like everything else."""
     n = len(trades)
     if n == 0:
         return {"n": 0}
     wins = sum(1 for t in trades if t["outcome"] == "target")
     stops = sum(1 for t in trades if t["outcome"] in ("stop", "ambiguous_stop"))
     timeouts = sum(1 for t in trades if t["outcome"] == "timeout")
-    exp = sum(t["pnl_r"] for t in trades) / n
+    exp = sum(t.get("pnl_r_net", t["pnl_r"]) for t in trades) / n
     return {"n": n, "target_rate": wins / n, "stop_rate": stops / n,
             "timeout_rate": timeouts / n, "expectancy_r": exp}
 
@@ -2487,7 +2492,21 @@ def main_robustness():
                          help="Short trend filter SMA, production default 50")
     parser.add_argument("--stop-mult", type=float, default=1.5)
     parser.add_argument("--target-mult", type=float, default=3.0)
-    parser.add_argument("--max-hold-days", type=int, default=15)
+    parser.add_argument("--max-hold-days", type=float, default=15)
+    parser.add_argument("--atr-source", choices=("4h", "daily"),
+                         default=LIVE_GEOMETRY["atr_source"],
+                         help="Which ATR builds the exit levels. DEFAULT 4h "
+                              "= what the live bot does. This command used "
+                              "to hardcode daily ATR — the same "
+                              "validation-of-a-trade-the-bot-never-places "
+                              "defect walkforward had. 'daily' reproduces "
+                              "the old numbers.")
+    parser.add_argument("--direction", choices=("buy", "sell"), default=None,
+                         help="Restrict all cells to one side. Default: both.")
+    parser.add_argument("--fee-bps", type=float, default=2.0,
+                         help="Per side. Binance.US spot taker ~2bps, maker 0.")
+    parser.add_argument("--slippage-bps", type=float, default=2.0,
+                         help="Per side.")
     parser.add_argument("--out", default="docs/robustness.md",
                          help="Markdown report path (default docs/robustness.md)")
     args = parser.parse_args()
@@ -2497,26 +2516,49 @@ def main_robustness():
                       if args.years <= y), "max")
     squeeze_bars = min(int(args.years * 365 * 6 * 1.15), 30000)
     cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=int(args.years * 365))
+    wanted = ({"BUY", "STRONG_BUY"} if args.direction == "buy" else
+              {"SELL", "STRONG_SELL"} if args.direction == "sell" else None)
+    matches_live = (args.atr_source == LIVE_GEOMETRY["atr_source"]
+                    and args.max_hold_days == LIVE_GEOMETRY["max_hold_days"]
+                    and args.stop_mult == LIVE_GEOMETRY["stop_mult"]
+                    and args.target_mult == LIVE_GEOMETRY["target_mult"]
+                    and args.confirm_days == LIVE_GEOMETRY["confirm_days"]
+                    and args.short_sma_filter == LIVE_GEOMETRY["short_sma_filter"])
 
     per_ticker_cells = {}
     for ticker in args.tickers:
         print(f"\n=== {ticker}: pulling {args.years:g}y of history ===")
+        print("  geometry " + ("MATCHES the live bot" if matches_live else
+              "DIFFERS FROM the live bot — verdicts below are about a "
+              "trade the bot does not place"))
         merged = run_backtest(ticker, period=yf_period, squeeze_bars=squeeze_bars)
         merged = merged[merged.index >= cutoff]
         print(f"{ticker}: {len(merged)} joined daily rows from "
               f"{merged.index.min().date()} to {merged.index.max().date()}")
-        res = backtest_exits(merged, stop_mult=args.stop_mult,
-                             target_mult=args.target_mult,
-                             max_hold_days=args.max_hold_days,
-                             short_sma_filter=args.short_sma_filter,
-                             confirm_days=args.confirm_days)
-        trades = attach_vix_to_trades(res.get("trades", []), merged)
+        bars_4h = cf.fetch_klines_paginated(cf.to_binance_symbol(ticker),
+                                            interval="4h",
+                                            target_bars=squeeze_bars)
+        res = backtest_exit_geometry(
+            merged, bars_4h, atr_source=args.atr_source,
+            stop_mult=args.stop_mult, target_mult=args.target_mult,
+            max_hold_days=args.max_hold_days,
+            short_sma_filter=args.short_sma_filter,
+            confirm_days=args.confirm_days,
+            fee_bps=args.fee_bps, slippage_bps=args.slippage_bps)
+        trades = res.get("trades", [])
+        if wanted is not None:
+            trades = [t for t in trades if t["direction"] in wanted]
+        trades = attach_vix_to_trades(trades, merged)
         per_ticker_cells[ticker] = split_trades(trades, args.vix_threshold)
 
-    config_desc = (f"confirm_days={args.confirm_days}, "
+    config_desc = (f"{args.atr_source} ATR "
+                   f"({'LIVE geometry' if matches_live else 'NON-live'}), "
+                   f"confirm_days={args.confirm_days}, "
                    f"short_sma_filter={args.short_sma_filter}, "
                    f"exits {args.target_mult:g}x/{args.stop_mult:g}x, "
-                   f"max_hold={args.max_hold_days}d")
+                   f"max_hold={args.max_hold_days:g}d, "
+                   f"net of {2 * (args.fee_bps + args.slippage_bps):g}bps RT"
+                   + (f", {args.direction.upper()} only" if args.direction else ""))
     report = build_robustness_report(per_ticker_cells, args.years,
                                       args.vix_threshold, config_desc)
     print("\n" + report)
@@ -2730,7 +2772,55 @@ def main_mlsweep():
 
 OVERLAY_PARAMS = {"trend_sma": 200, "tsmom_long": 365, "tsmom_short": 28,
                   "vol_window": 20, "vol_target_ann": 0.60, "vol_cap": 1.5,
-                  "rvol_window": 20, "rvol_threshold": 1.5}
+                  "rvol_window": 20, "rvol_threshold": 1.5,
+                  # --- Gate batch 2, REGISTERED 2026-08-06 (hyp. #10-13) ---
+                  "atr_expand_period": 14, "atr_expand_lookback": 5,
+                  "vix_calm_threshold": 25.0, "near_high_window": 252,
+                  "near_high_frac": 0.85, "btc_regime_sma": 50,
+                  # --- Gate batch 3, REGISTERED 2026-08-06 (hyp. #14-16) ---
+                  "score_rising_days": 3, "strong_close_frac": 0.70,
+                  "fresh_signal_cooldown_days": 5,
+                  # --- Gate batch 4, REGISTERED 2026-08-06 (hyp. #18-20) ---
+                  # DATA-DERIVED, WEAKEST CLASS: these are the INVERSES of
+                  # gates that failed unanimously. Inverting a failed
+                  # prediction is one step from peeking at the answer, so a
+                  # screen pass here means LESS than a screen pass from a
+                  # literature-derived gate. Reused thresholds only — no new
+                  # numbers were chosen, which is the one thing keeping this
+                  # honest.
+                  "quiet_rvol_max": 0.70}
+# BATCH 3 REGISTERED DIRECTIONS (fixed before results):
+#   score_rising : final_score today > final_score 3 sessions ago —
+#                  momentum of the SIGNAL itself, not of price (price
+#                  self-trend is a dead family) -> rising is BETTER.
+#   strong_close : entry-day close in the top 30%% of its own daily
+#                  range ((C-L)/(H-L) >= 0.70) — the practitioner
+#                  standard for a strong close -> strong is BETTER.
+#   fresh_signal : no same-ticker STOP-OUT whose exit fell within the 5
+#                  days before this entry — a just-failed breakout
+#                  poisons the setup -> fresh is BETTER. Uses only
+#                  trades that EXITED before this entry (no lookahead).
+# Ledger count after this batch: 16. The screen's false-positive rate
+# times sixteen attempts means a pass here is WEAK by construction; the
+# gauntlet (4y/5f + 5y) and live outcomes remain the only real bars.
+# REGISTERED DIRECTIONS for batch 2, written before any result was seen:
+#   atr_expand : breakouts into RISING volatility travel further ->
+#                expanding is BETTER. (14d ATR vs 5 sessions ago; both
+#                numbers are the standard defaults, not tuned here.)
+#   vix_calm   : risk-on conditions favour crypto longs -> VIX < 25 is
+#                BETTER. 25 is this repo's own pre-existing "stressed"
+#                line (robustness command), chosen long before this gate.
+#   near_high  : proximity to the 52-week high predicts continuation
+#                (George & Hwang 2004) -> within 15% of the 252d max is
+#                BETTER. 0.85 mirrors their nearness construction.
+#   btc_regime : alt longs (ETH/SOL) work when the market leader is in
+#                an uptrend -> BTC above its own 50d SMA is BETTER.
+#                Identity on BTC itself (it cannot gate itself; a
+#                self-trend gate already failed as trend_200).
+# LADDER: stage 1 = 4y/4f SCREEN (contaminated; passes are weak).
+# Stage 2 = 4y/5f AND 5y/4f (the gauntlet that killed compression_deep).
+# Stage 3 = watch survivors against live outcomes. Nothing changes the
+# bot before stage 3. Every gate here goes on the findings ledger.
 # rvol_window/rvol_threshold: PRE-REGISTERED before any result was seen.
 # 20-day baseline and 1.5x are the practitioner convention for breakout
 # volume confirmation (IBD CAN SLIM requires 40-50% above average; most
@@ -2763,7 +2853,8 @@ def build_daily_volume(bars_4h: pd.DataFrame) -> pd.Series:
     return v.groupby(idx.normalize()).sum()
 
 
-def build_overlay_series(merged: pd.DataFrame, bars_4h=None) -> dict:
+def build_overlay_series(merged: pd.DataFrame, bars_4h=None,
+                          btc_close: pd.Series = None) -> dict:
     """Daily series used by the overlays. Everything is a trailing
     calculation: the value AT date d uses closes up to and including d,
     never beyond — the same information the live bot would have."""
@@ -2777,6 +2868,30 @@ def build_overlay_series(merged: pd.DataFrame, bars_4h=None) -> dict:
                      * math.sqrt(365),
         "close": c,
     }
+    p = OVERLAY_PARAMS
+    if {"High", "Low"}.issubset(merged.columns):
+        atr14 = cf.compute_atr(merged, period=p["atr_expand_period"])
+        out["atr_expanding"] = atr14 > atr14.shift(p["atr_expand_lookback"])
+    else:
+        out["atr_expanding"] = pd.Series(dtype=bool)
+    out["vix"] = (merged["vix_level"].astype(float)
+                  if "vix_level" in merged.columns else pd.Series(dtype=float))
+    out["high_frac"] = c / c.rolling(p["near_high_window"]).max()
+    if "final_score" in merged.columns:
+        fs = merged["final_score"].astype(float)
+        out["score_rising"] = fs > fs.shift(p["score_rising_days"])
+    else:
+        out["score_rising"] = pd.Series(dtype=bool)
+    if {"High", "Low"}.issubset(merged.columns):
+        rng_ = (merged["High"] - merged["Low"]).astype(float)
+        out["close_frac"] = ((c - merged["Low"]) / rng_.where(rng_ > 0))
+    else:
+        out["close_frac"] = pd.Series(dtype=float)
+    if btc_close is not None and len(btc_close):
+        b = btc_close.astype(float)
+        out["btc_above_sma"] = b > b.rolling(p["btc_regime_sma"]).mean()
+    else:
+        out["btc_above_sma"] = pd.Series(dtype=bool)
     dv = build_daily_volume(bars_4h)
     if len(dv):
         # Baseline EXCLUDES the current day (.shift(1)) so a signal day's
@@ -2860,6 +2975,57 @@ def apply_overlay(trades: list, series: dict, overlay: str) -> list:
             r = _sv_daily(series.get("rvol", pd.Series(dtype=float)), d)
             med = series.get("_rvol_median", float("nan"))
             keep = (r == r) and (med == med) and r > med
+        elif overlay == "atr_expand":
+            e = _sv_daily(series.get("atr_expanding", pd.Series(dtype=bool)), d)
+            keep = (e == e) and bool(e)
+        elif overlay == "vix_calm":
+            v = _sv_daily(series.get("vix", pd.Series(dtype=float)), d)
+            keep = (v == v) and v < OVERLAY_PARAMS["vix_calm_threshold"]
+        elif overlay == "near_high":
+            h = _sv_daily(series.get("high_frac", pd.Series(dtype=float)), d)
+            keep = (h == h) and h >= OVERLAY_PARAMS["near_high_frac"]
+        elif overlay == "btc_regime":
+            if series.get("_ticker", "").upper().startswith("BTC"):
+                keep = True          # identity: BTC cannot gate itself
+            else:
+                b = _sv_daily(series.get("btc_above_sma",
+                                          pd.Series(dtype=bool)), d)
+                keep = (b == b) and bool(b)
+        elif overlay == "score_rising":
+            r = _sv_daily(series.get("score_rising", pd.Series(dtype=bool)), d)
+            keep = (r == r) and bool(r)
+        elif overlay == "strong_close":
+            fr = _sv_daily(series.get("close_frac", pd.Series(dtype=float)), d)
+            keep = (fr == fr) and fr >= OVERLAY_PARAMS["strong_close_frac"]
+        elif overlay == "fresh_signal":
+            # Needs cross-trade state: the caller precomputes stop-exit
+            # dates for this trade list into series["_stop_exits"]. Only
+            # exits strictly BEFORE this entry can block it (no
+            # lookahead); block if any fell within the cooldown window.
+            cd = OVERLAY_PARAMS["fresh_signal_cooldown_days"]
+            entry = _norm_date(d)
+            keep = not any(0 < (entry - x).days <= cd
+                           for x in series.get("_stop_exits", ()))
+        elif overlay == "score_fading":
+            # INVERSE of score_rising (#14, failed -0.570/-0.076/-0.265)
+            r = _sv_daily(series.get("score_rising", pd.Series(dtype=bool)), d)
+            keep = (r == r) and not bool(r)
+        elif overlay == "recent_stop":
+            # INVERSE of fresh_signal (#16, failed -0.175/-0.105/-0.091):
+            # REQUIRE a same-ticker stop-exit in the prior cooldown window.
+            cd = OVERLAY_PARAMS["fresh_signal_cooldown_days"]
+            entry = _norm_date(d)
+            keep = any(0 < (entry - x).days <= cd
+                       for x in series.get("_stop_exits", ()))
+        elif overlay == "quiet_entry":
+            # Composite of the two measured quiet properties: low volume
+            # AND no score momentum. Thresholds REUSED (0.70 sits at the
+            # observed signal-day RVOL median across tickers, 0.60-0.66,
+            # rounded up; score window is #14's 3 days). Nothing tuned.
+            r = _sv_daily(series.get("rvol", pd.Series(dtype=float)), d)
+            up = _sv_daily(series.get("score_rising", pd.Series(dtype=bool)), d)
+            keep = ((r == r) and r <= OVERLAY_PARAMS["quiet_rvol_max"]
+                    and (up == up) and not bool(up))
         elif overlay == "vol_scale":
             v = _sv(series["vol_ann"], d)
             if v == v and v > 0:
@@ -2886,9 +3052,13 @@ def weighted_net(trades: list) -> float:
 
 
 def overlay_fold_table(fold_trades: list, series: dict,
-                        overlays=("baseline", "trend_200", "tsmom_365",
-                                  "tsmom_28", "rvol_150", "compression_deep",
-                                  "compression_shallow", "vol_scale")) -> dict:
+                        overlays=("baseline", "quiet_entry", "score_fading",
+                                  "recent_stop", "score_rising", "strong_close",
+                                  "fresh_signal", "atr_expand", "vix_calm",
+                                  "near_high", "btc_regime", "trend_200",
+                                  "tsmom_365", "tsmom_28", "rvol_150",
+                                  "compression_deep", "compression_shallow",
+                                  "vol_scale")) -> dict:
     """{overlay: {'per_fold': [(n, net)...], 'all': x, 'ex_best': y}}.
     ex_best uses the same rule as concentration_report: drop the fold
     with the largest total contribution, min 10 trades to count."""
@@ -3152,8 +3322,15 @@ def overlay_verdict(per_ticker: dict, tol: float = 0.02) -> str:
                 worse_big += 1
         ok = better >= 2 and worse_big == 0
         any_candidate |= ok
+        n_na = sum(1 for x in detail if x.endswith("n/a"))
+        tag = "CANDIDATE" if ok else "no"
+        if ok and n_na:
+            # An unmeasurable ticker satisfied "no degradation" by
+            # absence, not evidence. Still a screen-stage pass, but a
+            # weaker one — say so where it will be read.
+            tag += f" (weak: {n_na} ticker(s) n/a — gate thinned them below min_n)"
         lines.append(f"  {ov:<12} ex-best vs baseline [{', '.join(detail)}]"
-                     f"  ->  {'CANDIDATE' if ok else 'no'}")
+                     f"  ->  {tag}")
     lines.append("")
     if any_candidate:
         lines += ["  A candidate is NOT an adoption. Next steps if you want it:",
@@ -3167,6 +3344,17 @@ def overlay_verdict(per_ticker: dict, tol: float = 0.02) -> str:
                   "  levers remain costs, band selection, and live evidence."]
     lines.append("  Nothing was changed by this run.")
     return "\n".join(lines)
+
+
+_btc_close_cache = {"s": None}
+
+
+def um_fetch_btc_close(years: float) -> pd.Series:
+    """BTC daily closes for the btc_regime gate. Trailing data only."""
+    yf_period = next((p for y, p in ((1, "1y"), (2, "2y"), (5, "5y"),
+                                      (10, "10y")) if years <= y), "max")
+    df = epm.analyze(to_yahoo_crypto_symbol("BTC"), period=yf_period)
+    return df["Close"].astype(float)
 
 
 def main_overlays():
@@ -3199,8 +3387,20 @@ def main_overlays():
         merged = apply_lockbox(merged)          # never unlocked here
         bars_4h = cf.fetch_klines_paginated(cf.to_binance_symbol(ticker),
                                             interval="4h", target_bars=n_4h)
-        # built AFTER the fetch: rvol needs the klines' Volume column
-        series = build_overlay_series(merged, bars_4h)
+        # built AFTER the fetch: rvol needs the klines' Volume column.
+        # btc_regime needs BTC daily closes when gating an alt; fetched
+        # once per command and reused.
+        if ticker.upper().startswith("BTC"):
+            btc_c = merged["Close"]
+        else:
+            if _btc_close_cache["s"] is None:
+                print("  fetching BTC daily closes for the btc_regime gate...")
+                _btc_close_cache["s"] = um_fetch_btc_close(args.years)
+            btc_c = _btc_close_cache["s"]
+        series = build_overlay_series(merged, bars_4h, btc_close=btc_c)
+        series["_ticker"] = ticker
+        # fresh_signal support: exit dates of stopped trades (entry +
+        # days_held), computed once from every fold's trades below
         if not len(series.get("rvol", [])):
             print("  NOTE: no volume data — rvol_150 will show as n/a")
         fold_trades = []
@@ -3224,6 +3424,10 @@ def main_overlays():
         # Median entry-RVOL across ALL folds' trades — computed once, so
         # every fold is split on the same line and no fold can pick its
         # own favourable cutoff.
+        series["_stop_exits"] = tuple(
+            _norm_date(t["date"]) + pd.Timedelta(days=float(t.get("days_held", 0)))
+            for fold in fold_trades for t in fold
+            if t.get("outcome") in ("stop", "ambiguous_stop"))
         _rv = [_sv_daily(series.get("rvol", pd.Series(dtype=float)), t["date"])
                for fold in fold_trades for t in fold]
         _rv = [x for x in _rv if x == x]

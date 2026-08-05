@@ -666,6 +666,96 @@ def render_report(tickers, years):
     return "\n".join(lines)
 
 
+
+def check_launch_readiness():
+    """D. LAUNCH READINESS — turns "how close is the Discord bot" from a
+    chat question into a checklist. Each item is a hard prerequisite
+    established by the Aug 2026 validation sessions (docs/findings.md).
+    None of these are style points: each one failing means launching
+    would publish something known-broken or unmeasured.
+
+    Root-cause note for three of these: the hourly workflow's commit
+    step used to `git add sentiment_cache.json` unconditionally; the
+    file doesn't exist until a sentiment call succeeds, git exits 128 on
+    a missing pathspec, and the WHOLE commit aborted — discarding, every
+    run: the outcomes update, the sentiment cache (so caching never
+    persisted and every run paid full Adanos price), and the widened
+    log schema. One bug, three symptoms. Fixed with per-file existence
+    guards on 2026-08-05; these checks confirm the healing sticks."""
+    import subprocess
+    section = "D. Launch readiness"
+
+    # 1. SELL suppression live in the workflow (measured decision:
+    #    ex-best net negative on 3/3 tickers)
+    wf_path = ".github/workflows/signal-check.yml"
+    try:
+        wf = open(wf_path).read()
+        record(section, "Long-only publishing enabled in hourly workflow",
+               PASS if "--long-only" in wf else FAIL,
+               "--long-only " + ("present" if "--long-only" in wf else
+               "MISSING — SELL signals (measured negative on 3/3 tickers) "
+               "are still being published"))
+        guarded = 'if [ -e "$f" ]' in wf
+        record(section, "Workflow commit survives missing optional files",
+               PASS if guarded else FAIL,
+               "existence guard " + ("present" if guarded else
+               "MISSING — one absent file aborts the commit and discards "
+               "the run's log/outcomes/cache updates"))
+    except OSError:
+        record(section, "Hourly workflow file readable", INSUFFICIENT,
+               f"{wf_path} not found in this checkout")
+
+    # 2. Outcomes accumulating (the only overfit-immune evidence source)
+    try:
+        oc = pd.read_csv("signal_outcomes.csv")
+        closed = int((oc["status"] == "closed").sum())
+        newest = pd.to_datetime(oc["resolved_at_utc"], format="mixed",
+                                 utc=True).max()
+        age_h = (pd.Timestamp.now(tz="UTC") - newest).total_seconds() / 3600
+        fresh = age_h <= 48
+        record(section, "Outcomes file fresh (updated within 48h)",
+               PASS if fresh else FAIL,
+               f"last resolved {age_h:.0f}h ago" +
+               ("" if fresh else " — hourly runs are not persisting "
+                "outcomes; check the commit step"))
+        need = BASELINES["min_trades_for_sizing"]
+        record(section, f"Enough closed live episodes (>= {need})",
+               PASS if closed >= need else INSUFFICIENT,
+               f"{closed} closed so far" +
+               ("" if closed >= need else
+                f" — live-vs-backtest comparison stays silent below {need}; "
+                f"this is a waiting requirement, not a coding one"))
+    except (OSError, KeyError, ValueError) as e:
+        record(section, "Outcomes file exists and parses", FAIL,
+               f"signal_outcomes.csv unreadable ({type(e).__name__}) — no "
+               f"overfit-immune evidence is accumulating")
+
+    # 3. Log schema widened (sentiment observability)
+    try:
+        cols = pd.read_csv("signal_log.csv", nrows=1).columns
+        widened = "sentiment_score" in cols
+        record(section, "Log schema carries raw sentiment columns",
+               PASS if widened else INSUFFICIENT,
+               ("sentiment_score/mentions present — the never-fired gate is "
+                "now evaluable on real data" if widened else
+                "17-column legacy schema — widening happens on the first "
+                "successful post-fix run; if this persists >24h the commit "
+                "step is still broken"))
+    except OSError:
+        record(section, "Signal log readable", FAIL, "signal_log.csv missing")
+
+    # 4. Sentiment cache persistence (the Adanos quota fix, for real)
+    import os as _os
+    cache_exists = _os.path.exists("sentiment_cache.json")
+    record(section, "Sentiment cache persisted to repo",
+           PASS if cache_exists else INSUFFICIENT,
+           ("present — runs within the TTL reuse it instead of paying "
+            "Adanos" if cache_exists else
+            "absent — every run pays a fresh Adanos call (~1000+/mo at "
+            "30-min cadence vs 250 free tier). Appears after the first "
+            "successful sentiment call post-fix; also consider a 60-min "
+            "cron-job.org interval"))
+
 def main():
     p = argparse.ArgumentParser(description="Full-model health audit")
     p.add_argument("tickers", nargs="*", default=["BTC", "ETH", "SOL"],
@@ -689,6 +779,8 @@ def main():
     check_secret_hygiene()
 
     print("\n=== C. DEPLOYMENT ===")
+    check_launch_readiness()
+
     check_log_freshness()
     check_adanos_accounting()
     check_outcomes_tracking()
