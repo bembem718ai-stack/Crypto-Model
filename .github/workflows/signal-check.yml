@@ -52,7 +52,7 @@ jobs:
       - name: Run Signal check
         env:
           ADANOS_API_KEY: ${{ secrets.ADANOS_API_KEY }}
-        run: python live_tools.py check BTC --log-all --confirm-days 2
+        run: python live_tools.py check BTC --log-all --confirm-days 2 --long-only
 
       - name: Build hosted charts (docs/ folder, served by GitHub Pages)
         run: |
@@ -94,7 +94,20 @@ jobs:
         run: |
           git config user.name "signal-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add signal_log.csv sentiment_cache.json signal_outcomes.csv docs/
+          # Add only what exists. sentiment_cache.json and
+          # signal_outcomes.csv are OPTIONAL artifacts — the cache is only
+          # written once a sentiment call succeeds, and outcomes only once
+          # an episode resolves. `git add` on a missing pathspec exits 128
+          # and killed this whole step, discarding a completed run (signal
+          # check, charts and outcomes had all succeeded). Missing optional
+          # artifacts must never fail the commit.
+          for f in signal_log.csv sentiment_cache.json signal_outcomes.csv docs; do
+            if [ -e "$f" ]; then
+              git add "$f"
+            else
+              echo "skip (not present yet): $f"
+            fi
+          done
           if git diff --cached --quiet; then
             echo "No changes to commit."
           else

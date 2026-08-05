@@ -45,6 +45,7 @@ from datetime import datetime, timezone
 
 import pytest
 import pandas as pd
+import numpy as np
 
 # Make the pipeline modules importable no matter where pytest is invoked
 # from, as long as this test file sits beside them.
@@ -1762,3 +1763,609 @@ class TestWalkforwardGeometry:
         if f and d:
             assert f[0]["avg_stop_pct"] < d[0]["avg_stop_pct"], \
                 "4h geometry should give a tighter stop than daily"
+
+
+# ======================================================================
+# LITERATURE OVERLAYS (trend / TSMOM / vol scaling)
+# ======================================================================
+# The whole defense of this feature is that parameters came from the
+# LITERATURE, not from tuning on this repo's folds — and that overlays
+# only drop or reweight trades, never move them. These tests pin both.
+
+class TestLiteratureOverlays:
+
+    @staticmethod
+    def _series(n=500, base=100.0, trend=0.0):
+        idx = pd.date_range("2024-01-01", periods=n, freq="D")
+        c = pd.Series(base * (1 + trend) ** np.arange(n), index=idx)
+        merged = pd.DataFrame({"Close": c})
+        return um.build_overlay_series(merged), idx
+
+    @staticmethod
+    def _trade(date, direction="BUY", pnl=0.5):
+        return {"date": date, "direction": direction, "pnl_r": pnl,
+                "pnl_r_net": pnl, "outcome": "target"}
+
+    def test_parameters_are_the_literatures_not_ours(self):
+        # 200d SMA (Faber), 365d TSMOM (Moskowitz-Ooi-Pedersen 2012),
+        # 28d TSMOM (AUT crypto study). If someone "tunes" these, this
+        # test is the tripwire that says: that changes the whole defense.
+        p = um.OVERLAY_PARAMS
+        assert p["trend_sma"] == 200
+        assert p["tsmom_long"] == 365
+        assert p["tsmom_short"] == 28
+
+    def test_trend_gate_blocks_longs_below_sma_and_shorts_above(self):
+        s, idx = self._series(n=400, trend=-0.002)   # steady downtrend
+        d = idx[350]                                  # price well below SMA
+        longs = um.apply_overlay([self._trade(d, "BUY")], s, "trend_200")
+        shorts = um.apply_overlay([self._trade(d, "SELL")], s, "trend_200")
+        assert longs == [] and len(shorts) == 1
+
+    def test_tsmom_gates_on_sign_of_trailing_return(self):
+        s, idx = self._series(n=450, trend=0.002)    # steady uptrend
+        d = idx[440]
+        assert len(um.apply_overlay([self._trade(d, "BUY")], s, "tsmom_365")) == 1
+        assert um.apply_overlay([self._trade(d, "SELL")], s, "tsmom_365") == []
+
+    def test_no_lookahead_a_future_crash_cannot_change_todays_gate(self):
+        n = 460
+        idx = pd.date_range("2024-01-01", periods=n, freq="D")
+        up = 100 * (1.002) ** np.arange(n)
+        crashed = up.copy(); crashed[430:] = up[430:] * 0.4   # crash AFTER d
+        d = idx[420]
+        s_up = um.build_overlay_series(pd.DataFrame({"Close": pd.Series(up, index=idx)}))
+        s_cr = um.build_overlay_series(pd.DataFrame({"Close": pd.Series(crashed, index=idx)}))
+        a = um.apply_overlay([self._trade(d, "BUY")], s_up, "tsmom_365")
+        b = um.apply_overlay([self._trade(d, "BUY")], s_cr, "tsmom_365")
+        assert len(a) == len(b) == 1, "a future crash changed a past gate — lookahead"
+
+    def test_vol_scale_downweights_high_vol_and_caps_leverage(self):
+        n = 100
+        idx = pd.date_range("2024-01-01", periods=n, freq="D")
+        rng = np.random.default_rng(0)
+        calm = 100 * np.exp(np.cumsum(rng.normal(0, 0.001, n)))
+        wild = 100 * np.exp(np.cumsum(rng.normal(0, 0.08, n)))
+        s_calm = um.build_overlay_series(pd.DataFrame({"Close": pd.Series(calm, index=idx)}))
+        s_wild = um.build_overlay_series(pd.DataFrame({"Close": pd.Series(wild, index=idx)}))
+        d = idx[80]
+        w_calm = um.apply_overlay([self._trade(d)], s_calm, "vol_scale")[0]["weight"]
+        w_wild = um.apply_overlay([self._trade(d)], s_wild, "vol_scale")[0]["weight"]
+        assert w_wild < w_calm
+        assert w_calm <= um.OVERLAY_PARAMS["vol_cap"] + 1e-9
+
+    def test_weighted_net_reduces_to_plain_mean_when_weights_are_one(self):
+        ts = [dict(self._trade(pd.Timestamp("2024-06-01"), pnl=x), weight=1.0)
+              for x in (0.5, -1.0, 2.0)]
+        assert um.weighted_net(ts) == pytest.approx((0.5 - 1.0 + 2.0) / 3)
+
+    def test_acceptance_bar_requires_two_ticker_improvement(self):
+        def mk(base_ex, ov_ex):
+            return {"baseline": {"ex_best": base_ex, "all": 0.0, "per_fold": [(20, 0.0, 20)]*4},
+                    "trend_200": {"ex_best": ov_ex, "all": 0.0, "per_fold": [(20, 0.0, 20)]*4}}
+        good = {"BTC": mk(0.01, 0.05), "ETH": mk(0.02, 0.06), "SOL": mk(-0.03, -0.031)}
+        bad = {"BTC": mk(0.01, 0.05), "ETH": mk(0.02, 0.01), "SOL": mk(-0.03, -0.09)}
+        assert "CANDIDATE" in um.overlay_verdict(good)
+        v = um.overlay_verdict(bad)
+        assert "CANDIDATE" not in v and "No overlay met the bar" in v
+
+    def test_gate_fails_closed_when_series_is_unknown(self):
+        s, idx = self._series(n=300)
+        stranger = pd.Timestamp("1999-01-01")
+        assert um.apply_overlay([self._trade(stranger)], s, "trend_200") == []
+        # sizing fails NEUTRAL, not closed
+        w = um.apply_overlay([self._trade(stranger)], s, "vol_scale")[0]["weight"]
+        assert w == 1.0
+
+
+# ======================================================================
+# BUY/SELL DIRECTION SPLIT (evaluate_geometry_folds direction filter)
+# ======================================================================
+# Needed to answer "how does BUY perform on its own" honestly, rather
+# than inferring it from combined numbers. Must reuse the same summary
+# arithmetic (stats_from_trades) as everything else, and must not touch
+# which bars get scanned or how trades resolve — filtering happens only
+# on the already-produced trade list.
+
+class TestDirectionSplit:
+
+    @staticmethod
+    def _merged(n=60):
+        idx = pd.date_range("2026-01-01", periods=n, freq="D")
+        df = pd.DataFrame({"Close": [100.0]*n, "High": [101.0]*n,
+                           "Low": [99.0]*n, "direction": ["WATCH"]*n,
+                           "combined_final_score": [65.0]*n}, index=idx)
+        # alternate BUY / SELL signals through the window
+        for i in range(10, n - 5, 8):
+            df.iloc[i, df.columns.get_loc("direction")] = "BUY" if (i // 8) % 2 == 0 else "SELL"
+        return df
+
+    @staticmethod
+    def _bars4h(n_days):
+        idx = pd.date_range("2026-01-01", periods=n_days * 6, freq="4h")
+        c = pd.Series(100.0, index=idx)
+        return pd.DataFrame({"High": c * 1.006, "Low": c * 0.994, "Close": c})
+
+    def test_stats_from_trades_matches_backtest_exit_geometry_on_full_set(self):
+        merged, bars = self._merged(), self._bars4h(60)
+        full = um.backtest_exit_geometry(merged, bars, atr_source="4h",
+                                         confirm_days=1, short_sma_filter=0)
+        if full["n"]:
+            recomputed = um.stats_from_trades(full["trades"])
+            assert recomputed["n"] == full["n"]
+            assert recomputed["expectancy_r_net"] == pytest.approx(
+                full["expectancy_r_net"])
+
+    def test_direction_filter_only_keeps_requested_side(self):
+        merged, bars = self._merged(), self._bars4h(60)
+        res = um.evaluate_geometry_folds(merged, bars, 1, "4h", 15, 1.5, 3.0,
+                                         1, 0, 2.0, 2.0, verbose=False,
+                                         direction="buy")
+        for r in res:
+            for t in r.get("trades", []):
+                assert t["direction"] in ("BUY", "STRONG_BUY")
+
+    def test_buy_and_sell_splits_are_disjoint_and_cover_all_trades(self):
+        merged, bars = self._merged(), self._bars4h(60)
+        allr = um.evaluate_geometry_folds(merged, bars, 1, "4h", 15, 1.5, 3.0,
+                                          1, 0, 2.0, 2.0, verbose=False)
+        buys = um.evaluate_geometry_folds(merged, bars, 1, "4h", 15, 1.5, 3.0,
+                                          1, 0, 2.0, 2.0, verbose=False,
+                                          direction="buy")
+        sells = um.evaluate_geometry_folds(merged, bars, 1, "4h", 15, 1.5, 3.0,
+                                           1, 0, 2.0, 2.0, verbose=False,
+                                           direction="sell")
+        n_all = sum(r.get("n", 0) for r in allr)
+        n_split = sum(r.get("n", 0) for r in buys) + sum(r.get("n", 0) for r in sells)
+        assert n_split == n_all, "BUY+SELL trade counts must reconstruct the total"
+
+    def test_invalid_direction_rejected(self):
+        merged, bars = self._merged(), self._bars4h(60)
+        with pytest.raises(ValueError):
+            um.evaluate_geometry_folds(merged, bars, 1, "4h", 15, 1.5, 3.0,
+                                       1, 0, 2.0, 2.0, direction="long")
+
+    def test_empty_direction_subset_is_n_zero_not_a_crash(self):
+        # A fold that happens to have zero BUY signals must report n=0
+        # cleanly, not raise, since sequential folds can be lopsided.
+        idx = pd.date_range("2026-01-01", periods=20, freq="D")
+        merged = pd.DataFrame({"Close": [100.0]*20, "High": [101.0]*20,
+                               "Low": [99.0]*20, "direction": ["SELL"]*20,
+                               "combined_final_score": [65.0]*20}, index=idx)
+        merged.iloc[5, merged.columns.get_loc("direction")] = "SELL"
+        bars = self._bars4h(20)
+        res = um.evaluate_geometry_folds(merged, bars, 1, "4h", 15, 1.5, 3.0,
+                                         1, 0, 2.0, 2.0, verbose=False,
+                                         direction="buy")
+        assert res[0].get("n", 0) == 0
+
+
+class TestOptimizeDirectionFilter:
+    """optimize --direction must filter at run_cfg so EVERY stage (grid,
+    folds, bands, cost table) sees the same subset — and min_n must be
+    applied AFTER filtering, or a config could 'qualify' on trade counts
+    it is actually excluding."""
+
+    def test_fee_defaults_match_real_binance_us_schedule(self):
+        # My original 10+5 guess was 12x too high and inverted the
+        # geometry ranking. Every command must default to the real ~2bps.
+        import inspect
+        src = inspect.getsource(um.main_optimize)
+        assert 'default=10.0' not in src, "stale fee default is back"
+        src_eg = inspect.getsource(um.main_exitgeometry)
+        assert 'default=10.0' not in src_eg, "stale fee default is back"
+
+    def test_stats_from_trades_handles_empty_subset(self):
+        assert um.stats_from_trades([])["n"] == 0
+
+    def test_band_analysis_on_buy_subset_ignores_sell_bands(self):
+        buys = [{"score": 65.0, "pnl_r_net": 0.2, "pnl_r": 0.2} for _ in range(30)]
+        sells = [{"score": 35.0, "pnl_r_net": -0.5, "pnl_r": -0.5} for _ in range(30)]
+        both = um.band_edge_analysis(buys + sells, min_n=20)
+        only = um.band_edge_analysis(buys, min_n=20)
+        assert 30 in both and 30 not in only, \
+            "SELL-side band leaked into a BUY-only analysis"
+        assert only[60]["status"] == "keep"
+
+
+# ======================================================================
+# VOLUME CONFIRMATION OVERLAY (rvol_150)
+# ======================================================================
+# Pre-registered: RVOL >= 1.5 vs a 20-day baseline. The defense of this
+# overlay is that the threshold came from outside this repo's data and
+# is never swept. These tests pin that, plus the no-lookahead property
+# and the fact that the baseline excludes the current day.
+
+class TestVolumeOverlay:
+
+    @staticmethod
+    def _bars_with_volume(n_days, vol_pattern=None):
+        idx = pd.date_range("2024-01-01", periods=n_days * 6, freq="4h")
+        c = pd.Series(100.0, index=idx)
+        vols = []
+        for d in range(n_days):
+            v = 100.0 if vol_pattern is None else vol_pattern(d)
+            vols.extend([v / 6] * 6)
+        return pd.DataFrame({"High": c * 1.005, "Low": c * 0.995,
+                             "Close": c, "Volume": vols}, index=idx)
+
+    @staticmethod
+    def _merged(n_days):
+        idx = pd.date_range("2024-01-01", periods=n_days, freq="D")
+        return pd.DataFrame({"Close": [100.0] * n_days}, index=idx)
+
+    def test_threshold_is_the_conventional_one_and_not_swept(self):
+        # 1.5x / 20-day is the practitioner convention (IBD CAN SLIM:
+        # 40-50% above average). If someone "optimizes" these on the
+        # repo's own folds, the pre-registration defense is void.
+        assert um.OVERLAY_PARAMS["rvol_threshold"] == 1.5
+        assert um.OVERLAY_PARAMS["rvol_window"] == 20
+
+    def test_daily_volume_sums_the_4h_bars(self):
+        bars = self._bars_with_volume(5, lambda d: 600.0)
+        dv = um.build_daily_volume(bars)
+        assert len(dv) == 5
+        assert dv.iloc[0] == pytest.approx(600.0)
+
+    def test_high_volume_day_passes_low_volume_day_blocked(self):
+        # 30 quiet days, then one at 3x
+        bars = self._bars_with_volume(31, lambda d: 300.0 if d == 30 else 100.0)
+        series = um.build_overlay_series(self._merged(31), bars)
+        spike_day = pd.Timestamp("2024-01-31")
+        quiet_day = pd.Timestamp("2024-01-30")
+        t_spike = {"date": spike_day, "direction": "BUY", "pnl_r": 1.0, "pnl_r_net": 1.0}
+        t_quiet = {"date": quiet_day, "direction": "BUY", "pnl_r": 1.0, "pnl_r_net": 1.0}
+        assert len(um.apply_overlay([t_spike], series, "rvol_150")) == 1
+        assert um.apply_overlay([t_quiet], series, "rvol_150") == []
+
+    def test_baseline_excludes_the_current_day(self):
+        # If the current day were included in its own 20-day average, a
+        # huge spike would partly dilute itself and RVOL would understate.
+        bars = self._bars_with_volume(25, lambda d: 2000.0 if d == 24 else 100.0)
+        series = um.build_overlay_series(self._merged(25), bars)
+        r = series["rvol"].get(pd.Timestamp("2024-01-25"))
+        assert r == pytest.approx(20.0, rel=0.01), \
+            "baseline appears to include the current day"
+
+    def test_no_lookahead_future_volume_cannot_change_todays_rvol(self):
+        quiet = self._bars_with_volume(30, lambda d: 100.0)
+        loud_later = self._bars_with_volume(
+            30, lambda d: 9999.0 if d > 24 else 100.0)
+        d = pd.Timestamp("2024-01-25")
+        s1 = um.build_overlay_series(self._merged(30), quiet)
+        s2 = um.build_overlay_series(self._merged(30), loud_later)
+        assert s1["rvol"].get(d) == pytest.approx(s2["rvol"].get(d)), \
+            "future volume changed a past RVOL — lookahead"
+
+    def test_missing_volume_data_degrades_gracefully(self):
+        series = um.build_overlay_series(self._merged(30), None)
+        assert len(series["rvol"]) == 0
+        t = {"date": pd.Timestamp("2024-01-15"), "direction": "BUY",
+             "pnl_r": 1.0, "pnl_r_net": 1.0}
+        # gate fails CLOSED when the series is unavailable
+        assert um.apply_overlay([t], series, "rvol_150") == []
+
+    def test_rvol_curve_restores_the_registered_threshold(self):
+        # The diagnostic mutates OVERLAY_PARAMS; it must put it back even
+        # if something throws, or the registered spec silently changes.
+        bars = self._bars_with_volume(30, lambda d: 100.0 + d * 10)
+        series = um.build_overlay_series(self._merged(30), bars)
+        trades = [[{"date": pd.Timestamp("2024-01-25"), "direction": "BUY",
+                    "pnl_r": 1.0, "pnl_r_net": 1.0, "score": 65.0}] * 12] * 4
+        um.rvol_curve(trades, series)
+        assert um.OVERLAY_PARAMS["rvol_threshold"] == 1.5
+
+    def test_rvol_is_in_the_default_overlay_set(self):
+        import inspect
+        sig = inspect.signature(um.overlay_fold_table)
+        assert "rvol_150" in sig.parameters["overlays"].default
+
+
+class TestRvolDateAlignment:
+    """The rvol gate silently reported 'no trades passed' when the daily
+    index was tz-aware — indistinguishable in the output from a real
+    finding. These pin the fix: lookups normalize dates first, and the
+    coverage diagnostic can tell a bug from a property."""
+
+    @staticmethod
+    def _bars(n_days, vol=lambda d: 100.0):
+        idx = pd.date_range("2024-01-01", periods=n_days * 6, freq="4h")
+        c = pd.Series(100.0, index=idx)
+        vols = []
+        for d in range(n_days):
+            vols.extend([vol(d) / 6] * 6)
+        return pd.DataFrame({"High": c, "Low": c, "Close": c, "Volume": vols},
+                            index=idx)
+
+    def test_tz_aware_trade_date_still_matches_volume(self):
+        rng = np.random.default_rng(3)
+        bars = self._bars(120, lambda d: float(rng.lognormal(3, 0.8)))
+        merged = pd.DataFrame({"Close": [100.0] * 120},
+                              index=pd.date_range("2024-01-01", periods=120, freq="D"))
+        series = um.build_overlay_series(merged, bars)
+        naive = pd.Timestamp("2024-03-01")
+        aware = naive.tz_localize("UTC")
+        a = um._sv_daily(series["rvol"], naive)
+        b = um._sv_daily(series["rvol"], aware)
+        assert a == a, "naive lookup failed"
+        assert b == pytest.approx(a), "tz-aware date did not match the same day"
+
+    def test_intraday_timestamp_resolves_to_its_day(self):
+        bars = self._bars(60)
+        merged = pd.DataFrame({"Close": [100.0] * 60},
+                              index=pd.date_range("2024-01-01", periods=60, freq="D"))
+        series = um.build_overlay_series(merged, bars)
+        assert um._sv_daily(series["rvol"], pd.Timestamp("2024-02-15 17:43")) == \
+               pytest.approx(um._sv_daily(series["rvol"], pd.Timestamp("2024-02-15")))
+
+    def test_realistic_volume_clears_threshold_at_expected_rate(self):
+        # Sanity floor: on a normal right-skewed volume series roughly
+        # a third to a half of days beat their own 20-day average. If a
+        # future change drops this near zero, alignment broke again.
+        rng = np.random.default_rng(11)
+        bars = self._bars(300, lambda d: float(rng.lognormal(3, 0.8)))
+        merged = pd.DataFrame({"Close": [100.0] * 300},
+                              index=pd.date_range("2024-01-01", periods=300, freq="D"))
+        series = um.build_overlay_series(merged, bars)
+        rv = series["rvol"].dropna()
+        share = (rv >= 1.0).mean()
+        assert 0.25 < share < 0.60, f"share >= 1.0 was {share:.0%}, expected ~40%"
+
+    def test_coverage_diagnostic_flags_missing_as_a_bug(self):
+        bars = self._bars(60)
+        merged = pd.DataFrame({"Close": [100.0] * 60},
+                              index=pd.date_range("2024-01-01", periods=60, freq="D"))
+        series = um.build_overlay_series(merged, bars)
+        # dates far outside the volume range -> all missing
+        stranded = [[{"date": pd.Timestamp("1999-01-%02d" % (i + 1)),
+                      "direction": "BUY", "pnl_r": 1.0, "pnl_r_net": 1.0}
+                     for i in range(10)]]
+        txt = um.rvol_coverage(stranded, series)
+        assert "alignment bug" in txt
+
+    def test_coverage_diagnostic_reports_present_but_low(self):
+        # Volume steadily rising means late days always beat their
+        # trailing average -> high coverage, high RVOL. Inverse case
+        # (declining) gives coverage with LOW rvol.
+        bars = self._bars(120, lambda d: max(1.0, 500.0 - d * 3))
+        merged = pd.DataFrame({"Close": [100.0] * 120},
+                              index=pd.date_range("2024-01-01", periods=120, freq="D"))
+        series = um.build_overlay_series(merged, bars)
+        trades = [[{"date": d, "direction": "BUY", "pnl_r": 1.0, "pnl_r_net": 1.0}
+                   for d in pd.date_range("2024-03-01", periods=30, freq="D")]]
+        txt = um.rvol_coverage(trades, series)
+        assert "missing (no volume match): 0" in txt
+        assert "alignment bug" not in txt
+
+
+class TestCompressionAndExpansion:
+    """Volume used in the direction the data pointed: compression depth
+    at entry (registered hypothesis: deeper = better) and post-entry
+    expansion (registered: expansion = better). Both must report
+    CONTRADICTS honestly if the data disagrees, and neither may leak
+    future information into an entry decision."""
+
+    @staticmethod
+    def _setup(n_days=200, vol=None):
+        idx4 = pd.date_range("2024-01-01", periods=n_days * 6, freq="4h")
+        c = pd.Series(100.0, index=idx4)
+        rng = np.random.default_rng(5)
+        vols = []
+        for d in range(n_days):
+            base = vol(d) if vol else float(rng.lognormal(3, 0.5))
+            vols.extend([base / 6] * 6)
+        bars = pd.DataFrame({"High": c * 1.005, "Low": c * 0.995,
+                             "Close": c, "Volume": vols}, index=idx4)
+        merged = pd.DataFrame({"Close": [100.0] * n_days},
+                              index=pd.date_range("2024-01-01", periods=n_days, freq="D"))
+        return merged, bars
+
+    def test_quartile_report_detects_a_monotone_relationship(self):
+        merged, bars = self._setup()
+        series = um.build_overlay_series(merged, bars)
+        # Construct trades where LOW rvol pays MORE — should read "supports"
+        trades = []
+        for d in pd.date_range("2024-03-01", periods=80, freq="D"):
+            r = um._sv_daily(series["rvol"], d)
+            if r != r:
+                continue
+            trades.append({"date": d, "direction": "BUY",
+                           "pnl_r": -r, "pnl_r_net": -r, "score": 65.0})
+        txt = um.rvol_quartile_report(trades, series)
+        assert "supports" in txt, txt
+
+    def test_quartile_report_says_contradicts_when_data_disagrees(self):
+        merged, bars = self._setup()
+        series = um.build_overlay_series(merged, bars)
+        trades = []
+        for d in pd.date_range("2024-03-01", periods=80, freq="D"):
+            r = um._sv_daily(series["rvol"], d)
+            if r != r:
+                continue
+            # HIGH rvol pays more -> must report CONTRADICTS
+            trades.append({"date": d, "direction": "BUY",
+                           "pnl_r": r, "pnl_r_net": r, "score": 65.0})
+        txt = um.rvol_quartile_report(trades, series)
+        assert "CONTRADICTS" in txt, txt
+
+    def test_median_split_halves_are_disjoint_and_complete(self):
+        merged, bars = self._setup()
+        series = um.build_overlay_series(merged, bars)
+        trades = [{"date": d, "direction": "BUY", "pnl_r": 0.5,
+                   "pnl_r_net": 0.5, "score": 65.0}
+                  for d in pd.date_range("2024-03-01", periods=60, freq="D")]
+        rv = [um._sv_daily(series["rvol"], t["date"]) for t in trades]
+        series["_rvol_median"] = float(pd.Series([x for x in rv if x == x]).median())
+        deep = um.apply_overlay(trades, series, "compression_deep")
+        shal = um.apply_overlay(trades, series, "compression_shallow")
+        assert len(deep) + len(shal) == len(trades)
+        assert not ({id(t) for t in deep} & {id(t) for t in shal})
+
+    def test_compression_gate_needs_a_median_to_be_set(self):
+        merged, bars = self._setup()
+        series = um.build_overlay_series(merged, bars)   # no _rvol_median
+        t = [{"date": pd.Timestamp("2024-03-01"), "direction": "BUY",
+              "pnl_r": 0.5, "pnl_r_net": 0.5}]
+        assert um.apply_overlay(t, series, "compression_deep") == []
+
+    def test_post_entry_expansion_only_reads_bars_after_entry(self):
+        # Spike volume BEFORE the entry window; the expansion measure
+        # must not treat that as expansion.
+        n = 120
+        merged, bars = self._setup(n, vol=lambda d: 5000.0 if d < 60 else 100.0)
+        trades = [{"date": d, "direction": "BUY", "pnl_r": 1.0, "pnl_r_net": 1.0}
+                  for d in pd.date_range("2024-03-15", periods=40, freq="D")]
+        txt = um.post_entry_expansion(trades, bars)
+        # all entries are in the quiet regime -> should read as not expanded
+        assert "did not expand" in txt
+
+    def test_post_entry_expansion_flags_small_gaps_as_no_separation(self):
+        merged, bars = self._setup(200)
+        rng = np.random.default_rng(2)
+        trades = [{"date": d, "direction": "BUY",
+                   "pnl_r": float(rng.normal(0, 0.01)),
+                   "pnl_r_net": float(rng.normal(0, 0.01))}
+                  for d in pd.date_range("2024-03-01", periods=120, freq="D")]
+        txt = um.post_entry_expansion(trades, bars)
+        assert "no separation" in txt or "too thin" in txt
+
+    def test_expansion_handles_missing_volume(self):
+        assert "no volume data" in um.post_entry_expansion([], None)
+
+
+class TestDiagnoseReports:
+    """Characterization reports: math must be exact and thin data must
+    degrade to 'too few', never to a confident-sounding number."""
+
+    @staticmethod
+    def _t(outcome, pnl, mfe=0.0, days=2.0, direction="BUY",
+           date="2025-01-01"):
+        return {"outcome": outcome, "pnl_r": pnl, "pnl_r_net": pnl,
+                "mfe_pct_of_target": mfe, "days_held": days,
+                "direction": direction, "date": pd.Timestamp(date),
+                "cost_r": 0.0, "stop_pct": 2.0, "score": 65.0}
+
+    def test_mfe_near_miss_rate_is_exact(self):
+        trades = ([self._t("stop", -1.0, mfe=80.0)] * 3 +
+                  [self._t("stop", -1.0, mfe=10.0)] * 9 +
+                  [self._t("target", 2.0, mfe=100.0)] * 5)
+        txt = um.mfe_report(trades)
+        assert "reached >=75% of target first: 25%" in txt   # 3 of 12
+        assert "never reached 25%:            75%" in txt    # 9 of 12
+
+    def test_mfe_distinguishes_near_miss_regime_from_wrong_entries(self):
+        near = [self._t("stop", -1.0, mfe=85.0)] * 5 + \
+               [self._t("stop", -1.0, mfe=20.0)] * 7
+        far = [self._t("stop", -1.0, mfe=5.0)] * 12
+        assert "PLAUSIBLE" in um.mfe_report(near)
+        assert "little to work with" in um.mfe_report(far)
+
+    def test_strength_report_flags_non_separation(self):
+        trades = ([self._t("target", 0.5, direction="STRONG_BUY")] * 15 +
+                  [self._t("target", 0.5, direction="BUY")] * 15)
+        assert "inside noise" in um.strength_report(trades)
+
+    def test_strength_report_detects_a_real_gap(self):
+        trades = ([self._t("target", 1.0, direction="STRONG_BUY")] * 15 +
+                  [self._t("stop", -0.5, direction="BUY")] * 15)
+        txt = um.strength_report(trades)
+        assert "adding information" in txt
+
+    def test_follower_drawdown_and_streak_are_exact(self):
+        # +1, five -1s (peak +1 -> trough -4: dd 5), +6 — repeated with
+        # strictly increasing dates so the sort preserves the sequence.
+        seq = [1.0, -1.0, -1.0, -1.0, -1.0, -1.0, 6.0] * 3
+        trades = [self._t("target" if p > 0 else "stop", p,
+                          date=pd.Timestamp("2025-01-01")
+                          + pd.Timedelta(days=i))
+                  for i, p in enumerate(seq)]
+        txt = um.follower_experience_report(trades)
+        assert "longest losing streak: 5" in txt
+        assert "max drawdown: 5.0R" in txt
+
+    def test_all_reports_degrade_on_thin_data(self):
+        few = [self._t("stop", -1.0)] * 4
+        assert "too few" in um.mfe_report(few)
+        assert "too few" in um.hold_time_report(few)
+        assert "too thin" in um.strength_report(few)
+        assert "too few" in um.follower_experience_report(few)
+
+
+class TestLongOnlySuppression:
+    """SELL suppression is now a MEASURED decision (ex-best net negative
+    on 3/3 tickers), enabled in the hourly workflow. These pin that it
+    actually suppresses, that BUY is untouched, and that the SELL logic
+    stays evaluable rather than deleted."""
+
+    @staticmethod
+    def _res(direction, ml):
+        return {"combined": {"direction": direction, "ml_confidence": ml}}
+
+    def test_sell_is_suppressed_when_long_only(self):
+        for d in ("SELL", "STRONG_SELL"):
+            g = lt.passes_confluence(self._res(d, 20.0), long_only=True)
+            assert g["qualifies"] is False
+            assert "long-only" in g["reason"]
+
+    def test_sell_still_qualifies_when_long_only_is_off(self):
+        # The logic must remain intact so walkforward/diagnose can still
+        # evaluate the short side. Suppression is publication-level.
+        g = lt.passes_confluence(self._res("SELL", 20.0), long_only=False)
+        assert g["qualifies"] is True and g["side"] == "bearish"
+
+    def test_buy_is_unaffected_by_long_only(self):
+        g = lt.passes_confluence(self._res("BUY", 70.0), long_only=True)
+        assert g["qualifies"] is True and g["side"] == "bullish"
+
+    def test_suppression_reason_cites_the_measurement(self):
+        g = lt.passes_confluence(self._res("SELL", 20.0), long_only=True)
+        # A future reader must be able to see WHY without the chat log.
+        assert "-0.142" in g["reason"] and "CONCENTRATED" in g["reason"]
+
+    def test_hourly_workflow_enables_long_only(self):
+        # The decision is worthless if production doesn't pass the flag.
+        import pathlib
+        wf = pathlib.Path(__file__).parent / ".github/workflows/signal-check.yml"
+        if wf.exists():
+            assert "--long-only" in wf.read_text(), \
+                "hourly workflow publishes SELL signals despite the decision"
+
+
+class TestWorkflowCommitRobustness:
+    """The hourly run failed at the final commit because `git add` was
+    given sentiment_cache.json, which does not exist until a sentiment
+    call succeeds. git exits 128 on a missing pathspec, so a fully
+    successful run (check + charts + outcomes) was discarded. Optional
+    artifacts must never be able to fail the commit step."""
+
+    @staticmethod
+    def _wf():
+        import pathlib
+        return pathlib.Path(__file__).parent / ".github/workflows/signal-check.yml"
+
+    def test_optional_artifacts_are_existence_checked(self):
+        wf = self._wf()
+        if not wf.exists():
+            pytest.skip("workflow not present in this checkout")
+        text = wf.read_text()
+        assert 'git add signal_log.csv sentiment_cache.json' not in text, \
+            "bare multi-path git add is back — a missing optional file will " \
+            "abort the commit and discard the run"
+        assert 'if [ -e "$f" ]' in text, "existence guard missing"
+
+    def test_workflow_still_commits_the_required_artifacts(self):
+        wf = self._wf()
+        if not wf.exists():
+            pytest.skip("workflow not present in this checkout")
+        text = wf.read_text()
+        for required in ("signal_log.csv", "signal_outcomes.csv", "docs"):
+            assert required in text, f"{required} no longer committed"
+
+    def test_workflow_yaml_parses(self):
+        wf = self._wf()
+        if not wf.exists():
+            pytest.skip("workflow not present in this checkout")
+        yaml = pytest.importorskip("yaml")
+        d = yaml.safe_load(wf.read_text())
+        steps = d["jobs"]["check"]["steps"]
+        assert any("Commit" in s.get("name", "") for s in steps)

@@ -31,6 +31,7 @@ Requires: pip install requests vaderSentiment pandas numpy yfinance
 import sys
 import time
 import argparse
+import math
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -1664,6 +1665,17 @@ def backtest_exit_geometry(merged: pd.DataFrame, bars_4h: pd.DataFrame,
                        "mfe_pct_of_target": round(r["mfe"] * 100, 1)})
     if not trades:
         return {"n": 0, "trades": []}
+    return stats_from_trades(trades)
+
+
+def stats_from_trades(trades: list) -> dict:
+    """Same summary dict backtest_exit_geometry returns, computed from any
+    trade list — including a BUY-only or SELL-only subset of one it
+    already produced. Keeps 'BUY-side only' analysis using the exact same
+    arithmetic as everything else, instead of a parallel implementation
+    that could silently drift."""
+    if not trades:
+        return {"n": 0, "trades": []}
     t = pd.DataFrame(trades)
     return {"n": len(t),
             "target_rate": (t["outcome"] == "target").mean(),
@@ -1739,8 +1751,9 @@ def main_exitgeometry():
     parser.add_argument("--short-sma-filter", type=int, default=50)
     parser.add_argument("--stop-mult", type=float, default=1.5)
     parser.add_argument("--target-mult", type=float, default=3.0)
-    parser.add_argument("--fee-bps", type=float, default=10.0)
-    parser.add_argument("--slippage-bps", type=float, default=5.0)
+    parser.add_argument("--fee-bps", type=float, default=2.0,
+                        help="Per side. Binance.US spot taker ~2bps, maker 0.")
+    parser.add_argument("--slippage-bps", type=float, default=2.0, help="Per side.")
     parser.add_argument("--hold-sweep", default="",
                         help="Extra 4h-ATR hold budgets in days, e.g. 1,2,3,5")
     parser.add_argument("--unlock-lockbox", action="store_true")
@@ -1900,11 +1913,16 @@ def main_optimize():
                     "validate the leaders. Prints candidates; changes nothing.")
     parser.add_argument("ticker")
     parser.add_argument("--years", type=float, default=4.0)
-    parser.add_argument("--fee-bps", type=float, default=10.0)
-    parser.add_argument("--slippage-bps", type=float, default=5.0)
+    parser.add_argument("--fee-bps", type=float, default=2.0,
+                        help="Per side. Binance.US spot taker ~2bps, maker 0.")
+    parser.add_argument("--slippage-bps", type=float, default=2.0, help="Per side.")
     parser.add_argument("--min-n", type=int, default=40)
     parser.add_argument("--folds", type=int, default=4)
     parser.add_argument("--top", type=int, default=3)
+    parser.add_argument("--direction", choices=("buy", "sell"), default=None,
+                        help="Restrict every stage (grid, folds, bands, cost "
+                             "table) to BUY/STRONG_BUY or SELL/STRONG_SELL. "
+                             "Default: both combined.")
     args = parser.parse_args()
 
     yf_period = next((p for y, p in ((1, "1y"), (2, "2y"), (5, "5y"), (10, "10y"))
@@ -1917,11 +1935,27 @@ def main_optimize():
     bars_4h = cf.fetch_klines_paginated(cf.to_binance_symbol(args.ticker),
                                         interval="4h", target_bars=n_4h)
 
+    # Single chokepoint: every stage (grid search, fold validation, band
+    # analysis, cost table) reads results through run_cfg, so filtering
+    # here keeps them all consistent. min_n still applies AFTER the
+    # filter, which is the honest order — a config that only clears the
+    # threshold by counting trades you are excluding has not cleared it.
+    _wanted = ({"BUY", "STRONG_BUY"} if args.direction == "buy" else
+               {"SELL", "STRONG_SELL"} if args.direction == "sell" else None)
+
     def run_cfg(frame, cfg):
-        return backtest_exit_geometry(
+        r = backtest_exit_geometry(
             frame, bars_4h, atr_source=cfg["atr_source"],
             max_hold_days=cfg["max_hold_days"], confirm_days=cfg["confirm_days"],
             fee_bps=args.fee_bps, slippage_bps=args.slippage_bps)
+        if _wanted is None:
+            return r
+        return stats_from_trades([t for t in r.get("trades", [])
+                                  if t["direction"] in _wanted])
+
+    if args.direction:
+        print(f"\n[{args.direction.upper()} ONLY] every stage below is "
+              f"restricted to {args.direction} trades")
 
     print(f"\nSTAGE 1 — grid search on sealed history "
           f"({len(_geometry_grid())} configs, min n={args.min_n})")
@@ -2070,8 +2104,19 @@ LIVE_GEOMETRY = {"atr_source": "4h", "max_hold_days": 15, "stop_mult": 1.5,
 def evaluate_geometry_folds(merged, bars_4h, folds, atr_source, max_hold_days,
                              stop_mult, target_mult, confirm_days,
                              short_sma_filter, fee_bps, slippage_bps,
-                             verbose=True):
-    """Run ONE fixed geometry across sequential folds. No tuning inside."""
+                             verbose=True, direction=None):
+    """Run ONE fixed geometry across sequential folds. No tuning inside.
+
+    direction: None (all trades), 'buy' (BUY/STRONG_BUY only), or 'sell'
+    (SELL/STRONG_SELL only). Filtering happens AFTER backtest_exit_geometry
+    runs, on its trade list, via stats_from_trades — so a BUY-only report
+    uses the identical arithmetic as everything else, just a subset of
+    trades. It does not change signal generation or which bars are
+    scanned; a SELL-heavy fold with 0 BUY trades will show n=0."""
+    if direction not in (None, "buy", "sell"):
+        raise ValueError("direction must be None, 'buy', or 'sell'")
+    wanted = ({"BUY", "STRONG_BUY"} if direction == "buy" else
+              {"SELL", "STRONG_SELL"} if direction == "sell" else None)
     results = []
     for k, fold in enumerate(walkforward_folds(merged, folds), 1):
         if len(fold) == 0:
@@ -2084,6 +2129,9 @@ def evaluate_geometry_folds(merged, bars_4h, folds, atr_source, max_hold_days,
             target_mult=target_mult, max_hold_days=max_hold_days,
             short_sma_filter=short_sma_filter, confirm_days=confirm_days,
             fee_bps=fee_bps, slippage_bps=slippage_bps)
+        if wanted is not None:
+            sub = [t for t in r.get("trades", []) if t["direction"] in wanted]
+            r = stats_from_trades(sub)
         results.append(r)
         if verbose:
             if r.get("n", 0):
@@ -2146,6 +2194,10 @@ def main_walkforward():
     parser.add_argument("--slippage-bps", type=float, default=2.0, help="Per side.")
     parser.add_argument("--compare-geometries", action="store_true",
                         help="Also run the other ATR source for contrast")
+    parser.add_argument("--direction", choices=("buy", "sell"), default=None,
+                        help="Report only BUY/STRONG_BUY or only "
+                             "SELL/STRONG_SELL trades. Default: both combined "
+                             "(what live_current has always reported).")
     args = parser.parse_args()
 
     yf_period = next((p for y, p in ((1, "1y"), (2, "2y"), (5, "5y"), (10, "10y"))
@@ -2177,9 +2229,11 @@ def main_walkforward():
         results = evaluate_geometry_folds(
             merged, bars_4h, args.folds, args.atr_source, args.max_hold_days,
             args.stop_mult, args.target_mult, args.confirm_days,
-            args.short_sma_filter, args.fee_bps, args.slippage_bps)
+            args.short_sma_filter, args.fee_bps, args.slippage_bps,
+            direction=args.direction)
         v = walkforward_verdict(results)
-        print(f"  VERDICT: {v['verdict']} "
+        dlabel = f" [{args.direction.upper()} ONLY]" if args.direction else ""
+        print(f"  VERDICT{dlabel}: {v['verdict']} "
               f"({v.get('folds_positive','—')}/{v['folds_counted']} "
               f"counted folds net-positive)")
         print(concentration_report(results))
@@ -2190,9 +2244,10 @@ def main_walkforward():
             r2 = evaluate_geometry_folds(
                 merged, bars_4h, args.folds, other, args.max_hold_days,
                 args.stop_mult, args.target_mult, args.confirm_days,
-                args.short_sma_filter, args.fee_bps, args.slippage_bps)
+                args.short_sma_filter, args.fee_bps, args.slippage_bps,
+                direction=args.direction)
             v2 = walkforward_verdict(r2)
-            print(f"  VERDICT ({other} ATR): {v2['verdict']} "
+            print(f"  VERDICT ({other} ATR){dlabel}: {v2['verdict']} "
                   f"({v2.get('folds_positive','—')}/{v2['folds_counted']})")
             print(concentration_report(r2))
 
@@ -2634,8 +2689,737 @@ def main_mlsweep():
              unlock_lockbox=args.unlock_lockbox)
 
 
+
+# ======================================================================
+# LITERATURE OVERLAYS — established quant filters, parameters fixed by
+# the literature, evaluated by the same fold machinery as everything else
+# ======================================================================
+# WHY THIS EXISTS. The three-ticker walkforward said: ex-best-fold edge
+# ~ zero (+0.014 / +0.026 / -0.032), best fold always the most recent.
+# The WRONG response is to invent new knobs and tune them on those same
+# folds. The defensible middle ground is to test overlays whose form AND
+# parameters were fixed by decades of published research on OTHER data,
+# so this repo's history had no vote in choosing them:
+#
+#   trend_200   Long only above the 200d SMA, short only below it.
+#               Classic trend filter (Faber 2007); crypto replications
+#               find 20-200d trend rules beat buy-and-hold (Le & Ruthbah,
+#               Monash 2023). Parameter 200 is the literature's, not ours.
+#   tsmom_365   Trade only WITH the sign of the trailing 12-month return
+#               (Moskowitz, Ooi & Pedersen 2012 — positive predictor
+#               across 58 futures markets). 365 fixed by that paper.
+#   tsmom_28    Crypto-specific: 28-day lookback found best in a
+#               2013-2023 crypto TSMOM study (AUT 2024), benefit mainly
+#               from reduced downside. 28 fixed by that paper.
+#   vol_scale   Scale position size by target_vol/realized_vol (Moreira
+#               & Muir 2017: "take less risk when volatility is high").
+#               HONESTY NOTE: Cederburg et al. 2020 find NO systematic
+#               out-of-sample Sharpe improvement across 103 strategies —
+#               the robust benefit is drawdown reduction, not alpha. It
+#               is included with that caveat, judged like everything else.
+#
+# WHAT AN OVERLAY MAY DO: drop a trade (gate) or reweight it (sizing).
+# It may NOT move entries, exits, or levels — the underlying trade
+# stream is exactly what the live bot produces.
+#
+# PRE-REGISTERED ACCEPTANCE BAR (fixed before looking at results):
+#   adopt-candidate only if the overlay improves the EX-BEST-FOLD net
+#   expectancy on at least 2 of 3 tickers and degrades no ticker's
+#   ex-best by more than 0.02R. Anything else prints as "no".
+#   Even then: nothing changes automatically. Ever.
+
+OVERLAY_PARAMS = {"trend_sma": 200, "tsmom_long": 365, "tsmom_short": 28,
+                  "vol_window": 20, "vol_target_ann": 0.60, "vol_cap": 1.5,
+                  "rvol_window": 20, "rvol_threshold": 1.5}
+# rvol_window/rvol_threshold: PRE-REGISTERED before any result was seen.
+# 20-day baseline and 1.5x are the practitioner convention for breakout
+# volume confirmation (IBD CAN SLIM requires 40-50% above average; most
+# sources quote 1.5x-2x as the institutional-participation threshold).
+#
+# EVIDENTIARY NOTE, stated plainly: unlike trend_200 / tsmom_365, whose
+# parameters come from peer-reviewed work (Faber; Moskowitz-Ooi-Pedersen
+# 2012), the 1.5x volume rule comes from trading practitioner literature.
+# That is a weaker source. It is still a genuine pre-registration — the
+# number was fixed from outside this repo's data — but it deserves less
+# prior confidence than the momentum overlays, and if it "passes" on one
+# ticker that should be read accordingly.
+#
+# The threshold is NOT swept. A sweep would pick the best-performing
+# cutoff on these exact folds, which is the fitting this whole harness
+# exists to prevent. rvol_curve() below prints a sensitivity table as a
+# DIAGNOSTIC only; choosing a threshold from it would void the test.
+
+
+def build_daily_volume(bars_4h: pd.DataFrame) -> pd.Series:
+    """Daily volume summed from 4h bars. The daily Yahoo frame drops
+    Volume, but the Binance klines already carry it — so this needs no
+    new data source, just a column that was being thrown away."""
+    if bars_4h is None or "Volume" not in getattr(bars_4h, "columns", []):
+        return pd.Series(dtype=float)
+    v = bars_4h["Volume"].astype(float)
+    idx = pd.to_datetime(v.index)
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_localize(None)
+    return v.groupby(idx.normalize()).sum()
+
+
+def build_overlay_series(merged: pd.DataFrame, bars_4h=None) -> dict:
+    """Daily series used by the overlays. Everything is a trailing
+    calculation: the value AT date d uses closes up to and including d,
+    never beyond — the same information the live bot would have."""
+    c = merged["Close"].astype(float)
+    ret = c.pct_change()
+    out = {
+        "sma200": c.rolling(OVERLAY_PARAMS["trend_sma"]).mean(),
+        "mom365": c.pct_change(OVERLAY_PARAMS["tsmom_long"]),
+        "mom28": c.pct_change(OVERLAY_PARAMS["tsmom_short"]),
+        "vol_ann": ret.rolling(OVERLAY_PARAMS["vol_window"]).std()
+                     * math.sqrt(365),
+        "close": c,
+    }
+    dv = build_daily_volume(bars_4h)
+    if len(dv):
+        # Baseline EXCLUDES the current day (.shift(1)) so a signal day's
+        # own volume cannot inflate the average it is measured against.
+        # The signal fires at the daily close, so that day's volume IS
+        # known — using it as the numerator is not lookahead.
+        base = dv.rolling(OVERLAY_PARAMS["rvol_window"]).mean().shift(1)
+        out["rvol"] = dv / base
+    else:
+        out["rvol"] = pd.Series(dtype=float)
+    return out
+
+
+def _is_long(direction: str) -> bool:
+    return direction in ("BUY", "STRONG_BUY")
+
+
+def _norm_date(d):
+    """Normalize any timestamp to a tz-naive midnight Timestamp.
+
+    THE BUG THIS FIXES: build_daily_volume keys on tz-naive midnight
+    (from the Binance klines), but the daily frame's index can be
+    tz-aware or carry a time component depending on the yfinance path.
+    A mismatch makes every rvol lookup return NaN, the gate fails closed,
+    and the overlay silently reports 'no trades passed' — which reads
+    exactly like a real finding. Measured: with clean alignment ~41%% of
+    days clear RVOL 1.0; with a tz-aware index, 0%%."""
+    ts = pd.Timestamp(d)
+    if ts.tzinfo is not None:
+        ts = ts.tz_localize(None)
+    return ts.normalize()
+
+
+def _sv(series_obj, d) -> float:
+    """Safe series lookup: missing date -> NaN (Series.get returns None,
+    which passes a NaN check and then blows up in comparisons)."""
+    v = series_obj.get(d)
+    return float("nan") if v is None else v
+
+
+def _sv_daily(series_obj, d) -> float:
+    """Safe lookup for series keyed on normalized daily dates."""
+    if not len(series_obj):
+        return float("nan")
+    return _sv(series_obj, _norm_date(d))
+
+
+def apply_overlay(trades: list, series: dict, overlay: str) -> list:
+    """Gate or reweight a trade list. Pure; returns new list with a
+    'weight' key (1.0 unless vol_scale). Unknown dates fail closed for
+    gates (trade dropped) and fail neutral for sizing (weight 1)."""
+    out = []
+    for t in trades:
+        d = t["date"]
+        is_long = _is_long(t["direction"])
+        keep, w = True, 1.0
+        if overlay == "baseline":
+            pass
+        elif overlay == "trend_200":
+            sma, px = _sv(series["sma200"], d), _sv(series["close"], d)
+            keep = (sma == sma and px == px
+                    and ((px > sma) if is_long else (px < sma)))
+        elif overlay == "tsmom_365":
+            m = _sv(series["mom365"], d)
+            keep = (m == m) and ((m > 0) if is_long else (m < 0))
+        elif overlay == "tsmom_28":
+            m = _sv(series["mom28"], d)
+            keep = (m == m) and ((m > 0) if is_long else (m < 0))
+        elif overlay == "rvol_150":
+            r = _sv_daily(series.get("rvol", pd.Series(dtype=float)), d)
+            keep = (r == r) and r >= OVERLAY_PARAMS["rvol_threshold"]
+        elif overlay == "compression_deep":
+            # Registered as a median SPLIT, not a tuned threshold: the
+            # cutoff is the median entry-RVOL of the trades being
+            # evaluated, stashed in series["_rvol_median"] by the caller.
+            # Both halves get reported, so there is nothing to select.
+            r = _sv_daily(series.get("rvol", pd.Series(dtype=float)), d)
+            med = series.get("_rvol_median", float("nan"))
+            keep = (r == r) and (med == med) and r <= med
+        elif overlay == "compression_shallow":
+            r = _sv_daily(series.get("rvol", pd.Series(dtype=float)), d)
+            med = series.get("_rvol_median", float("nan"))
+            keep = (r == r) and (med == med) and r > med
+        elif overlay == "vol_scale":
+            v = _sv(series["vol_ann"], d)
+            if v == v and v > 0:
+                w = min(OVERLAY_PARAMS["vol_target_ann"] / v,
+                        OVERLAY_PARAMS["vol_cap"])
+        else:
+            raise ValueError(f"unknown overlay {overlay}")
+        if keep:
+            nt = dict(t)
+            nt["weight"] = round(w, 4)
+            out.append(nt)
+    return out
+
+
+def weighted_net(trades: list) -> float:
+    """Weight-aware net expectancy. With all weights 1 this is the plain
+    mean, so baseline numbers are unchanged."""
+    if not trades:
+        return float("nan")
+    wsum = sum(t.get("weight", 1.0) for t in trades)
+    if wsum <= 0:
+        return float("nan")
+    return sum(t.get("weight", 1.0) * t["pnl_r_net"] for t in trades) / wsum
+
+
+def overlay_fold_table(fold_trades: list, series: dict,
+                        overlays=("baseline", "trend_200", "tsmom_365",
+                                  "tsmom_28", "rvol_150", "compression_deep",
+                                  "compression_shallow", "vol_scale")) -> dict:
+    """{overlay: {'per_fold': [(n, net)...], 'all': x, 'ex_best': y}}.
+    ex_best uses the same rule as concentration_report: drop the fold
+    with the largest total contribution, min 10 trades to count."""
+    res = {}
+    for ov in overlays:
+        per = []
+        for trades in fold_trades:
+            sel = apply_overlay(trades, series, ov)
+            per.append((len(sel), weighted_net(sel),
+                        sum(t.get("weight", 1.0) for t in sel)))
+        counted = [(n, net, w) for n, net, w in per if n >= 10 and net == net]
+        if len(counted) >= 3:
+            tot_w = sum(w for _, _, w in counted)
+            tot_r = sum(net * w for _, net, w in counted)
+            best = max(counted, key=lambda x: x[1] * x[2])
+            rest_w = tot_w - best[2]
+            allv = tot_r / tot_w if tot_w else float("nan")
+            exb = ((tot_r - best[1] * best[2]) / rest_w
+                   if rest_w > 0 else float("nan"))
+        else:
+            allv, exb = float("nan"), float("nan")
+        res[ov] = {"per_fold": per, "all": allv, "ex_best": exb}
+    return res
+
+
+def render_overlay_table(ticker: str, res: dict) -> str:
+    folds = len(next(iter(res.values()))["per_fold"])
+    head = f"{'overlay':<12}" + "".join(f"{'f'+str(i+1):>14}" for i in range(folds))
+    head += f"{'ALL':>10}{'EX-BEST':>10}"
+    lines = [f"\n{ticker} — literature overlays on the live geometry",
+             "=" * len(head), head, "-" * len(head)]
+    for ov, r in res.items():
+        row = f"{ov:<12}"
+        for n, net, _ in r["per_fold"]:
+            row += (f"{net:>+8.3f}({n:>3})" if n else f"{'—':>14}")
+        row += (f"{r['all']:>+10.3f}" if r['all'] == r['all'] else f"{'n/a':>10}")
+        row += (f"{r['ex_best']:>+10.3f}" if r['ex_best'] == r['ex_best']
+                else f"{'n/a':>10}")
+        lines.append(row)
+    return "\n".join(lines)
+
+
+def rvol_coverage(fold_trades: list, series: dict) -> str:
+    """DIAGNOSTIC: is RVOL *missing* on signal days, or *present but low*?
+
+    These look identical in the overlay table (both drop the trade) but
+    mean opposite things:
+      - mostly MISSING  -> index misalignment between the daily trade
+                           dates and the volume series. A bug. Fix it.
+      - mostly PRESENT but below 1.5 -> a real property: this signal
+                           fires on quiet days. Since the underlying
+                           model is a SQUEEZE detector, and a squeeze is
+                           volatility/volume COMPRESSION, that would be
+                           structurally expected — and would mean volume
+                           confirmation contradicts the signal's own
+                           definition rather than refining it.
+    Roughly 35-45%% of days should clear RVOL 1.0 on any normal series;
+    far below that with good coverage is the interesting case."""
+    rv = series.get("rvol", pd.Series(dtype=float))
+    dates = [t["date"] for fold in fold_trades for t in fold]
+    if not dates:
+        return "  rvol coverage: no trades"
+    if not len(rv):
+        return "  rvol coverage: no volume series at all"
+    vals, missing = [], 0
+    for d in dates:
+        v = _sv_daily(rv, d)
+        if v == v:
+            vals.append(v)
+        else:
+            missing += 1
+    n = len(dates)
+    lines = [f"  rvol coverage on signal days (n={n})",
+             f"    missing (no volume match): {missing} "
+             f"({missing / n * 100:.0f}%)"]
+    if vals:
+        s = pd.Series(vals)
+        above1 = (s >= 1.0).mean() * 100
+        lines += [f"    present: {len(vals)} — median {s.median():.2f}, "
+                  f"mean {s.mean():.2f}",
+                  f"    share >= 1.0: {above1:.0f}%"]
+        # Compare against ALL days, which is the control: if signal days
+        # look like every other day, the gate is just thinning the sample.
+        allv = rv.dropna()
+        if len(allv):
+            lines.append(f"    (all days: median {allv.median():.2f}, "
+                         f"share >= 1.0 {(allv >= 1.0).mean() * 100:.0f}%)")
+    if missing / n > 0.5:
+        lines.append("    ^ VERDICT: mostly MISSING — this is an index/data "
+                     "alignment bug, not a finding. The overlay result is void.")
+    elif vals and (pd.Series(vals) >= 1.0).mean() < 0.25:
+        lines.append("    ^ VERDICT: coverage is fine but signal days are "
+                     "genuinely QUIET. Consistent with a squeeze detector "
+                     "firing on compression. Volume confirmation may be the "
+                     "wrong tool for this signal by construction.")
+    return "\n".join(lines)
+
+
+def rvol_curve(fold_trades: list, series: dict,
+                thresholds=(1.0, 1.25, 1.5, 2.0)) -> str:
+    """DIAGNOSTIC ONLY — NOT part of the pre-registered test.
+
+    Shows how trade count and ex-best net move as the volume threshold
+    changes. Useful for understanding WHY rvol_150 passed or failed (e.g.
+    'it just removed half the sample'). Picking a threshold from this
+    table would be exactly the curve-fitting the harness prevents: the
+    registered spec is 1.5x and stays 1.5x regardless of what this shows.
+    """
+    saved = OVERLAY_PARAMS["rvol_threshold"]
+    lines = ["  rvol sensitivity (DIAGNOSTIC — does not change the verdict)",
+             f"    {'thresh':<9}{'trades kept':>13}{'ex-best':>10}"]
+    try:
+        for th in thresholds:
+            OVERLAY_PARAMS["rvol_threshold"] = th
+            res = overlay_fold_table(fold_trades, series,
+                                     overlays=("baseline", "rvol_150"))
+            kept = sum(n for n, _, _ in res["rvol_150"]["per_fold"])
+            total = sum(n for n, _, _ in res["baseline"]["per_fold"])
+            eb = res["rvol_150"]["ex_best"]
+            eb_s = f"{eb:+.3f}" if eb == eb else "n/a"
+            mark = "  <- registered" if abs(th - saved) < 1e-9 else ""
+            lines.append(f"    {th:<9.2f}{kept:>5}/{total:<7}{eb_s:>10}{mark}")
+    finally:
+        OVERLAY_PARAMS["rvol_threshold"] = saved
+    return "\n".join(lines)
+
+
+# ----------------------------------------------------------------------
+# VOLUME, USED IN THE DIRECTION THE DATA POINTS
+# ----------------------------------------------------------------------
+# MEASURED FIRST (3 tickers, ~350 BUY trades): signal days run at
+# RVOL median 0.60-0.66 vs 0.91-0.95 for all days; only 5-10% of signal
+# days clear RVOL 1.0 vs 41-44% of all days. The signal fires on
+# COMPRESSION. So a breakout-style "confirm with high volume" gate asks
+# it to stop being a squeeze detector, which is why rvol_150 kept 0-2
+# trades. Two follow-ups that respect that instead of fighting it:
+#
+#   compression_depth  Does DEEPER compression predict better outcomes?
+#                      ("the tighter the coil, the bigger the spring" —
+#                      the standard squeeze-trading claim.) Reported as
+#                      quartiles, so no threshold is chosen at all, plus
+#                      a median-SPLIT gate as the registered test. A
+#                      median split is not an optimized cutoff: it is
+#                      fixed by the data's own centre, and BOTH halves
+#                      are always printed so there is nothing to
+#                      cherry-pick.
+#
+#   post_entry_expansion  Did volume EXPAND after entry? This cannot gate
+#                      an entry (it is unknowable then), so it is
+#                      reported as a management/exit question: measured
+#                      strictly in the first 24h AFTER entry, then
+#                      outcomes are split on it. If expansion separates
+#                      winners from losers, an early-exit rule becomes
+#                      worth designing. If not, drop the idea.
+#
+# HYPOTHESIS DIRECTION IS REGISTERED HERE, BEFORE RESULTS: deeper
+# compression is expected to be BETTER, and post-entry expansion is
+# expected to be BETTER. If the data says the opposite, that is a real
+# result and gets reported as such, not quietly reinterpreted.
+
+
+def rvol_quartile_report(trades: list, series: dict) -> str:
+    """Net expectancy by entry-RVOL quartile. Purely descriptive — no
+    threshold is chosen, so nothing here can be curve-fitted. The shape
+    of the relationship is the finding (monotone or not)."""
+    rows = []
+    for t in trades:
+        r = _sv_daily(series.get("rvol", pd.Series(dtype=float)), t["date"])
+        if r == r:
+            rows.append((r, t.get("pnl_r_net", t["pnl_r"])))
+    if len(rows) < 20:
+        return f"  compression quartiles: only {len(rows)} trades — too few"
+    df = pd.DataFrame(rows, columns=["rvol", "net"]).sort_values("rvol")
+    df["q"] = pd.qcut(df["rvol"], 4, labels=["Q1 deepest", "Q2", "Q3",
+                                              "Q4 least"], duplicates="drop")
+    lines = ["  net expectancy by entry-volume quartile (Q1 = most compressed)",
+             f"    {'quartile':<12}{'n':>5}{'rvol range':>16}{'net R':>10}"]
+    for q, g in df.groupby("q", observed=True):
+        lines.append(f"    {str(q):<12}{len(g):>5}"
+                     f"{g['rvol'].min():>8.2f}-{g['rvol'].max():<7.2f}"
+                     f"{g['net'].mean():>+10.3f}")
+    q1 = df[df["q"] == "Q1 deepest"]["net"].mean()
+    q4 = df[df["q"] == "Q4 least"]["net"].mean()
+    if q1 == q1 and q4 == q4:
+        lines.append(f"    deepest minus least: {q1 - q4:+.3f}R "
+                     f"({'supports' if q1 > q4 else 'CONTRADICTS'} "
+                     f"the registered hypothesis that tighter coils pay more)")
+    return "\n".join(lines)
+
+
+def post_entry_expansion(trades: list, bars_4h: pd.DataFrame,
+                          window_bars: int = 6) -> str:
+    """Did volume expand in the first 24h AFTER entry, and did that
+    separate outcomes? NOT an entry filter — this information does not
+    exist at entry. It is a management question: if expansion predicts
+    the good trades, an early-exit-on-no-expansion rule is worth
+    designing next. Strictly forward-looking from entry, never using
+    bars beyond the measurement window."""
+    if bars_4h is None or "Volume" not in getattr(bars_4h, "columns", []):
+        return "  post-entry expansion: no volume data"
+    v = bars_4h["Volume"].astype(float)
+    idx = pd.to_datetime(v.index)
+    if getattr(idx, "tz", None) is not None:
+        idx = idx.tz_localize(None)
+    v = pd.Series(v.values, index=idx).sort_index()
+    prior = v.rolling(30).mean()          # ~5 days of 4h bars, trailing
+    exp_rows = []
+    for t in trades:
+        entry_ts = _norm_date(t["date"]) + pd.Timedelta(hours=24)
+        base = prior[prior.index <= entry_ts]
+        if not len(base) or not (base.iloc[-1] > 0):
+            continue
+        fwd = v[(v.index > entry_ts)].iloc[:window_bars]
+        if len(fwd) < window_bars:
+            continue
+        ratio = fwd.mean() / base.iloc[-1]
+        exp_rows.append((ratio, t.get("pnl_r_net", t["pnl_r"])))
+    if len(exp_rows) < 20:
+        return f"  post-entry expansion: only {len(exp_rows)} usable trades"
+    df = pd.DataFrame(exp_rows, columns=["ratio", "net"])
+    hi = df[df["ratio"] >= 1.0]
+    lo = df[df["ratio"] < 1.0]
+    lines = ["  outcomes split by volume expansion in the first 24h AFTER entry",
+             f"    expanded (>=1.0x):  n={len(hi):<4} net {hi['net'].mean():+.3f}R"
+             if len(hi) else "    expanded: none",
+             f"    did not expand:     n={len(lo):<4} net {lo['net'].mean():+.3f}R"
+             if len(lo) else "    did not expand: none"]
+    if len(hi) >= 10 and len(lo) >= 10:
+        gap = hi["net"].mean() - lo["net"].mean()
+        lines.append(f"    gap: {gap:+.3f}R "
+                     f"({'supports' if gap > 0 else 'CONTRADICTS'} the "
+                     f"registered hypothesis that expansion marks the "
+                     f"good trades)")
+        if abs(gap) < 0.10:
+            lines.append("    (gap under 0.10R — treat as no separation)")
+    else:
+        lines.append("    one side too thin to compare")
+    return "\n".join(lines)
+
+
+def overlay_verdict(per_ticker: dict, tol: float = 0.02) -> str:
+    """Apply the pre-registered bar across tickers. per_ticker maps
+    ticker -> overlay_fold_table result."""
+    lines = ["", "PRE-REGISTERED ACCEPTANCE (fixed before results were seen):",
+             "  candidate = improves EX-BEST net on >=2 of 3 tickers AND",
+             f"  degrades no ticker's ex-best by more than {tol:.2f}R", ""]
+    overlays = [o for o in next(iter(per_ticker.values())) if o != "baseline"]
+    any_candidate = False
+    for ov in overlays:
+        better, worse_big, detail = 0, 0, []
+        for tkr, res in per_ticker.items():
+            b, o = res["baseline"]["ex_best"], res[ov]["ex_best"]
+            if b != b or o != o:
+                detail.append(f"{tkr}:n/a")
+                continue
+            diff = o - b
+            detail.append(f"{tkr}:{diff:+.3f}")
+            if diff > 0:
+                better += 1
+            if diff < -tol:
+                worse_big += 1
+        ok = better >= 2 and worse_big == 0
+        any_candidate |= ok
+        lines.append(f"  {ov:<12} ex-best vs baseline [{', '.join(detail)}]"
+                     f"  ->  {'CANDIDATE' if ok else 'no'}")
+    lines.append("")
+    if any_candidate:
+        lines += ["  A candidate is NOT an adoption. Next steps if you want it:",
+                  "  1. rerun with --folds 5 and on a different --years window",
+                  "  2. paper-trade it alongside the live outcomes tracker",
+                  "  3. only then consider changing live behaviour"]
+    else:
+        lines += ["  No overlay met the bar. That is the answer, not a failure:",
+                  "  these were the field's best pre-registered ideas, and on",
+                  "  this signal they don't add out-of-fold edge. The honest",
+                  "  levers remain costs, band selection, and live evidence."]
+    lines.append("  Nothing was changed by this run.")
+    return "\n".join(lines)
+
+
+def main_overlays():
+    parser = argparse.ArgumentParser(
+        description="Test literature-fixed overlays (trend, TSMOM, vol "
+                    "scaling) on the live geometry, per fold, lockboxed.")
+    parser.add_argument("tickers", nargs="+")
+    parser.add_argument("--years", type=float, default=4.0)
+    parser.add_argument("--folds", type=int, default=4)
+    parser.add_argument("--fee-bps", type=float, default=2.0)
+    parser.add_argument("--slippage-bps", type=float, default=2.0)
+    parser.add_argument("--direction", choices=("buy", "sell"), default=None,
+                        help="Restrict to BUY/STRONG_BUY or SELL/STRONG_SELL "
+                             "trades before applying overlays. Default: both.")
+    parser.add_argument("--rvol-curve", action="store_true",
+                        help="Print volume-threshold sensitivity. DIAGNOSTIC "
+                             "ONLY — the registered threshold stays 1.5x.")
+    args = parser.parse_args()
+
+    yf_period = next((p for y, p in ((1, "1y"), (2, "2y"), (5, "5y"), (10, "10y"))
+                      if args.years <= y), "max")
+    n_4h = min(int(args.years * 365 * 6 * 1.15), 30000)
+    cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=int(args.years * 365))
+    g = LIVE_GEOMETRY
+    per_ticker = {}
+    for ticker in args.tickers:
+        print(f"\n=== {ticker}: baseline trades from the LIVE geometry ===")
+        merged = run_backtest(ticker, period=yf_period, squeeze_bars=n_4h)
+        merged = merged[merged.index >= cutoff]
+        merged = apply_lockbox(merged)          # never unlocked here
+        bars_4h = cf.fetch_klines_paginated(cf.to_binance_symbol(ticker),
+                                            interval="4h", target_bars=n_4h)
+        # built AFTER the fetch: rvol needs the klines' Volume column
+        series = build_overlay_series(merged, bars_4h)
+        if not len(series.get("rvol", [])):
+            print("  NOTE: no volume data — rvol_150 will show as n/a")
+        fold_trades = []
+        for fold in walkforward_folds(merged, args.folds):
+            if len(fold) == 0:
+                fold_trades.append([])
+                continue
+            r = backtest_exit_geometry(
+                fold, bars_4h, atr_source=g["atr_source"],
+                stop_mult=g["stop_mult"], target_mult=g["target_mult"],
+                max_hold_days=g["max_hold_days"],
+                short_sma_filter=g["short_sma_filter"],
+                confirm_days=g["confirm_days"],
+                fee_bps=args.fee_bps, slippage_bps=args.slippage_bps)
+            trades = r.get("trades", [])
+            if args.direction:
+                wanted = ({"BUY", "STRONG_BUY"} if args.direction == "buy"
+                         else {"SELL", "STRONG_SELL"})
+                trades = [t for t in trades if t["direction"] in wanted]
+            fold_trades.append(trades)
+        # Median entry-RVOL across ALL folds' trades — computed once, so
+        # every fold is split on the same line and no fold can pick its
+        # own favourable cutoff.
+        _rv = [_sv_daily(series.get("rvol", pd.Series(dtype=float)), t["date"])
+               for fold in fold_trades for t in fold]
+        _rv = [x for x in _rv if x == x]
+        series["_rvol_median"] = (float(pd.Series(_rv).median()) if _rv
+                                  else float("nan"))
+        res = overlay_fold_table(fold_trades, series)
+        per_ticker[ticker] = res
+        print(render_overlay_table(ticker, res))
+        if _rv:
+            print(f"  compression split at RVOL median "
+                  f"{series['_rvol_median']:.2f} "
+                  f"(deep = at or below, shallow = above)")
+            print(rvol_quartile_report([t for f in fold_trades for t in f],
+                                       series))
+            print(post_entry_expansion([t for f in fold_trades for t in f],
+                                        bars_4h))
+        if args.rvol_curve and len(series.get("rvol", [])):
+            print(rvol_coverage(fold_trades, series))
+            print(rvol_curve(fold_trades, series))
+    print(overlay_verdict(per_ticker))
+
+
+# ======================================================================
+# DIAGNOSE — characterization, not hypothesis testing
+# ======================================================================
+# CONTEXT. Seven overlay/filter hypotheses were tested against the same
+# four years tonight; all failed the independent-window check. Testing
+# an eighth filter on that history is close to worthless — with enough
+# attempts something passes any bar by chance (compression_deep did,
+# then died on the 5y window). This command is a different kind of work:
+# DESCRIPTIVE. It answers "what is the signal actually doing" from data
+# already recorded per trade, which does not burn statistical validity.
+#
+# RULE: anything promising found here is NOT a result. It becomes a
+# registered hypothesis (written down, direction stated) and gets tested
+# ONCE on data that had no vote in generating it — realistically the
+# live outcomes file, since the 4y history is exhausted. That rule is
+# printed in the output so it survives the chat that created it.
+
+
+def mfe_report(trades: list) -> str:
+    """How far trades ran in the favorable direction before resolving,
+    as % of target distance. mfe_pct_of_target has been recorded per
+    trade all along. The interesting number: how often LOSERS first got
+    most of the way to the target — 'near-miss rate'. High near-miss
+    means the target may sit past where moves exhaust; low means losers
+    were simply wrong, and exit tinkering has nothing to grab."""
+    stopped = [t["mfe_pct_of_target"] for t in trades
+               if t["outcome"] in ("stop", "ambiguous_stop")
+               and t.get("mfe_pct_of_target") == t.get("mfe_pct_of_target")]
+    hit = [t for t in trades if t["outcome"] == "target"]
+    timed = [t for t in trades if t["outcome"] == "timeout"]
+    if len(stopped) < 10:
+        return "  MFE: too few resolved losers to characterize"
+    s = pd.Series(stopped)
+    lines = ["  How far LOSERS ran toward target before stopping "
+             f"(n={len(s)} stopped, {len(hit)} hit target, {len(timed)} timed out)",
+             f"    median MFE: {s.median():.0f}% of target distance",
+             f"    reached >=50% of target first: {(s >= 50).mean() * 100:.0f}%",
+             f"    reached >=75% of target first: {(s >= 75).mean() * 100:.0f}%",
+             f"    never reached 25%:            {(s < 25).mean() * 100:.0f}%"]
+    near = (s >= 75).mean()
+    if near >= 0.25:
+        lines.append("    ^ notable: a quarter or more of losers were near-"
+                     "misses. A partial-take or trailing rule is a PLAUSIBLE")
+        lines.append("      hypothesis — register it, then test it on LIVE "
+                     "outcomes, not on this history again.")
+    else:
+        lines.append("    ^ losers mostly never got close: they were wrong "
+                     "entries, not mismanaged exits. Exit tinkering has")
+        lines.append("      little to work with here.")
+    return "\n".join(lines)
+
+
+def hold_time_report(trades: list) -> str:
+    """Resolution-speed fingerprint: do winners and losers take similar
+    time? A big asymmetry changes what a timeout means."""
+    w = [t["days_held"] for t in trades if t["outcome"] == "target"]
+    l = [t["days_held"] for t in trades
+         if t["outcome"] in ("stop", "ambiguous_stop")]
+    if len(w) < 8 or len(l) < 8:
+        return "  hold times: too few on one side"
+    return ("  Resolution speed\n"
+            f"    winners: median {pd.Series(w).median():.1f}d "
+            f"(p90 {pd.Series(w).quantile(.9):.1f}d)\n"
+            f"    losers:  median {pd.Series(l).median():.1f}d "
+            f"(p90 {pd.Series(l).quantile(.9):.1f}d)")
+
+
+def strength_report(trades: list) -> str:
+    """Does the STRONG_ label earn its keep? This evaluates an EXISTING
+    live mechanism (conviction tiers already published every hour), not
+    a new filter — but any action taken from it still goes on the
+    hypothesis ledger like everything else."""
+    strong = [t for t in trades if t["direction"].startswith("STRONG")]
+    plain = [t for t in trades if not t["direction"].startswith("STRONG")]
+    if len(strong) < 10 or len(plain) < 10:
+        return (f"  STRONG vs plain: too thin (strong n={len(strong)}, "
+                f"plain n={len(plain)})")
+    sr, pr = stats_from_trades(strong), stats_from_trades(plain)
+    gap = sr["expectancy_r_net"] - pr["expectancy_r_net"]
+    lines = ["  Conviction tiers (does STRONG_ earn its label?)",
+             f"    STRONG: n={sr['n']:<4} net {sr['expectancy_r_net']:+.3f}R  "
+             f"target {sr['target_rate'] * 100:.0f}%",
+             f"    plain:  n={pr['n']:<4} net {pr['expectancy_r_net']:+.3f}R  "
+             f"target {pr['target_rate'] * 100:.0f}%",
+             f"    gap: {gap:+.3f}R "
+             + ("(STRONG is adding information)" if gap > 0.10 else
+                "(STRONG is NOT separating — the label may be decoration)"
+                if gap < -0.10 else "(inside noise)")]
+    return "\n".join(lines)
+
+
+def follower_experience_report(trades: list) -> str:
+    """What a person following every signal actually lives through:
+    equity path in R, max drawdown, losing streaks. A signal service
+    with +0.2R expectancy and a 12-loss streak loses its audience
+    before the expectancy shows up."""
+    if len(trades) < 20:
+        return "  follower experience: too few trades"
+    ordered = sorted(trades, key=lambda t: t["date"])
+    eq, peak, mdd, streak, worst_streak = 0.0, 0.0, 0.0, 0, 0
+    for t in ordered:
+        eq += t["pnl_r_net"]
+        peak = max(peak, eq)
+        mdd = max(mdd, peak - eq)
+        if t["pnl_r_net"] < 0:
+            streak += 1
+            worst_streak = max(worst_streak, streak)
+        else:
+            streak = 0
+    total = eq
+    yrs = max((ordered[-1]["date"] - ordered[0]["date"]).days / 365.25, 0.1)
+    lines = ["  Follower experience (taking every signal, 1R risk each)",
+             f"    total: {total:+.1f}R over {len(ordered)} trades "
+             f"(~{len(ordered) / yrs:.0f} signals/yr)",
+             f"    max drawdown: {mdd:.1f}R from peak",
+             f"    longest losing streak: {worst_streak}",
+             f"    ratio check: drawdown is {mdd / max(total, 0.1):.1f}x "
+             f"the total gain" if total > 0 else
+             "    total is not positive — expectancy first, experience later"]
+    return "\n".join(lines)
+
+
+def main_diagnose():
+    parser = argparse.ArgumentParser(
+        description="Characterize the live-geometry trades: MFE, hold "
+                    "times, conviction tiers, follower experience. "
+                    "Descriptive only — no accept/reject verdicts.")
+    parser.add_argument("tickers", nargs="+")
+    parser.add_argument("--years", type=float, default=4.0)
+    parser.add_argument("--direction", choices=("buy", "sell"), default="buy",
+                        help="Default buy: the going-forward side.")
+    parser.add_argument("--fee-bps", type=float, default=2.0)
+    parser.add_argument("--slippage-bps", type=float, default=2.0)
+    args = parser.parse_args()
+
+    yf_period = next((p for y, p in ((1, "1y"), (2, "2y"), (5, "5y"), (10, "10y"))
+                      if args.years <= y), "max")
+    n_4h = min(int(args.years * 365 * 6 * 1.15), 30000)
+    cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=int(args.years * 365))
+    g = LIVE_GEOMETRY
+    wanted = ({"BUY", "STRONG_BUY"} if args.direction == "buy"
+              else {"SELL", "STRONG_SELL"})
+    for ticker in args.tickers:
+        print(f"\n=== {ticker} diagnosis "
+              f"({args.direction.upper()}, live geometry, {args.years:g}y) ===")
+        merged = run_backtest(ticker, period=yf_period, squeeze_bars=n_4h)
+        merged = merged[merged.index >= cutoff]
+        merged = apply_lockbox(merged)
+        bars_4h = cf.fetch_klines_paginated(cf.to_binance_symbol(ticker),
+                                            interval="4h", target_bars=n_4h)
+        r = backtest_exit_geometry(
+            merged, bars_4h, atr_source=g["atr_source"],
+            stop_mult=g["stop_mult"], target_mult=g["target_mult"],
+            max_hold_days=g["max_hold_days"],
+            short_sma_filter=g["short_sma_filter"],
+            confirm_days=g["confirm_days"],
+            fee_bps=args.fee_bps, slippage_bps=args.slippage_bps)
+        trades = [t for t in r.get("trades", []) if t["direction"] in wanted]
+        if len(trades) < 20:
+            print(f"  only {len(trades)} trades — skipping")
+            continue
+        print(mfe_report(trades))
+        print(hold_time_report(trades))
+        print(strength_report(trades))
+        print(follower_experience_report(trades))
+    print("\nRULE (survives this chat): anything promising above is a")
+    print("hypothesis, not a result. Write it down with a direction, then")
+    print("test it ONCE on data that had no vote in generating it — in")
+    print("practice the live outcomes file, since the 4y history has now")
+    print("had 7+ hypotheses run against it and is close to exhausted.")
+
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "multi", "backtest", "mlsweep", "robustness", "walkforward", "exitgeometry", "optimize"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "multi", "backtest", "mlsweep", "robustness", "walkforward", "exitgeometry", "optimize", "overlays", "diagnose"):
         print("Usage: python pipeline.py <run|multi|backtest|robustness> [args...]\n"
               "  run BTC ...          - single-ticker pipeline (was unified_model.py)\n"
               "  multi BTC ETH ...    - batch across tickers   (was run_multi_ticker.py)\n"
@@ -2646,6 +3430,10 @@ def main():
               "  exitgeometry BTC     - compare live (4h ATR) vs backtest (daily ATR) exit\n"
               "                         geometries on history — options 1 and 2\n"
               "  walkforward BTC ETH SOL - fixed-config evaluation on sequential folds (lockboxed)\n"
+              "  diagnose BTC ETH SOL - characterize live-geometry trades: MFE, hold times,\n"
+              "                         conviction tiers, follower experience (descriptive)\n"
+              "  overlays BTC ETH SOL - test literature-fixed filters (200d trend, TSMOM,\n"
+              "                         vol scaling) on the live geometry, per fold\n"
               "  robustness BTC ETH SOL - split-sample validation of the 4y failure +\n"
               "                         VIX regime rescue candidate (writes docs/robustness.md)\n"
               "Run 'python pipeline.py <command> --help' for that command's options.")
@@ -2668,6 +3456,10 @@ def main():
         main_exitgeometry()
     elif command == "optimize":
         main_optimize()
+    elif command == "overlays":
+        main_overlays()
+    elif command == "diagnose":
+        main_diagnose()
 
 
 if __name__ == "__main__":

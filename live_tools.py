@@ -160,10 +160,16 @@ def passes_confluence(result: dict, ml_bull_min: float = 55.0,
     if bullish and ml >= ml_bull_min:
         return {"qualifies": True, "side": "bullish",
                 "reason": f"{direction} + ML {ml:.0f}% >= {ml_bull_min:.0f}%"}
+    display = direction
     if bearish and long_only:
         return {"qualifies": False, "side": None,
-                "reason": f"{direction} suppressed — long-only mode (short side "
-                          f"showed no edge in backtest; display-only until validated)"}
+                "reason": f"{display} suppressed — long-only mode. Measured "
+                          f"Aug 2026: SELL ex-best-fold net was NEGATIVE on "
+                          f"all three tickers (BTC -0.142R, ETH -0.140R, "
+                          f"SOL -0.103R over ~80 trades each) and CONCENTRATED "
+                          f"on all three — the entire apparent short edge was "
+                          f"one recent fold. Logged for evaluation, not "
+                          f"published."}
     if bearish and ml <= ml_bear_max:
         return {"qualifies": True, "side": "bearish",
                 "reason": f"{direction} + ML {ml:.0f}% <= {ml_bear_max:.0f}%"}
