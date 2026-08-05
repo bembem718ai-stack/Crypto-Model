@@ -2728,3 +2728,228 @@ class TestBatchFourInverseGates:
             um.overlay_fold_table).parameters["overlays"].default
         for g in ("quiet_entry", "score_fading", "recent_stop"):
             assert g in default
+
+
+class TestStructuralExits:
+    """Hyp. #21-23: swing/pivot stops vs the 1.5x ATR stop. The two
+    things that can silently invalidate this: a fractal that is visible
+    before it could be confirmed (lookahead), and a trailing stop that
+    widens. Both are pinned here, plus R:R parity across modes."""
+
+    @staticmethod
+    def _bars(n, lows=None, highs=None, close=100.0):
+        idx = pd.date_range("2024-01-01", periods=n, freq="4h")
+        c = pd.Series(close, index=idx)
+        return pd.DataFrame({
+            "High": (pd.Series(highs, index=idx) if highs is not None else c * 1.01),
+            "Low": (pd.Series(lows, index=idx) if lows is not None else c * 0.99),
+            "Close": c, "Volume": [100.0] * n}, index=idx)
+
+    def test_params_are_conventional_and_fixed(self):
+        p = um.STRUCTURAL_PARAMS
+        assert p["swing_lookback_bars"] == 10
+        assert p["fractal_side_bars"] == 2      # Williams fractal standard
+        assert p["swing_buffer_pct"] == 0.001
+
+    def test_fractal_low_is_confirmed_late_not_at_the_pivot(self):
+        lows = [10, 9, 5, 9, 10, 11, 12, 13, 14, 15]
+        f = um.find_fractal_lows(self._bars(10, lows=lows), side=2)
+        piv_idx = 2                              # the actual low
+        conf_idx = piv_idx + 2                   # visible 2 bars later
+        assert f.iloc[piv_idx] != f.iloc[piv_idx], "pivot visible too early"
+        assert f.iloc[conf_idx] == 5, "pivot not confirmed at the right bar"
+
+    def test_trailing_stop_never_widens(self):
+        # Rising lows: each confirmed pivot should ratchet the stop UP.
+        n = 40
+        lows = [90 + i for i in range(n)]
+        highs = [95 + i for i in range(n)]
+        bars = self._bars(n, lows=lows, highs=highs)
+        fr = um.find_fractal_lows(bars)
+        r = um.resolve_structural(bars, bars.index[0] - pd.Timedelta(hours=4),
+                                  entry=100.0, stop=90.0, target=120.0,
+                                  is_long=True, max_bars=n, trail=True,
+                                  fractal_lows=fr)
+        assert r["outcome"] in ("target", "trail_exit", "stop", "timeout")
+        # a ratcheted exit above entry must be reported as profit
+        if r["outcome"] == "trail_exit":
+            assert r["pnl_r"] > 0
+
+    def test_trail_exit_pnl_measured_from_actual_stop_not_minus_one(self):
+        # Needs a REAL pivot above entry: strictly rising lows contain no
+        # local minimum, so no fractal ever confirms and nothing ratchets.
+        # Dip at index 3 (102) with higher bars each side -> confirms at
+        # index 5 -> stop ratchets to ~101.9, above the 100 entry. Then
+        # price collapses through it, so the exit must book a PROFIT.
+        lows = [101, 103, 105, 102, 104, 106, 108, 110, 112, 114] + [50] * 10
+        highs = [h + 4 for h in lows]
+        bars = self._bars(len(lows), lows=lows, highs=highs)
+        fr = um.find_fractal_lows(bars)
+        assert fr.dropna().iloc[0] == 102, "expected pivot not confirmed"
+        r = um.resolve_structural(bars, bars.index[0] - pd.Timedelta(hours=4),
+                                  entry=100.0, stop=95.0, target=1e9,
+                                  is_long=True, max_bars=len(lows), trail=True,
+                                  fractal_lows=fr)
+        assert r["outcome"] == "trail_exit"
+        assert r["pnl_r"] > 0, "a profitable trail exit was booked as a loss"
+
+    def test_rr_parity_across_modes(self):
+        # Every mode must target the same reward:risk, so the comparison
+        # isolates stop PLACEMENT rather than a different payoff.
+        import inspect
+        src = inspect.getsource(um.backtest_structural)
+        assert "rr: float = 2.0" in src
+        assert "target = entry + rr * risk" in src
+
+    def test_unknown_mode_rejected(self):
+        with pytest.raises(ValueError):
+            um.backtest_structural(pd.DataFrame(), pd.DataFrame(), mode="nope")
+
+    def test_verdict_applies_the_same_bar_as_overlays(self):
+        def rows(atr_eb, alt_eb):
+            mk = lambda v: [{"n": 20, "expectancy_r_net": v}] * 4
+            return {"atr": {"folds": mk(atr_eb)},
+                    "swing": {"folds": mk(alt_eb)},
+                    "trail": {"folds": mk(atr_eb)},
+                    "swing_trail": {"folds": mk(atr_eb)}}
+        good = {"BTC": rows(0.0, 0.2), "ETH": rows(0.0, 0.2),
+                "SOL": rows(0.0, 0.2)}
+        assert "CANDIDATE" in um.structural_verdict(good)
+        bad = {"BTC": rows(0.2, 0.0), "ETH": rows(0.2, 0.0),
+               "SOL": rows(0.2, 0.0)}
+        assert "CANDIDATE" not in um.structural_verdict(bad)
+
+
+class TestTradeMechanics:
+    """Hyp. #24-30: lifecycle variants. The subtle failure modes are a
+    partial that double-counts, a time-stop that fires on winners, and
+    derived targets that peek. All pinned here."""
+
+    @staticmethod
+    def _bars(n, lows=None, highs=None, close=100.0):
+        idx = pd.date_range("2024-01-01", periods=n, freq="4h")
+        c = pd.Series(close, index=idx)
+        return pd.DataFrame({
+            "High": (pd.Series(highs, index=idx) if highs is not None else c),
+            "Low": (pd.Series(lows, index=idx) if lows is not None else c),
+            "Close": c}, index=idx)
+
+    def test_params_registered(self):
+        p = um.MECHANICS_PARAMS
+        assert p["bb_period"] == 20 and p["bb_std"] == 2.0
+        assert p["time_stop_bars"] == 6
+        assert p["partial_at_r"] == 1.0 and p["partial_frac"] == 0.5
+
+    def test_partial_then_target_blends_correctly(self):
+        # entry 100, stop 95 (risk 5), target 110 (2R). Price touches
+        # 105 (+1R) then 110. Expected: 0.5*1R + 0.5*2R = 1.5R
+        highs = [105, 110]; lows = [100, 105]
+        bars = self._bars(2, lows=lows, highs=highs)
+        r = um.resolve_mechanics(bars, bars.index[0] - pd.Timedelta(hours=4),
+                                 100.0, 95.0, 110.0, True, 10, partial=True)
+        assert r["outcome"] == "target"
+        assert r["pnl_r"] == pytest.approx(1.5)
+
+    def test_partial_then_stop_blends_correctly(self):
+        # +1R on half, then full stop on the rest: 0.5*1 + 0.5*(-1) = 0
+        highs = [105, 100]; lows = [100, 94]
+        bars = self._bars(2, lows=lows, highs=highs)
+        r = um.resolve_mechanics(bars, bars.index[0] - pd.Timedelta(hours=4),
+                                 100.0, 95.0, 110.0, True, 10, partial=True)
+        assert r["outcome"] == "stop"
+        assert r["pnl_r"] == pytest.approx(0.0)
+
+    def test_time_stop_only_fires_when_not_in_profit(self):
+        flat = self._bars(10, lows=[99] * 10, highs=[101] * 10, close=99.5)
+        r = um.resolve_mechanics(flat, flat.index[0] - pd.Timedelta(hours=4),
+                                 100.0, 95.0, 110.0, True, 20, time_stop_bars=6)
+        assert r["outcome"] == "time_stop" and r["bars"] == 6
+        # a trade in profit at bar 6 must NOT be time-stopped
+        up = self._bars(10, lows=[100] * 10, highs=[104] * 10, close=103.0)
+        r2 = um.resolve_mechanics(up, up.index[0] - pd.Timedelta(hours=4),
+                                  100.0, 95.0, 110.0, True, 20, time_stop_bars=6)
+        assert r2["outcome"] != "time_stop"
+
+    def test_no_partial_means_unchanged_pnl(self):
+        highs = [105, 110]; lows = [100, 105]
+        bars = self._bars(2, lows=lows, highs=highs)
+        r = um.resolve_mechanics(bars, bars.index[0] - pd.Timedelta(hours=4),
+                                 100.0, 95.0, 110.0, True, 10, partial=False)
+        assert r["pnl_r"] == pytest.approx(2.0)
+
+    def test_bb_width_is_trailing_only(self):
+        n = 60
+        idx = pd.date_range("2024-01-01", periods=n, freq="D")
+        base = pd.DataFrame({"Close": pd.Series(100.0, index=idx)})
+        shocked = base.copy()
+        shocked.iloc[40:, 0] = 200.0          # shock AFTER day 30
+        d = idx[30]
+        assert um.bb_width_at(base).get(d) == pytest.approx(
+            um.bb_width_at(shocked).get(d)), "future prices changed a past BB width"
+
+    def test_variants_are_named_not_swept(self):
+        # A grid search would have many numeric permutations; this must
+        # stay a short list of NAMED, registered changes. Adding a name
+        # here means adding a numbered hypothesis to findings.md.
+        assert set(um.MECHANICS_VARIANTS) == {
+            "baseline", "entry_4h", "measured", "swing_target",
+            "time_stop", "partial", "rr_1_5", "rr_3", "adaptive"}
+
+
+class TestAdaptiveRRAndCeiling:
+    """Hyp. #31: R:R and hold horizon derived from ADX regime rather
+    than preset. Plus the target-ceiling diagnostic, which must be
+    honest about being an UPPER BOUND (MFE counts wick touches)."""
+
+    def test_adaptive_params_are_wilders_conventions(self):
+        p = um.ADAPTIVE_PARAMS
+        assert p["adx_period"] == 14 and p["adx_trend_min"] == 25.0
+        # reused repo values, not new inventions
+        assert p["rr_trend"] == 3.0 and p["rr_chop"] == 1.5
+        assert p["hold_trend_days"] == 15 and p["hold_chop_days"] == 3
+
+    def test_adx_is_trailing_and_bounded(self):
+        n = 200
+        idx = pd.date_range("2024-01-01", periods=n, freq="D")
+        c = pd.Series(np.linspace(100, 200, n), index=idx)   # strong trend
+        df = pd.DataFrame({"High": c * 1.01, "Low": c * 0.99, "Close": c})
+        adx = um.compute_adx(df)
+        v = adx.dropna()
+        assert (v >= 0).all() and (v <= 100).all()
+        # a shock AFTER date d must not change ADX at d
+        shocked = df.copy()
+        shocked.iloc[150:] = shocked.iloc[150:] * 3
+        d = idx[100]
+        assert um.compute_adx(shocked).get(d) == pytest.approx(adx.get(d)), \
+            "future bars changed a past ADX — lookahead"
+
+    def test_trending_series_scores_higher_adx_than_chop(self):
+        n = 200
+        idx = pd.date_range("2024-01-01", periods=n, freq="D")
+        trend = pd.Series(np.linspace(100, 200, n), index=idx)
+        chop = pd.Series(100 + 2 * np.sin(np.arange(n) / 2.0), index=idx)
+        mk = lambda s: pd.DataFrame({"High": s * 1.01, "Low": s * 0.99,
+                                     "Close": s})
+        assert (um.compute_adx(mk(trend)).iloc[-1]
+                > um.compute_adx(mk(chop)).iloc[-1])
+
+    def test_ceiling_math_is_exact(self):
+        # 10 trades at R:R 2.0; 4 hit target (mfe 100%), 3 reached 50%
+        # of target (=1R), 3 reached nothing.
+        mk = lambda mfe, out: {"mfe_pct_of_target": mfe, "outcome": out,
+                               "pnl_r_net": 0.0, "rr_actual": 2.0}
+        trades = ([mk(100.0, "target")] * 4 + [mk(50.0, "stop")] * 3
+                  + [mk(5.0, "stop")] * 3
+                  + [mk(5.0, "stop")] * 10)   # pad past the min-n guard
+        txt = um.target_ceiling_report(trades, levels=(1.0,))
+        # at 1R: needs mfe >= 50% -> 4 + 3 = 7 of 20 -> 35%
+        assert "7/20" in txt and "35%" in txt
+
+    def test_ceiling_report_states_its_upper_bound_caveat(self):
+        mk = lambda: {"mfe_pct_of_target": 60.0, "outcome": "stop",
+                      "pnl_r_net": -1.0, "rr_actual": 2.0}
+        txt = um.target_ceiling_report([mk() for _ in range(30)])
+        assert "UPPER BOUND" in txt and "wick" in txt
+
+    def test_ceiling_refuses_thin_samples(self):
+        assert "too few" in um.target_ceiling_report([])

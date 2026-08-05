@@ -3622,8 +3622,729 @@ def main_diagnose():
     print("had 7+ hypotheses run against it and is close to exhausted.")
 
 
+
+# ======================================================================
+# STRUCTURAL EXITS — swing/pivot stops instead of volatility stops
+# ======================================================================
+# HYPOTHESES #21-23, REGISTERED 2026-08-06 before any result.
+#
+# The idea (practitioner-standard, not derived from this repo's data):
+# place the stop where the SETUP IS INVALIDATED — just under the most
+# recent swing low — rather than at an arbitrary volatility multiple.
+# Structure-based stops are claimed to be hit less often by noise
+# because real support sits under them.
+#
+#   swing_stop  : stop = lowest low of the last 10 4h bars BEFORE entry,
+#                 minus a 0.1%% buffer. Target set to preserve the live
+#                 2:1 R:R, so this isolates stop PLACEMENT and does not
+#                 confound it with a different reward ratio.
+#   swing_trail : start at the live ATR stop, then ratchet the stop up
+#                 under each newly CONFIRMED fractal low as price makes
+#                 higher lows. Never widens. Locks in gains on runners.
+#   swing_both  : swing entry stop AND the trailing ratchet.
+#
+# PARAMETERS, fixed from convention and NOT swept: 10-bar swing
+# lookback; 2-bar-each-side fractal (the standard Williams definition);
+# 0.1%% buffer. Sweeping these would make this hypothesis #24, #25, ...
+#
+# REGISTERED DIRECTION: structural stops produce a HIGHER target rate
+# and BETTER net expectancy than the 1.5x ATR stop.
+#
+# HONEST PRIOR, written before running: this probably fails. The MFE
+# diagnostic showed 48-65%% of losers never reached even 25%% of target
+# distance and losers resolve in 0.6-0.8 days — they go wrong
+# immediately. A wider structural stop mostly converts fast small
+# losses into slower larger ones, and a trailing stop needs runners,
+# which this signal does not produce. Recording that prior so a pass
+# can be judged against it honestly.
+
+STRUCTURAL_PARAMS = {"swing_lookback_bars": 10, "fractal_side_bars": 2,
+                     "swing_buffer_pct": 0.001}
+
+
+def find_fractal_lows(bars: pd.DataFrame, side: int = None) -> pd.Series:
+    """Confirmed swing lows: a bar whose Low is <= the `side` bars on
+    BOTH sides. Confirmation therefore arrives `side` bars LATE, which
+    is exactly how a live trader would see it — the returned series is
+    indexed at the CONFIRMATION bar, never at the pivot itself, so a
+    trailing rule using it cannot peek."""
+    side = side or STRUCTURAL_PARAMS["fractal_side_bars"]
+    lows = bars["Low"].astype(float)
+    n = len(lows)
+    out = pd.Series(index=bars.index, dtype=float)
+    vals = lows.values
+    for i in range(side, n - side):
+        w = vals[i - side:i + side + 1]
+        if vals[i] == w.min():
+            conf = i + side          # visible only after `side` more bars
+            if conf < n:
+                out.iloc[conf] = vals[i]
+    return out
+
+
+def resolve_structural(bars_4h: pd.DataFrame, entry_ts, entry: float,
+                        stop: float, target: float, is_long: bool,
+                        max_bars: int, trail: bool,
+                        fractal_lows: pd.Series = None) -> dict:
+    """Resolve one trade, optionally ratcheting the stop under confirmed
+    fractal lows. Same pessimistic rules as resolve_on_4h: both touched
+    in one bar counts as a stop. The trailing stop only ever moves in
+    the favorable direction and is updated AFTER the current bar is
+    evaluated, so a pivot confirmed on bar k cannot affect bar k."""
+    fwd = bars_4h[bars_4h.index > entry_ts].iloc[:max_bars]
+    if fwd.empty:
+        return {"outcome": None, "bars": 0, "pnl_r": None, "mfe": 0.0}
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return {"outcome": None, "bars": 0, "pnl_r": None, "mfe": 0.0}
+    tgt_dist = abs(target - entry)
+    cur_stop, mfe = stop, 0.0
+    for n, (ts, row) in enumerate(fwd.iterrows(), 1):
+        hi, lo = row["High"], row["Low"]
+        fav = (hi - entry) if is_long else (entry - lo)
+        if tgt_dist:
+            mfe = max(mfe, fav / tgt_dist)
+        hit_t = hi >= target if is_long else lo <= target
+        hit_s = lo <= cur_stop if is_long else hi >= cur_stop
+        if hit_t and hit_s:
+            return {"outcome": "ambiguous_stop", "bars": n,
+                    "pnl_r": (cur_stop - entry) / risk if is_long
+                             else (entry - cur_stop) / risk, "mfe": mfe}
+        if hit_t:
+            return {"outcome": "target", "bars": n,
+                    "pnl_r": tgt_dist / risk, "mfe": mfe}
+        if hit_s:
+            # A ratcheted stop can exit in PROFIT — pnl is measured from
+            # where the stop actually sat, not assumed to be -1R.
+            pnl = ((cur_stop - entry) if is_long else (entry - cur_stop)) / risk
+            return {"outcome": "stop" if pnl < 0 else "trail_exit",
+                    "bars": n, "pnl_r": pnl, "mfe": mfe}
+        if trail and fractal_lows is not None and is_long:
+            piv = fractal_lows.get(ts)
+            if piv is not None and piv == piv:
+                cand = piv * (1 - STRUCTURAL_PARAMS["swing_buffer_pct"])
+                if cand > cur_stop:
+                    cur_stop = cand      # ratchet only
+    if len(fwd) < max_bars:
+        return {"outcome": None, "bars": len(fwd), "pnl_r": None, "mfe": mfe}
+    last = fwd.iloc[-1]["Close"]
+    pnl = ((last - entry) if is_long else (entry - last)) / risk
+    return {"outcome": "timeout", "bars": len(fwd), "pnl_r": pnl, "mfe": mfe}
+
+
+def backtest_structural(merged: pd.DataFrame, bars_4h: pd.DataFrame,
+                         mode: str = "atr", stop_mult: float = 1.5,
+                         rr: float = 2.0, max_hold_days: float = 15,
+                         short_sma_filter: int = 50, confirm_days: int = 2,
+                         fee_bps: float = 2.0, slippage_bps: float = 2.0,
+                         bars_per_day: int = 6, direction: str = "buy") -> dict:
+    """mode: atr (live baseline) | swing | trail | swing_trail.
+    R:R held at `rr` for every mode so only stop PLACEMENT varies."""
+    if mode not in ("atr", "swing", "trail", "swing_trail"):
+        raise ValueError(f"unknown mode {mode}")
+    df = merged.dropna(subset=["High", "Low", "Close"]).copy()
+    if short_sma_filter and short_sma_filter > 0:
+        df["_trend_sma"] = df["Close"].rolling(short_sma_filter).mean()
+    atr4 = build_4h_atr(bars_4h)
+    lows_roll = bars_4h["Low"].astype(float).rolling(
+        STRUCTURAL_PARAMS["swing_lookback_bars"]).min()
+    fr = (find_fractal_lows(bars_4h)
+          if mode in ("trail", "swing_trail") else None)
+    max_bars = max(1, int(max_hold_days * bars_per_day))
+    wanted = ({"BUY", "STRONG_BUY"} if direction == "buy"
+              else {"SELL", "STRONG_SELL"})
+    dirs = df["direction"].tolist()
+
+    def confirmed(i):
+        if confirm_days <= 1:
+            return True
+        if i < confirm_days - 1:
+            return False
+        w = dirs[i - confirm_days + 1: i + 1]
+        return all(d == w[-1] for d in w)
+
+    trades = []
+    for i, (day, row) in enumerate(df.iterrows()):
+        d = row["direction"]
+        if d not in wanted or not confirmed(i):
+            continue
+        if (short_sma_filter and d in ("SELL", "STRONG_SELL")
+                and not (row.get("_trend_sma") == row.get("_trend_sma")
+                         and row["Close"] < row["_trend_sma"])):
+            continue
+        entry_ts = pd.Timestamp(day).normalize() + pd.Timedelta(hours=24)
+        entry = row["Close"]
+        is_long = d in ("BUY", "STRONG_BUY")
+        prior_atr = atr4[atr4.index <= entry_ts]
+        atr = prior_atr.iloc[-1] if len(prior_atr) else float("nan")
+        if not (atr == atr) or atr <= 0:
+            continue
+        if mode in ("swing", "swing_trail") and is_long:
+            prior_low = lows_roll[lows_roll.index <= entry_ts]
+            sl = prior_low.iloc[-1] if len(prior_low) else float("nan")
+            if not (sl == sl) or sl >= entry:
+                continue                      # no valid structure below
+            stop = sl * (1 - STRUCTURAL_PARAMS["swing_buffer_pct"])
+        else:
+            stop = (entry - stop_mult * atr) if is_long else (entry + stop_mult * atr)
+        risk = abs(entry - stop)
+        if risk <= 0:
+            continue
+        target = entry + rr * risk if is_long else entry - rr * risk
+        r = resolve_structural(bars_4h, entry_ts, entry, stop, target, is_long,
+                               max_bars, trail=mode in ("trail", "swing_trail"),
+                               fractal_lows=fr)
+        if r["outcome"] is None:
+            continue
+        stop_frac = risk / entry
+        cost_r = (2.0 * (fee_bps + slippage_bps) / 1e4) / stop_frac
+        trades.append({"date": day, "direction": d, "outcome": r["outcome"],
+                       "pnl_r": round(r["pnl_r"], 3),
+                       "cost_r": round(cost_r, 4),
+                       "pnl_r_net": round(r["pnl_r"] - cost_r, 3),
+                       "bars_held": r["bars"],
+                       "days_held": round(r["bars"] / bars_per_day, 2),
+                       "stop_pct": round(stop_frac * 100, 3),
+                       "score": float(row.get("combined_final_score", float("nan"))),
+                       "mfe_pct_of_target": round(r["mfe"] * 100, 1)})
+    if not trades:
+        return {"n": 0, "trades": []}
+    s = stats_from_trades(trades)
+    t = pd.DataFrame(trades)
+    s["trail_exit_rate"] = (t["outcome"] == "trail_exit").mean()
+    return s
+
+
+def main_structural():
+    parser = argparse.ArgumentParser(
+        description="Compare structural (swing/pivot) exits against the "
+                    "live ATR stop, per fold. Changes nothing.")
+    parser.add_argument("tickers", nargs="+")
+    parser.add_argument("--years", type=float, default=4.0)
+    parser.add_argument("--folds", type=int, default=4)
+    parser.add_argument("--direction", choices=("buy", "sell"), default="buy")
+    parser.add_argument("--fee-bps", type=float, default=2.0)
+    parser.add_argument("--slippage-bps", type=float, default=2.0)
+    args = parser.parse_args()
+
+    yf_period = next((p for y, p in ((1, "1y"), (2, "2y"), (5, "5y"), (10, "10y"))
+                      if args.years <= y), "max")
+    n_4h = min(int(args.years * 365 * 6 * 1.15), 30000)
+    cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=int(args.years * 365))
+    g = LIVE_GEOMETRY
+    modes = ("atr", "swing", "trail", "swing_trail")
+    per_ticker = {}
+    for ticker in args.tickers:
+        print(f"\n=== {ticker}: structural exits ({args.direction.upper()}) ===")
+        merged = run_backtest(ticker, period=yf_period, squeeze_bars=n_4h)
+        merged = merged[merged.index >= cutoff]
+        merged = apply_lockbox(merged)
+        bars_4h = cf.fetch_klines_paginated(cf.to_binance_symbol(ticker),
+                                            interval="4h", target_bars=n_4h)
+        rows, folds = {}, walkforward_folds(merged, args.folds)
+        for mode in modes:
+            per_fold = []
+            for fold in folds:
+                if len(fold) == 0:
+                    per_fold.append({"n": 0}); continue
+                per_fold.append(backtest_structural(
+                    fold, bars_4h, mode=mode, stop_mult=g["stop_mult"],
+                    max_hold_days=g["max_hold_days"],
+                    short_sma_filter=g["short_sma_filter"],
+                    confirm_days=g["confirm_days"], fee_bps=args.fee_bps,
+                    slippage_bps=args.slippage_bps, direction=args.direction))
+            whole = backtest_structural(
+                merged, bars_4h, mode=mode, stop_mult=g["stop_mult"],
+                max_hold_days=g["max_hold_days"],
+                short_sma_filter=g["short_sma_filter"],
+                confirm_days=g["confirm_days"], fee_bps=args.fee_bps,
+                slippage_bps=args.slippage_bps, direction=args.direction)
+            rows[mode] = {"folds": per_fold, "whole": whole}
+        per_ticker[ticker] = rows
+        hdr = (f"  {'mode':<13}{'n':>5}{'stop%':>8}{'target':>8}"
+               f"{'trail-x':>9}{'NET':>9}{'hold':>8}{'ex-best':>10}")
+        print(hdr); print("  " + "-" * (len(hdr) - 2))
+        for mode in modes:
+            w, pf = rows[mode]["whole"], rows[mode]["folds"]
+            if not w.get("n"):
+                print(f"  {mode:<13}    0   (no trades)"); continue
+            eb = concentration_report(pf)
+            import re as _re
+            m = _re.search(r"excluding best fold:\s*([+-][\d.]+)R", eb)
+            ebv = m.group(1) if m else "n/a"
+            print(f"  {mode:<13}{w['n']:>5}{w['avg_stop_pct']:>7.2f}%"
+                  f"{w['target_rate'] * 100:>7.0f}%"
+                  f"{w.get('trail_exit_rate', 0) * 100:>8.0f}%"
+                  f"{w['expectancy_r_net']:>+9.3f}"
+                  f"{w['avg_days_held']:>7.1f}d{ebv:>10}")
+    print("\n" + structural_verdict(per_ticker))
+
+
+def structural_verdict(per_ticker: dict, tol: float = 0.02) -> str:
+    """Same pre-registered bar as the overlays: beat the ATR baseline's
+    ex-best on >=2 of 3 tickers, degrade none by more than tol."""
+    import re as _re
+    def exbest(pf):
+        m = _re.search(r"excluding best fold:\s*([+-][\d.]+)R",
+                       concentration_report(pf))
+        return float(m.group(1)) if m else float("nan")
+    lines = ["PRE-REGISTERED ACCEPTANCE (fixed before results):",
+             "  candidate = beats the ATR baseline's EX-BEST net on >=2 of 3",
+             f"  tickers AND degrades none by more than {tol:.2f}R", ""]
+    modes = [m for m in ("swing", "trail", "swing_trail")]
+    any_ok = False
+    for mode in modes:
+        better, worse, detail = 0, 0, []
+        for tkr, rows in per_ticker.items():
+            b, o = exbest(rows["atr"]["folds"]), exbest(rows[mode]["folds"])
+            if b != b or o != o:
+                detail.append(f"{tkr}:n/a"); continue
+            diff = o - b
+            detail.append(f"{tkr}:{diff:+.3f}")
+            if diff > 0: better += 1
+            if diff < -tol: worse += 1
+        ok = better >= 2 and worse == 0
+        any_ok |= ok
+        lines.append(f"  {mode:<13} vs ATR baseline [{', '.join(detail)}]"
+                     f"  ->  {'CANDIDATE' if ok else 'no'}")
+    lines.append("")
+    lines.append("  A candidate still needs the gauntlet (--folds 5 and a"
+                 if any_ok else
+                 "  No structural exit beat the volatility stop. Consistent")
+    lines.append("  different --years window) before it means anything."
+                 if any_ok else
+                 "  with the MFE finding: losers go wrong immediately, so a")
+    if not any_ok:
+        lines.append("  wider structural stop just makes the same losses bigger.")
+    lines.append("  Nothing was changed by this run.")
+    return "\n".join(lines)
+
+
+
+# ======================================================================
+# TRADE MECHANICS — entry timing, target derivation, time stops, partials
+# ======================================================================
+# HYPOTHESES #24-30, REGISTERED 2026-08-06 before any result.
+#
+# WHY THIS EXISTS. 23 hypotheses have failed, all of them FILTERS
+# (which trades to take). That is itself a finding: filtering is not the
+# lever here. Untouched so far is the trade LIFECYCLE — when we enter,
+# where the target comes from, and how we manage the position.
+#
+# THE R:R CRITIQUE (user's, and it is correct): a fixed 3.0x/1.5x means
+# NEITHER level is derived from anything. The stop is not at
+# invalidation, the target is not where moves exhaust — both are preset
+# multiples. `swing` addressed the stop half. These address the target
+# half and the timing.
+#
+#   #24 entry_4h    : enter on the NEXT 4h BAR, not the next daily close.
+#                     The squeeze fires on a 4h bar but the backtest has
+#                     always waited for the daily close — up to 24h late
+#                     for a system whose losers die in 0.6d and winners
+#                     in 1.5d. REGISTERED: earlier entry is BETTER.
+#   #25 measured    : target = entry + the Bollinger band WIDTH at the
+#                     signal (classic measured move: a squeeze expands
+#                     in proportion to how tight it got). Target derived
+#                     from market state, not a multiple. BETTER.
+#   #26 swing_target: target = highest high of the prior 20 4h bars
+#                     (prior resistance). BETTER.
+#   #27 time_stop   : exit at market if not in profit after 6 bars (1
+#                     day). MFE says losers die immediately; this cuts
+#                     slow bleeders. BETTER.
+#   #28 partial     : take half at 1R, let half run to target. Same
+#                     prediction, different payoff shape — aimed at the
+#                     11-loss-streak / 19R-drawdown problem, not at
+#                     expectancy. BETTER on drawdown, NEUTRAL on net.
+#   #29 rr_1_5      : target multiple 1.5x risk instead of 2x.
+#   #30 rr_3        : target multiple 3x risk instead of 2x.
+#                     #29/#30 exist to show the R:R FRONTIER rather than
+#                     to be adopted: at a 39%% hit rate the model sits
+#                     near 2:1 breakeven, so the frontier shape is the
+#                     information.
+#
+# These are REGISTERED VARIANTS, not a grid search. Each is one named
+# change against the same baseline; no knob is swept for a best value.
+
+MECHANICS_PARAMS = {"bb_period": 20, "bb_std": 2.0,
+                    "swing_high_bars": 20, "time_stop_bars": 6,
+                    "partial_at_r": 1.0, "partial_frac": 0.5}
+
+
+def bb_width_at(merged: pd.DataFrame) -> pd.Series:
+    """Bollinger band width (upper-lower) in price units, trailing."""
+    c = merged["Close"].astype(float)
+    p, k = MECHANICS_PARAMS["bb_period"], MECHANICS_PARAMS["bb_std"]
+    sd = c.rolling(p).std()
+    return (2.0 * k * sd)
+
+
+def resolve_mechanics(bars_4h, entry_ts, entry, stop, target, is_long,
+                       max_bars, time_stop_bars=None, partial=False):
+    """Resolve with optional time-stop and partial take. Pure.
+
+    Partial: half the position exits at +1R (measured in risk units),
+    the remainder runs to target/stop. Reported pnl_r is the BLENDED
+    result, so it is directly comparable to the other variants.
+    Pessimistic on same-bar ambiguity, as everywhere else."""
+    fwd = bars_4h[bars_4h.index > entry_ts].iloc[:max_bars]
+    if fwd.empty:
+        return {"outcome": None, "bars": 0, "pnl_r": None, "mfe": 0.0}
+    risk = abs(entry - stop)
+    if risk <= 0:
+        return {"outcome": None, "bars": 0, "pnl_r": None, "mfe": 0.0}
+    tgt_dist = abs(target - entry)
+    part_lvl = entry + risk if is_long else entry - risk
+    pf = MECHANICS_PARAMS["partial_frac"]
+    took_partial, booked, mfe = False, 0.0, 0.0
+    for n, (_, row) in enumerate(fwd.iterrows(), 1):
+        hi, lo = row["High"], row["Low"]
+        fav = (hi - entry) if is_long else (entry - lo)
+        if tgt_dist:
+            mfe = max(mfe, fav / tgt_dist)
+        hit_t = hi >= target if is_long else lo <= target
+        hit_s = lo <= stop if is_long else hi >= stop
+        if partial and not took_partial:
+            hit_p = hi >= part_lvl if is_long else lo <= part_lvl
+            if hit_p and not hit_s:
+                took_partial, booked = True, pf * 1.0     # +1R on half
+        if hit_t and hit_s:
+            return {"outcome": "ambiguous_stop", "bars": n,
+                    "pnl_r": booked + (pf if took_partial else 1.0) * -1.0,
+                    "mfe": mfe}
+        if hit_t:
+            rem = pf if took_partial else 1.0
+            return {"outcome": "target", "bars": n,
+                    "pnl_r": booked + rem * (tgt_dist / risk), "mfe": mfe}
+        if hit_s:
+            rem = pf if took_partial else 1.0
+            return {"outcome": "stop", "bars": n,
+                    "pnl_r": booked + rem * -1.0, "mfe": mfe}
+        if time_stop_bars and n >= time_stop_bars:
+            close = row["Close"]
+            pnl = ((close - entry) if is_long else (entry - close)) / risk
+            if pnl <= 0:
+                rem = pf if took_partial else 1.0
+                return {"outcome": "time_stop", "bars": n,
+                        "pnl_r": booked + rem * pnl, "mfe": mfe}
+    if len(fwd) < max_bars:
+        return {"outcome": None, "bars": len(fwd), "pnl_r": None, "mfe": mfe}
+    last = fwd.iloc[-1]["Close"]
+    pnl = ((last - entry) if is_long else (entry - last)) / risk
+    rem = pf if took_partial else 1.0
+    return {"outcome": "timeout", "bars": len(fwd),
+            "pnl_r": booked + rem * pnl, "mfe": mfe}
+
+
+MECHANICS_VARIANTS = {
+    "baseline":     {},
+    "entry_4h":     {"entry_mode": "next_4h"},
+    "measured":     {"target_mode": "measured"},
+    "swing_target": {"target_mode": "swing_high"},
+    "time_stop":    {"time_stop": True},
+    "partial":      {"partial": True},
+    "rr_1_5":       {"rr": 1.5},
+    "rr_3":         {"rr": 3.0},
+    "adaptive":     {"target_mode": "adaptive"},
+}
+
+
+def backtest_mechanics(merged, bars_4h, entry_mode="daily_close",
+                        target_mode="rr", rr=2.0, stop_mult=1.5,
+                        time_stop=False, partial=False, max_hold_days=15,
+                        short_sma_filter=50, confirm_days=2,
+                        fee_bps=2.0, slippage_bps=2.0, bars_per_day=6,
+                        direction="buy"):
+    df = merged.dropna(subset=["High", "Low", "Close"]).copy()
+    if short_sma_filter and short_sma_filter > 0:
+        df["_sma"] = df["Close"].rolling(short_sma_filter).mean()
+    atr4 = build_4h_atr(bars_4h)
+    bbw = bb_width_at(df)
+    adx_series = compute_adx(df, period=ADAPTIVE_PARAMS["adx_period"])
+    highs_roll = bars_4h["High"].astype(float).rolling(
+        MECHANICS_PARAMS["swing_high_bars"]).max()
+    max_bars = max(1, int(max_hold_days * bars_per_day))
+    wanted = ({"BUY", "STRONG_BUY"} if direction == "buy"
+              else {"SELL", "STRONG_SELL"})
+    dirs = df["direction"].tolist()
+
+    def confirmed(i):
+        if confirm_days <= 1:
+            return True
+        if i < confirm_days - 1:
+            return False
+        w = dirs[i - confirm_days + 1: i + 1]
+        return all(d == w[-1] for d in w)
+
+    trades = []
+    for i, (day, row) in enumerate(df.iterrows()):
+        d = row["direction"]
+        if d not in wanted or not confirmed(i):
+            continue
+        if (short_sma_filter and d in ("SELL", "STRONG_SELL")
+                and not (row.get("_sma") == row.get("_sma")
+                         and row["Close"] < row["_sma"])):
+            continue
+        is_long = d in ("BUY", "STRONG_BUY")
+        day_ts = pd.Timestamp(day).normalize()
+        if entry_mode == "next_4h":
+            # THE TIMING TEST: enter on the first 4h bar after the daily
+            # bar CLOSES is still the daily close; the earlier-entry
+            # variant enters on the first 4h bar of the signal day's
+            # session that is strictly after the prior daily close.
+            cand = bars_4h[bars_4h.index > day_ts]
+            if cand.empty:
+                continue
+            entry_ts = cand.index[0]
+            entry = float(cand.iloc[0]["Close"])
+        else:
+            entry_ts = day_ts + pd.Timedelta(hours=24)
+            entry = float(row["Close"])
+        prior_atr = atr4[atr4.index <= entry_ts]
+        atr = prior_atr.iloc[-1] if len(prior_atr) else float("nan")
+        if not (atr == atr) or atr <= 0:
+            continue
+        stop = (entry - stop_mult * atr) if is_long else (entry + stop_mult * atr)
+        risk = abs(entry - stop)
+        if risk <= 0:
+            continue
+        if target_mode == "adaptive":
+            a = adx_series.get(day)
+            if a is None or a != a:
+                continue
+            trending = a >= ADAPTIVE_PARAMS["adx_trend_min"]
+            rr_eff = (ADAPTIVE_PARAMS["rr_trend"] if trending
+                      else ADAPTIVE_PARAMS["rr_chop"])
+            hold_eff = (ADAPTIVE_PARAMS["hold_trend_days"] if trending
+                        else ADAPTIVE_PARAMS["hold_chop_days"])
+            max_bars_eff = max(1, int(hold_eff * bars_per_day))
+            target = entry + rr_eff * risk if is_long else entry - rr_eff * risk
+        elif target_mode == "measured":
+            w = bbw.get(day)
+            if w is None or w != w or w <= 0:
+                continue
+            target = entry + w if is_long else entry - w
+        elif target_mode == "swing_high":
+            pri = highs_roll[highs_roll.index <= entry_ts]
+            hh = pri.iloc[-1] if len(pri) else float("nan")
+            if not (hh == hh) or (is_long and hh <= entry):
+                continue
+            target = hh if is_long else entry - (entry - hh)
+        else:
+            target = entry + rr * risk if is_long else entry - rr * risk
+        r = resolve_mechanics(
+            bars_4h, entry_ts, entry, stop, target, is_long,
+            (max_bars_eff if target_mode == "adaptive" else max_bars),
+            time_stop_bars=(MECHANICS_PARAMS["time_stop_bars"]
+                            if time_stop else None), partial=partial)
+        if r["outcome"] is None:
+            continue
+        stop_frac = risk / entry
+        cost_r = (2.0 * (fee_bps + slippage_bps) / 1e4) / stop_frac
+        trades.append({"date": day, "direction": d, "outcome": r["outcome"],
+                       "pnl_r": round(r["pnl_r"], 3),
+                       "cost_r": round(cost_r, 4),
+                       "pnl_r_net": round(r["pnl_r"] - cost_r, 3),
+                       "bars_held": r["bars"],
+                       "days_held": round(r["bars"] / bars_per_day, 2),
+                       "stop_pct": round(stop_frac * 100, 3),
+                       "rr_actual": round(abs(target - entry) / risk, 2),
+                       "score": float(row.get("combined_final_score", float("nan"))),
+                       "mfe_pct_of_target": round(r["mfe"] * 100, 1)})
+    if not trades:
+        return {"n": 0, "trades": []}
+    s = stats_from_trades(trades)
+    t = pd.DataFrame(trades)
+    s["avg_rr"] = t["rr_actual"].mean()
+    s["time_stop_rate"] = (t["outcome"] == "time_stop").mean()
+    return s
+
+
+def compute_adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Wilder's ADX — trend STRENGTH (not direction). Period 14 and the
+    25 threshold below are Wilder's own conventional values, fixed from
+    outside this repo. Trailing only."""
+    h, l, c = (df["High"].astype(float), df["Low"].astype(float),
+               df["Close"].astype(float))
+    up, dn = h.diff(), -l.diff()
+    plus_dm = ((up > dn) & (up > 0)) * up.clip(lower=0)
+    minus_dm = ((dn > up) & (dn > 0)) * dn.clip(lower=0)
+    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()],
+                   axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1 / period, adjust=False).mean()
+    pdi = 100 * plus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr
+    mdi = 100 * minus_dm.ewm(alpha=1 / period, adjust=False).mean() / atr
+    dx = 100 * (pdi - mdi).abs() / (pdi + mdi).replace(0, float("nan"))
+    return dx.ewm(alpha=1 / period, adjust=False).mean()
+
+
+def target_ceiling_report(trades: list, levels=(0.5, 0.75, 1.0, 1.5, 2.0)) -> str:
+    """HOW MUCH could a nearer target possibly help? Pure arithmetic on
+    trades ALREADY RESOLVED at the current geometry — no refitting, no
+    new backtest, so it cannot be curve-fitted.
+
+    For each candidate target (in R), counts how many trades reached
+    that level (via mfe_pct_of_target, recorded per trade) and recomputes
+    hit rate and expectancy as if the target had been there.
+
+    WHY THIS MATTERS EVEN WHEN EXPECTANCY IS FLAT: at a 40%% hit rate on
+    2R, expectancy is +0.20R. If a 1R target converts a third of the
+    losers, the hit rate goes to ~60%% and expectancy is STILL +0.20R —
+    but the losing-streak distribution changes completely. With an
+    11-loss streak and a 19R drawdown as the live launch blocker, hit
+    rate is a product-survival number, not a vanity one.
+
+    CAVEAT (real, do not ignore): MFE is the maximum FAVOURABLE
+    excursion. A trade that touched +1R may have done so on a wick that
+    a live limit order would not have filled, and the stop might still
+    have been hit first inside the same bar. So these numbers are an
+    UPPER BOUND on what a nearer target achieves, not an estimate."""
+    resolved = [t for t in trades
+                if t.get("mfe_pct_of_target") == t.get("mfe_pct_of_target")]
+    if len(resolved) < 20:
+        return "  target ceiling: too few resolved trades"
+    cur_rr = (sum(t.get("rr_actual", 2.0) for t in resolved) / len(resolved))
+    lines = ["  TARGET CEILING — upper bound on what a nearer target buys",
+             f"    current: R:R {cur_rr:.1f}, "
+             f"hit {sum(1 for t in resolved if t['outcome']=='target')/len(resolved)*100:.0f}%, "
+             f"net {sum(t['pnl_r_net'] for t in resolved)/len(resolved):+.3f}R",
+             f"    {'target':<9}{'would hit':>11}{'hit rate':>10}"
+             f"{'gross exp':>11}"]
+    for lvl in levels:
+        # mfe is recorded as % of the CURRENT target distance, so a
+        # candidate at lvl R corresponds to mfe >= lvl / cur_rr.
+        need = (lvl / cur_rr) * 100 if cur_rr else float("inf")
+        hits = sum(1 for t in resolved if t["mfe_pct_of_target"] >= need)
+        rate = hits / len(resolved)
+        exp = rate * lvl - (1 - rate) * 1.0
+        lines.append(f"    {lvl:<9.2f}{hits:>7}/{len(resolved):<3}"
+                     f"{rate*100:>9.0f}%{exp:>+11.3f}")
+    lines += ["    ^ UPPER BOUND only: MFE counts wick touches that a live",
+              "      order might not fill, and ignores same-bar stop-first.",
+              "      Treat as 'is this worth testing', not as a result."]
+    return "\n".join(lines)
+
+
+ADAPTIVE_PARAMS = {"adx_period": 14, "adx_trend_min": 25.0,
+                   "rr_trend": 3.0, "rr_chop": 1.5,
+                   "hold_trend_days": 15, "hold_chop_days": 3}
+# HYPOTHESIS #31, REGISTERED 2026-08-06. The R:R and the hold horizon
+# should come from MARKET CONDITION, not a preset: a trending tape earns
+# a distant target and patience, a choppy tape wants a scalp. Regime is
+# Wilder's ADX (period 14, threshold 25 — his own conventional values,
+# fixed outside this repo). REGISTERED DIRECTION: adaptive beats fixed.
+# The two R values and two hold budgets are the ones this repo already
+# uses elsewhere (3.0 live target, 1.5 stop mult reused as the chop
+# target, 15d live hold, 3d from the failed match_horizon probe), so no
+# new numbers were invented for the adaptive arm.
+
+
+def main_mechanics():
+    parser = argparse.ArgumentParser(
+        description="Test trade-lifecycle variants (entry timing, derived "
+                    "targets, time stop, partials, R:R frontier). "
+                    "Registered variants, not a grid search.")
+    parser.add_argument("tickers", nargs="+")
+    parser.add_argument("--years", type=float, default=4.0)
+    parser.add_argument("--folds", type=int, default=4)
+    parser.add_argument("--direction", choices=("buy", "sell"), default="buy")
+    parser.add_argument("--fee-bps", type=float, default=2.0)
+    parser.add_argument("--slippage-bps", type=float, default=2.0)
+    args = parser.parse_args()
+    yf_period = next((p for y, p in ((1, "1y"), (2, "2y"), (5, "5y"), (10, "10y"))
+                      if args.years <= y), "max")
+    n_4h = min(int(args.years * 365 * 6 * 1.15), 30000)
+    cutoff = pd.Timestamp.now().normalize() - pd.Timedelta(days=int(args.years * 365))
+    g = LIVE_GEOMETRY
+    per_ticker = {}
+    import re as _re
+    for ticker in args.tickers:
+        print(f"\n=== {ticker}: trade mechanics ({args.direction.upper()}) ===")
+        merged = run_backtest(ticker, period=yf_period, squeeze_bars=n_4h)
+        merged = merged[merged.index >= cutoff]
+        merged = apply_lockbox(merged)
+        bars_4h = cf.fetch_klines_paginated(cf.to_binance_symbol(ticker),
+                                            interval="4h", target_bars=n_4h)
+        folds = walkforward_folds(merged, args.folds)
+        rows = {}
+        for name, kw in MECHANICS_VARIANTS.items():
+            pf = []
+            for fold in folds:
+                if len(fold) == 0:
+                    pf.append({"n": 0}); continue
+                pf.append(backtest_mechanics(
+                    fold, bars_4h, stop_mult=g["stop_mult"],
+                    max_hold_days=g["max_hold_days"],
+                    short_sma_filter=g["short_sma_filter"],
+                    confirm_days=g["confirm_days"], fee_bps=args.fee_bps,
+                    slippage_bps=args.slippage_bps,
+                    direction=args.direction, **kw))
+            whole = backtest_mechanics(
+                merged, bars_4h, stop_mult=g["stop_mult"],
+                max_hold_days=g["max_hold_days"],
+                short_sma_filter=g["short_sma_filter"],
+                confirm_days=g["confirm_days"], fee_bps=args.fee_bps,
+                slippage_bps=args.slippage_bps,
+                direction=args.direction, **kw)
+            rows[name] = {"folds": pf, "whole": whole}
+        per_ticker[ticker] = rows
+        base_tr = rows["baseline"]["whole"].get("trades", [])
+        if base_tr:
+            print(target_ceiling_report(base_tr))
+        hdr = (f"  {'variant':<14}{'n':>5}{'R:R':>6}{'target':>8}"
+               f"{'tstop':>7}{'NET':>9}{'hold':>7}{'ex-best':>10}")
+        print(hdr); print("  " + "-" * (len(hdr) - 2))
+        for name in MECHANICS_VARIANTS:
+            w, pf = rows[name]["whole"], rows[name]["folds"]
+            if not w.get("n"):
+                print(f"  {name:<14}    0  (no trades)"); continue
+            m = _re.search(r"excluding best fold:\s*([+-][\d.]+)R",
+                           concentration_report(pf))
+            print(f"  {name:<14}{w['n']:>5}{w.get('avg_rr', 0):>6.1f}"
+                  f"{w['target_rate']*100:>7.0f}%"
+                  f"{w.get('time_stop_rate',0)*100:>6.0f}%"
+                  f"{w['expectancy_r_net']:>+9.3f}"
+                  f"{w['avg_days_held']:>6.1f}d"
+                  f"{(m.group(1) if m else 'n/a'):>10}")
+    print("\n" + mechanics_verdict(per_ticker))
+
+
+def mechanics_verdict(per_ticker: dict, tol: float = 0.02) -> str:
+    import re as _re
+    def eb(pf):
+        m = _re.search(r"excluding best fold:\s*([+-][\d.]+)R",
+                       concentration_report(pf))
+        return float(m.group(1)) if m else float("nan")
+    lines = ["PRE-REGISTERED ACCEPTANCE (fixed before results):",
+             "  candidate = beats baseline EX-BEST on >=2 of 3 tickers AND",
+             f"  degrades none by more than {tol:.2f}R", ""]
+    any_ok = False
+    for name in MECHANICS_VARIANTS:
+        if name == "baseline":
+            continue
+        better, worse, detail = 0, 0, []
+        for tkr, rows in per_ticker.items():
+            b, o = eb(rows["baseline"]["folds"]), eb(rows[name]["folds"])
+            if b != b or o != o:
+                detail.append(f"{tkr}:n/a"); continue
+            diff = o - b
+            detail.append(f"{tkr}:{diff:+.3f}")
+            if diff > 0: better += 1
+            if diff < -tol: worse += 1
+        ok = better >= 2 and worse == 0
+        any_ok |= ok
+        lines.append(f"  {name:<14} [{', '.join(detail)}]  ->  "
+                     f"{'CANDIDATE' if ok else 'no'}")
+    lines += ["",
+              "  rr_1_5 / rr_3 are FRONTIER PROBES, not adoption candidates:",
+              "  they show how expectancy trades against hit rate. A higher",
+              "  hit rate at similar net is worth real money in follower",
+              "  retention even when the R number is unchanged.",
+              "  Any candidate still needs the gauntlet. Nothing changed."]
+    return "\n".join(lines)
+
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "multi", "backtest", "mlsweep", "robustness", "walkforward", "exitgeometry", "optimize", "overlays", "diagnose"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("run", "multi", "backtest", "mlsweep", "robustness", "walkforward", "exitgeometry", "optimize", "overlays", "diagnose", "structural", "mechanics"):
         print("Usage: python pipeline.py <run|multi|backtest|robustness> [args...]\n"
               "  run BTC ...          - single-ticker pipeline (was unified_model.py)\n"
               "  multi BTC ETH ...    - batch across tickers   (was run_multi_ticker.py)\n"
@@ -3634,6 +4355,8 @@ def main():
               "  exitgeometry BTC     - compare live (4h ATR) vs backtest (daily ATR) exit\n"
               "                         geometries on history — options 1 and 2\n"
               "  walkforward BTC ETH SOL - fixed-config evaluation on sequential folds (lockboxed)\n"
+              "  mechanics BTC ETH SOL - entry timing, derived targets, time stop, partials\n"
+              "  structural BTC ETH SOL - swing/pivot stops vs the ATR stop, per fold\n"
               "  diagnose BTC ETH SOL - characterize live-geometry trades: MFE, hold times,\n"
               "                         conviction tiers, follower experience (descriptive)\n"
               "  overlays BTC ETH SOL - test literature-fixed filters (200d trend, TSMOM,\n"
@@ -3664,6 +4387,10 @@ def main():
         main_overlays()
     elif command == "diagnose":
         main_diagnose()
+    elif command == "structural":
+        main_structural()
+    elif command == "mechanics":
+        main_mechanics()
 
 
 if __name__ == "__main__":
