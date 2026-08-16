@@ -1,0 +1,687 @@
+[
+  {
+    "section": "A. Structural",
+    "name": "Unit test suite",
+    "status": "PASS",
+    "detail": "373 tests passed",
+    "evidence": {
+      "summary": "373 passed, 2 skipped in 3.09s"
+    }
+  },
+  {
+    "section": "A. Structural",
+    "name": "ML stays display-only",
+    "status": "PASS",
+    "detail": "score/direction identical across ML 1%/50%/99%/absent; ml_weight defaults to 0",
+    "evidence": {}
+  },
+  {
+    "section": "A. Structural",
+    "name": "Backtest window not capped",
+    "status": "PASS",
+    "detail": "depth scales with period (2y=5037 bars, 5y=12592 bars)",
+    "evidence": {
+      "bars_2y": 5037,
+      "bars_5y": 12592
+    }
+  },
+  {
+    "section": "A. Structural",
+    "name": "Exit level arithmetic",
+    "status": "PASS",
+    "detail": "designed R:R holds both sides (plain 2.0, STRONG 2.667); WATCH inapplicable",
+    "evidence": {
+      "observed_rr": {
+        "BUY": 2.0,
+        "SELL": 2.0,
+        "STRONG_BUY": 2.667,
+        "STRONG_SELL": 2.667
+      }
+    }
+  },
+  {
+    "section": "A. Structural",
+    "name": "No hardcoded API keys",
+    "status": "PASS",
+    "detail": "no sk_live_ pattern in tracked source",
+    "evidence": {}
+  },
+  {
+    "section": "D. Launch readiness",
+    "name": "Long-only publishing enabled in hourly workflow",
+    "status": "PASS",
+    "detail": "--long-only present",
+    "evidence": {}
+  },
+  {
+    "section": "D. Launch readiness",
+    "name": "Workflow commit survives missing optional files",
+    "status": "PASS",
+    "detail": "existence guard present",
+    "evidence": {}
+  },
+  {
+    "section": "D. Launch readiness",
+    "name": "Outcomes file fresh (updated within 48h)",
+    "status": "PASS",
+    "detail": "last resolved 0h ago",
+    "evidence": {}
+  },
+  {
+    "section": "D. Launch readiness",
+    "name": "Enough closed live episodes (>= 15)",
+    "status": "INSUFFICIENT",
+    "detail": "14 closed so far \u2014 live-vs-backtest comparison stays silent below 15; this is a waiting requirement, not a coding one",
+    "evidence": {}
+  },
+  {
+    "section": "D. Launch readiness",
+    "name": "Log schema carries raw sentiment columns",
+    "status": "PASS",
+    "detail": "sentiment_score/mentions present \u2014 the never-fired gate is now evaluable on real data",
+    "evidence": {}
+  },
+  {
+    "section": "D. Launch readiness",
+    "name": "Sentiment cache persisted to repo",
+    "status": "INSUFFICIENT",
+    "detail": "absent \u2014 every run pays a fresh Adanos call (~1000+/mo at 30-min cadence vs 250 free tier). Appears after the first successful sentiment call post-fix; also consider a 60-min cron-job.org interval",
+    "evidence": {}
+  },
+  {
+    "section": "C. Deployment",
+    "name": "Signal log is fresh",
+    "status": "PASS",
+    "detail": "1086 rows, newest 0.4h old",
+    "evidence": {
+      "rows": 1086,
+      "last_entry": "2026-08-16 06:01:28.735652+00:00",
+      "age_hours": 0.4
+    }
+  },
+  {
+    "section": "C. Deployment",
+    "name": "Audit costs 0 Adanos requests",
+    "status": "PASS",
+    "detail": "backtests use the neutral-sentiment assumption; note live hourly checks still need ~720/month per ticker vs a 200/month free tier",
+    "evidence": {
+      "hourly_per_month": 720
+    }
+  },
+  {
+    "section": "C. Deployment",
+    "name": "Live outcomes tracked",
+    "status": "INSUFFICIENT",
+    "detail": "tracking works: 18 episodes, 14 closed \u2014 too few for any live-vs-backtest conclusion yet",
+    "evidence": {
+      "episodes": 18,
+      "closed": 14
+    }
+  },
+  {
+    "section": "C. Deployment",
+    "name": "Sentiment is measurable",
+    "status": "INSUFFICIENT",
+    "detail": "columns exist but no readings recorded yet (fills on the next live runs)",
+    "evidence": {}
+  },
+  {
+    "section": "C. Deployment",
+    "name": "Binance route reachable",
+    "status": "PASS",
+    "detail": "BINANCE_REGION=US, 5 bars fetched",
+    "evidence": {
+      "region": "US"
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "BTC window spans 4y",
+    "status": "PASS",
+    "detail": "1454 rows, 1454d (2022-08-17\u21922026-08-10)",
+    "evidence": {
+      "rows": 1454,
+      "span_days": 1454,
+      "start": "2022-08-17",
+      "end": "2026-08-10"
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "BTC long side stable across halves",
+    "status": "FAIL",
+    "detail": "h1 -0.185R (n=67), h2 +0.117R (n=71) \u2014 sign differs by half; the edge is regime-conditional, not general",
+    "evidence": {
+      "h1_long": {
+        "n": 67,
+        "target_rate": 0.11940298507462686,
+        "stop_rate": 0.44776119402985076,
+        "timeout_rate": 0.43283582089552236,
+        "expectancy_r": -0.18546268656716425
+      },
+      "h2_long": {
+        "n": 71,
+        "target_rate": 0.18309859154929578,
+        "stop_rate": 0.4084507042253521,
+        "timeout_rate": 0.4084507042253521,
+        "expectancy_r": 0.11657746478873246
+      },
+      "all": {
+        "n": 269,
+        "target_rate": 0.17100371747211895,
+        "stop_rate": 0.45353159851301117,
+        "timeout_rate": 0.3754646840148699,
+        "expectancy_r": -0.052758364312267596
+      }
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "BTC edge survives costs",
+    "status": "FAIL",
+    "detail": "gross +0.007R, net -0.053R (avg cost 0.060R, n=269) \u2014 the entire gross edge is inside the friction",
+    "evidence": {
+      "gross_r": 0.007,
+      "net_r": -0.053,
+      "avg_cost_r": 0.06,
+      "n": 269
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "BTC data integrity",
+    "status": "SKIP",
+    "detail": "AttributeError: module 'signal_engines' has no attribute 'to_yahoo_crypto_symbol'",
+    "evidence": {}
+  },
+  {
+    "section": "B. Live data",
+    "name": "BTC score ranks outcomes",
+    "status": "FAIL",
+    "detail": "score does NOT rank outcomes (corr -0.20) \u2014 a bar at 60 is arbitrary \u2014 20-30: +0.156R (n=54) | 30-40: -0.052R (n=69) | 60-70: +0.023R (n=84) | 70-80: +0.061R (n=49)",
+    "evidence": {
+      "bands": {
+        "20": {
+          "expectancy": 0.156,
+          "n": 54
+        },
+        "30": {
+          "expectancy": -0.052,
+          "n": 69
+        },
+        "60": {
+          "expectancy": 0.023,
+          "n": 84
+        },
+        "70": {
+          "expectancy": 0.061,
+          "n": 49
+        }
+      },
+      "rank_corr": -0.198
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "BTC persistence filter (confirm_days 1\u21922)",
+    "status": "FAIL",
+    "detail": "off +0.015R (n=516) \u2192 on +0.007R (n=269), gain -0.008R \u2014 no longer helps on current data",
+    "evidence": {
+      "off_expectancy": 0.015,
+      "off_n": 516,
+      "on_expectancy": 0.007,
+      "on_n": 269,
+      "gain_r": -0.008
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "BTC short trend filter (SMA50)",
+    "status": "DEGRADED",
+    "detail": "off -0.057R (n=324) \u2192 on -0.022R (n=131), gain +0.035R \u2014 still positive but below the bar that justified it",
+    "evidence": {
+      "off_expectancy": -0.057,
+      "off_n": 324,
+      "on_expectancy": -0.022,
+      "on_n": 131,
+      "gain_r": 0.035
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "BTC ML holdout AUC",
+    "status": "DEGRADED",
+    "detail": "AUC 0.604 clears 0.6 \u2014 worth re-testing on other tickers before ANY re-promotion",
+    "evidence": {
+      "roc_auc": 0.604,
+      "accuracy": 0.379
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "ETH window spans 4y",
+    "status": "PASS",
+    "detail": "1454 rows, 1454d (2022-08-17\u21922026-08-10)",
+    "evidence": {
+      "rows": 1454,
+      "span_days": 1454,
+      "start": "2022-08-17",
+      "end": "2026-08-10"
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "ETH long side stable across halves",
+    "status": "FAIL",
+    "detail": "h1 -0.046R (n=67), h2 +0.067R (n=58) \u2014 sign differs by half; the edge is regime-conditional, not general",
+    "evidence": {
+      "h1_long": {
+        "n": 67,
+        "target_rate": 0.22388059701492538,
+        "stop_rate": 0.5074626865671642,
+        "timeout_rate": 0.26865671641791045,
+        "expectancy_r": -0.04608955223880601
+      },
+      "h2_long": {
+        "n": 58,
+        "target_rate": 0.1724137931034483,
+        "stop_rate": 0.39655172413793105,
+        "timeout_rate": 0.43103448275862066,
+        "expectancy_r": 0.06722413793103449
+      },
+      "all": {
+        "n": 271,
+        "target_rate": 0.1881918819188192,
+        "stop_rate": 0.47232472324723246,
+        "timeout_rate": 0.33948339483394835,
+        "expectancy_r": 9.594095940962818e-05
+      }
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "ETH edge survives costs",
+    "status": "PASS",
+    "detail": "gross +0.046R, net +0.000R (avg cost 0.046R, n=271)",
+    "evidence": {
+      "gross_r": 0.046,
+      "net_r": 0.0,
+      "avg_cost_r": 0.046,
+      "n": 271
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "ETH data integrity",
+    "status": "SKIP",
+    "detail": "AttributeError: module 'signal_engines' has no attribute 'to_yahoo_crypto_symbol'",
+    "evidence": {}
+  },
+  {
+    "section": "B. Live data",
+    "name": "ETH score ranks outcomes",
+    "status": "PASS",
+    "detail": "monotone-ish (corr +0.54) \u2014 10-20: -0.733R (n=13) | 20-30: +0.118R (n=67) | 30-40: +0.105R (n=66) | 60-70: +0.016R (n=77) | 70-80: +0.076R (n=43)",
+    "evidence": {
+      "bands": {
+        "10": {
+          "expectancy": -0.733,
+          "n": 13
+        },
+        "20": {
+          "expectancy": 0.118,
+          "n": 67
+        },
+        "30": {
+          "expectancy": 0.105,
+          "n": 66
+        },
+        "60": {
+          "expectancy": 0.016,
+          "n": 77
+        },
+        "70": {
+          "expectancy": 0.076,
+          "n": 43
+        }
+      },
+      "rank_corr": 0.538
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "ETH persistence filter (confirm_days 1\u21922)",
+    "status": "FAIL",
+    "detail": "off +0.063R (n=539) \u2192 on +0.046R (n=271), gain -0.017R \u2014 no longer helps on current data",
+    "evidence": {
+      "off_expectancy": 0.063,
+      "off_n": 539,
+      "on_expectancy": 0.046,
+      "on_n": 271,
+      "gain_r": -0.017
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "ETH short trend filter (SMA50)",
+    "status": "PASS",
+    "detail": "off -0.027R (n=305) \u2192 on +0.036R (n=146), gain +0.063R",
+    "evidence": {
+      "off_expectancy": -0.027,
+      "off_n": 305,
+      "on_expectancy": 0.036,
+      "on_n": 146,
+      "gain_r": 0.063
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "ETH ML holdout AUC",
+    "status": "DEGRADED",
+    "detail": "AUC 0.619 clears 0.6 \u2014 worth re-testing on other tickers before ANY re-promotion",
+    "evidence": {
+      "roc_auc": 0.619,
+      "accuracy": 0.598
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "SOL window spans 4y",
+    "status": "PASS",
+    "detail": "1454 rows, 1454d (2022-08-17\u21922026-08-10)",
+    "evidence": {
+      "rows": 1454,
+      "span_days": 1454,
+      "start": "2022-08-17",
+      "end": "2026-08-10"
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "SOL long side stable across halves",
+    "status": "PASS",
+    "detail": "h1 +0.171R vs h2 +0.405R",
+    "evidence": {
+      "h1_long": {
+        "n": 64,
+        "target_rate": 0.3125,
+        "stop_rate": 0.4375,
+        "timeout_rate": 0.25,
+        "expectancy_r": 0.17131250000000003
+      },
+      "h2_long": {
+        "n": 57,
+        "target_rate": 0.3684210526315789,
+        "stop_rate": 0.42105263157894735,
+        "timeout_rate": 0.21052631578947367,
+        "expectancy_r": 0.4045263157894736
+      },
+      "all": {
+        "n": 267,
+        "target_rate": 0.23595505617977527,
+        "stop_rate": 0.47191011235955055,
+        "timeout_rate": 0.29213483146067415,
+        "expectancy_r": 0.08620224719101131
+      }
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "SOL edge survives costs",
+    "status": "PASS",
+    "detail": "gross +0.118R, net +0.086R (avg cost 0.032R, n=267)",
+    "evidence": {
+      "gross_r": 0.118,
+      "net_r": 0.086,
+      "avg_cost_r": 0.032,
+      "n": 267
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "SOL data integrity",
+    "status": "SKIP",
+    "detail": "AttributeError: module 'signal_engines' has no attribute 'to_yahoo_crypto_symbol'",
+    "evidence": {}
+  },
+  {
+    "section": "B. Live data",
+    "name": "SOL score ranks outcomes",
+    "status": "PASS",
+    "detail": "monotone-ish (corr +0.89) \u2014 20-30: +0.069R (n=66) | 30-40: -0.077R (n=72) | 60-70: +0.258R (n=81) | 70-80: +0.434R (n=40)",
+    "evidence": {
+      "bands": {
+        "20": {
+          "expectancy": 0.069,
+          "n": 66
+        },
+        "30": {
+          "expectancy": -0.077,
+          "n": 72
+        },
+        "60": {
+          "expectancy": 0.258,
+          "n": 81
+        },
+        "70": {
+          "expectancy": 0.434,
+          "n": 40
+        }
+      },
+      "rank_corr": 0.89
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "SOL persistence filter (confirm_days 1\u21922)",
+    "status": "DEGRADED",
+    "detail": "off +0.083R (n=538) \u2192 on +0.118R (n=267), gain +0.035R \u2014 still positive but below the bar that justified it",
+    "evidence": {
+      "off_expectancy": 0.083,
+      "off_n": 538,
+      "on_expectancy": 0.118,
+      "on_n": 267,
+      "gain_r": 0.035
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "SOL short trend filter (SMA50)",
+    "status": "FAIL",
+    "detail": "off -0.031R (n=282) \u2192 on -0.046R (n=146), gain -0.014R \u2014 no longer helps on current data",
+    "evidence": {
+      "off_expectancy": -0.031,
+      "off_n": 282,
+      "on_expectancy": -0.046,
+      "on_n": 146,
+      "gain_r": -0.014
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "SOL ML holdout AUC",
+    "status": "DEGRADED",
+    "detail": "AUC 0.673 clears 0.6 \u2014 worth re-testing on other tickers before ANY re-promotion",
+    "evidence": {
+      "roc_auc": 0.673,
+      "accuracy": 0.336
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "VIX regime edge replicates",
+    "status": "INSUFFICIENT",
+    "detail": "INSUFFICIENT_DATA across BTC, ETH, SOL",
+    "evidence": {
+      "verdict": "INSUFFICIENT_DATA",
+      "checks": [
+        {
+          "ticker": "BTC",
+          "half": "h1",
+          "status": "insufficient",
+          "n_stressed": 9,
+          "n_normal": 122
+        },
+        {
+          "ticker": "BTC",
+          "half": "h2",
+          "status": "pass",
+          "stressed_exp": 0.208,
+          "normal_exp": 0.052,
+          "n_stressed": 13,
+          "n_normal": 125
+        },
+        {
+          "ticker": "ETH",
+          "half": "h1",
+          "status": "fail",
+          "stressed_exp": -0.713,
+          "normal_exp": -0.063,
+          "n_stressed": 11,
+          "n_normal": 116
+        },
+        {
+          "ticker": "ETH",
+          "half": "h2",
+          "status": "fail",
+          "stressed_exp": 0.083,
+          "normal_exp": 0.108,
+          "n_stressed": 16,
+          "n_normal": 128
+        },
+        {
+          "ticker": "SOL",
+          "half": "h1",
+          "status": "fail",
+          "stressed_exp": -0.122,
+          "normal_exp": 0.06,
+          "n_stressed": 14,
+          "n_normal": 114
+        },
+        {
+          "ticker": "SOL",
+          "half": "h2",
+          "status": "insufficient",
+          "n_stressed": 9,
+          "n_normal": 130
+        }
+      ]
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "Short side viable",
+    "status": "FAIL",
+    "detail": "RECOMMEND_LONG_ONLY (0/3 tickers positive in both halves)",
+    "evidence": {
+      "verdict": "RECOMMEND_LONG_ONLY",
+      "tickers_passing": 0,
+      "tickers_total": 3,
+      "checks": [
+        {
+          "ticker": "BTC",
+          "half": "h1",
+          "status": "fail",
+          "expectancy_r": -0.17,
+          "n": 64
+        },
+        {
+          "ticker": "BTC",
+          "half": "h2",
+          "status": "pass",
+          "expectancy_r": 0.013,
+          "n": 67
+        },
+        {
+          "ticker": "ETH",
+          "half": "h1",
+          "status": "fail",
+          "expectancy_r": -0.201,
+          "n": 60
+        },
+        {
+          "ticker": "ETH",
+          "half": "h2",
+          "status": "pass",
+          "expectancy_r": 0.131,
+          "n": 86
+        },
+        {
+          "ticker": "SOL",
+          "half": "h1",
+          "status": "fail",
+          "expectancy_r": -0.092,
+          "n": 64
+        },
+        {
+          "ticker": "SOL",
+          "half": "h2",
+          "status": "fail",
+          "expectancy_r": -0.062,
+          "n": 82
+        }
+      ]
+    }
+  },
+  {
+    "section": "B. Live data",
+    "name": "Kelly band sizing replicates",
+    "status": "DEGRADED",
+    "detail": "funded bands or ramp direction differ across tickers \u2014 may be fitting per-ticker noise \u2014 BTC: 20+ ->1.90x, 60+ ->0.39x, 70+ ->1.05x; ETH: 20+ ->1.58x, 30+ ->1.31x, 60+ ->0.19x, 70+ ->1.06x; SOL: 20+ ->0.32x, 60+ ->1.18x, 70+ ->1.77x",
+    "evidence": {
+      "orderings": {
+        "BTC": [
+          [
+            20.0,
+            1.901
+          ],
+          [
+            60.0,
+            0.388
+          ],
+          [
+            70.0,
+            1.055
+          ]
+        ],
+        "ETH": [
+          [
+            20.0,
+            1.581
+          ],
+          [
+            30.0,
+            1.311
+          ],
+          [
+            60.0,
+            0.193
+          ],
+          [
+            70.0,
+            1.063
+          ]
+        ],
+        "SOL": [
+          [
+            20.0,
+            0.315
+          ],
+          [
+            60.0,
+            1.176
+          ],
+          [
+            70.0,
+            1.775
+          ]
+        ]
+      },
+      "slopes": {
+        "BTC": -0.846,
+        "ETH": -0.518,
+        "SOL": 1.46
+      }
+    }
+  }
+]
