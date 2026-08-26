@@ -1,0 +1,41 @@
+{
+  "BTC": {
+    "bars_4h": 13000,
+    "daily_rows": 1762,
+    "bars_last": "2026-08-26 04:00:00",
+    "daily_last": "2026-08-20 00:00:00",
+    "directions": {
+      "WATCH": 701,
+      "SELL": 567,
+      "BUY": 280,
+      "STRONG_SELL": 187,
+      "STRONG_BUY": 27
+    }
+  },
+  "ETH": {
+    "bars_4h": 13000,
+    "daily_rows": 1762,
+    "bars_last": "2026-08-26 04:00:00",
+    "daily_last": "2026-08-20 00:00:00",
+    "directions": {
+      "WATCH": 716,
+      "SELL": 558,
+      "BUY": 285,
+      "STRONG_SELL": 187,
+      "STRONG_BUY": 16
+    }
+  },
+  "SOL": {
+    "bars_4h": 13000,
+    "daily_rows": 1762,
+    "bars_last": "2026-08-26 04:00:00",
+    "daily_last": "2026-08-20 00:00:00",
+    "directions": {
+      "WATCH": 735,
+      "SELL": 548,
+      "BUY": 300,
+      "STRONG_SELL": 171,
+      "STRONG_BUY": 8
+    }
+  }
+}
