@@ -6,10 +6,10 @@ Repo is PUBLIC: `bembem718ai-stack/Crypto-Model`.
 ## Run these commands, don't guess
 
 ```powershell
-$py = "C:\Users\gubby\AppData\Local\Python\pythoncore-3.14-64\python.exe"
+$py = "C:\Users\gubby\AppData\Local\Programs\Python\Python312\python.exe"
 $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 
-& $py -m pytest test_signals.py -q        # 203 tests, must stay green
+& $py -m pytest test_signals.py -q        # 373 tests, must stay green
 & $py audit.py --offline                  # structural health, seconds, no network
 & $py audit.py BTC ETH SOL --years 4      # full audit, 10-40 min
 & $py pipeline.py run BTC                 # live signal — COSTS 1 ADANOS REQUEST
@@ -22,7 +22,7 @@ $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 
 ## Architecture
 
-Four core files plus the audit:
+Four core files plus the audit, and two directories that support research:
 
 - `signal_engines.py` — Binance klines + Bollinger squeeze detection, Reddit
   sentiment via Adanos, Yahoo Finance technical/macro indicators, ATR exit
@@ -31,8 +31,15 @@ Four core files plus the audit:
   classification, backtests, position sizing, robustness validation.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 203 tests covering all decision logic.
+- `test_signals.py` — 373 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
+- `data/` — the frozen offline dataset: ~5y of Binance.US 4h bars plus the
+  incumbent's daily frame per ticker (BTC/ETH/SOL), with `MANIFEST.json`
+  recording bar counts, last bar, and the direction mix. Written by
+  `export_data.py` (`BINANCE_REGION=US`). Research reads these files
+  instead of the network, so a result can be re-run bit-for-bit later.
+- `research/` — all research and experiment code. Nothing here is imported
+  by the live path. See "Research rules".
 
 Pipeline output: final score 0–100, direction (STRONG_BUY…STRONG_SELL),
 ATR exit levels (3.0x target / 1.5x stop), and a position size multiplier
@@ -91,6 +98,35 @@ This project's standard is evidence before defaults. Specifically:
    flips sign between time halves, that's information about the market. Do
    NOT "fix" it by loosening a threshold until it passes. Report it and let
    me decide on scope (long-only, shorter window, regime gate).
+
+## Research rules
+
+Research is kept separate from the live system, and stays separate.
+
+1. **All research code lives in `research/`.** It never modifies
+   `signal_engines.py`, `live_tools.py`, `pipeline.py`, or the workflows.
+   Research may import from them read-only. If a finding needs a change in
+   a core file, that is a separate decision and a separate commit — the
+   research script does not make it.
+2. **The lockbox is never read by any research script.** The last 6 months
+   are holdout: not for fitting, not for plotting, not for a sanity check,
+   not "just to look". A hypothesis that has seen the lockbox can never be
+   validated on it. (See "The lockbox is sealed" above.)
+3. **Every hypothesis gets a number and is written to `docs/cleanroom.md`
+   BEFORE it runs.** The entry states what is being tested, the exact
+   parameters, and what result would count as a pass — recorded first, so
+   the bar cannot move once the numbers are in.
+4. **No parameter is changed after seeing a result.** Tightening a
+   threshold, extending a window, or dropping a ticker after the fact
+   makes it a NEW hypothesis with a new number; the original result stands
+   as recorded. Silently re-running with different parameters is the
+   single easiest way to fool this project.
+5. **Negatives are reported with the same detail as positives.** A failed
+   hypothesis gets the same write-up and the same numbers — not "didn't
+   work". Most will fail; that record is exactly what makes the survivors
+   mean anything.
+6. **Research commits are separate from signal-check commits.** Never fold
+   research output into an hourly `Signal check:` commit.
 
 ## Known open issues
 
