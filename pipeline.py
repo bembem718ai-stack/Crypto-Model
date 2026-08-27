@@ -164,7 +164,8 @@ def should_call_sentiment(initial_score: float, lazy: bool = False,
 def apply_reddit_step(ticker: str, step1_result: dict, subreddits: list = None,
                        limit_per_sub: int = 100, min_mentions: int = 15,
                        ttl_hours: float = None, lazy: bool = False,
-                       buy_bar: float = 60.0, cache_path: str = None) -> dict:
+                       buy_bar: float = 60.0, cache_path: str = None,
+                       fetcher=None) -> dict:
     """
     STEP 2. Takes STEP 1's initial_score and runs it through the Reddit
     sentiment gate. Requires step1_result to already exist — this is
@@ -189,12 +190,21 @@ def apply_reddit_step(ticker: str, step1_result: dict, subreddits: list = None,
     call, why = should_call_sentiment(initial, lazy=lazy, buy_bar=buy_bar)
     if not call:
         print(f"  [sentiment] {why}")
-        gate = {"decision": "SKIPPED", "gate_multiplier": 1.0, "reason": why,
-                "cache_hit": True, "cache_age_hours": None, "stale_fallback": False}
+        # SKIPPED_BELOW_THRESHOLD, not "SKIPPED" and emphatically not
+        # "ERROR". These mean different things and must stay separable in
+        # the log: ERROR is "the provider failed and the gate went silently
+        # neutral" (which ran for 1,350 consecutive runs unnoticed), while
+        # this is "we deliberately did not ask, because the answer provably
+        # could not change the label". Collapsing them would hide an outage
+        # inside a routine optimisation.
+        gate = {"decision": "SKIPPED_BELOW_THRESHOLD", "gate_multiplier": 1.0,
+                "reason": why, "cache_hit": True, "cache_age_hours": None,
+                "stale_fallback": False}
     else:
+        kw = {} if fetcher is None else {"fetcher": fetcher}
         gate = ads.cached_sentiment_check(
             ticker, ttl_hours=ttl_hours,
-            min_mentions_for_confidence=min_mentions, cache_path=cache_path)
+            min_mentions_for_confidence=min_mentions, cache_path=cache_path, **kw)
 
     gated_score = ads.apply_gate_to_score(gate, initial)
 
@@ -535,6 +545,7 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
                        buy_bar: float = 60, sell_bar: float = 40,
                        short_trend_filter: bool = True,
                        trend_sma_period: int = 50,
+                       lazy_sentiment: bool = False,
                        verbose: bool = True) -> dict:
     """
     Runs Step 1 -> Step 2 -> Step 3 -> combine, in that exact order,
@@ -561,7 +572,12 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
 
     if verbose:
         print("\n[STEP 2/3] Reddit data (sentiment gate)...")
-    step2 = apply_reddit_step(ticker, step1, subreddits=subreddits)
+    # lazy_sentiment gates the Adanos call on the DERIVED cutoff (see
+    # sentiment_call_cutoff): below it, dampening provably cannot change the
+    # label, so the request is a no-op. Off by default; the live check path
+    # turns it on because that is where quota is actually spent.
+    step2 = apply_reddit_step(ticker, step1, subreddits=subreddits,
+                              lazy=lazy_sentiment, buy_bar=buy_bar)
     step_log.append(step2)
     if verbose:
         print(f"  Gate: {step2['gate_decision']} (x{step2['gate_multiplier']}) — {step2['gate_reason']}")

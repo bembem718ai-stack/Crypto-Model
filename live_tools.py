@@ -217,9 +217,24 @@ def run_single_check(tickers: list, log_file: str = "signal_log.csv",
 
     want_ml = confluence or log_all
 
+    # ADANOS QUOTA. The gate is dampen-only, so on a day whose Step 1 score
+    # is below the DERIVED cutoff (sentiment_call_cutoff -- 33.3 at
+    # production weights) even perfect indicators cannot reach the buy bar,
+    # and dampening provably cannot change the label. The request is a pure
+    # no-op there, so it is not made; the row logs
+    # gate_decision=SKIPPED_BELOW_THRESHOLD.
+    #
+    # NOT the buy bar itself: between 33.3 and 60 a VETO genuinely does flip
+    # a BUY (see test_cutoff_must_not_be_the_buy_bar), so skipping that band
+    # would silently disable real vetoes to save quota.
+    #
+    # Measured on 1,769 logged runs: 52.9% of runs clear the cutoff, so
+    # hourly single-ticker spend drops ~720 -> ~381 requests/month.
+    cf.reset_run_cache()           # one process = one run; do not reuse readings
     for ticker in tickers:
         try:
-            result = pl.run_full_pipeline(ticker, verbose=False, use_ml=want_ml)
+            result = pl.run_full_pipeline(ticker, verbose=False, use_ml=want_ml,
+                                          lazy_sentiment=True)
             direction = result["combined"]["direction"]
             decision = result["combined"]["decision"]
             final_score = result["combined"]["final_score"]

@@ -56,6 +56,17 @@ import signal_engines as epm
 import signal_engines as ads
 
 
+@pytest.fixture(autouse=True)
+def _isolate_sentiment_run_cache():
+    """The per-run sentiment cache is process-global. Production gets a
+    fresh process per workflow run; tests share one, so reset around every
+    test or a reading leaks into an unrelated assertion."""
+    import signal_engines as _se
+    _se.reset_run_cache()
+    yield
+    _se.reset_run_cache()
+
+
 # The label sets, named once so the tests read clearly.
 BULLISH = {"BUY", "STRONG_BUY"}
 BEARISH = {"SELL", "STRONG_SELL"}
@@ -3184,3 +3195,161 @@ class TestAuditGateErrorStreak:
         a._results.clear()
         a.check_log_freshness(str(p))
         assert "LOCAL CLONE ONLY" in a._results[-1]["detail"]
+
+
+# ======================================================================
+# LIVE-PATH SENTIMENT GATING — Adanos quota
+# ======================================================================
+# The gate is DAMPEN-ONLY (multiplier <= 1.0), so on a day whose Step 1
+# score is low enough that even PERFECT indicators cannot reach the buy
+# bar, dampening provably cannot change the label — and the Adanos call is
+# a pure no-op. Skipping those days is free quota.
+#
+# THE CUTOFF IS DERIVED, NOT THE BUY BAR. final = wp*gated + wi*indicators.
+# With perfect indicators (100), final = wp*initial + wi*100, so the label
+# can only reach buy_bar when initial >= (buy_bar - wi*100)/wp = 33.3 at
+# production weights. Using buy_bar (60) as the threshold would skip the
+# whole 33.3..60 band, where a VETO genuinely does flip a BUY — see
+# test_cutoff_must_not_be_the_buy_bar, which demonstrates the flip.
+class TestLiveSentimentQuotaGating:
+
+    def test_cutoff_is_derived_from_the_weights(self):
+        assert um.sentiment_call_cutoff(60.0, 0.6, 0.4) == pytest.approx(33.333, abs=0.01)
+        # It must move with the bar and the weights, not be hardcoded.
+        assert um.sentiment_call_cutoff(70.0, 0.6, 0.4) > um.sentiment_call_cutoff(60.0, 0.6, 0.4)
+        assert um.sentiment_call_cutoff(60.0, 0.8, 0.2) > um.sentiment_call_cutoff(60.0, 0.6, 0.4)
+
+    def test_cutoff_must_not_be_the_buy_bar(self):
+        # A score of 50 is BELOW the buy bar but ABOVE the derived cutoff,
+        # and the gate changes the outcome there. This is the test that
+        # forbids "skip whenever initial_score < buy_bar".
+        step3 = {"indicator_final_score": 100.0, "vix_level": 18.0}
+        undampened = um.combine_and_decide({"gated_score": 50.0}, step3)
+        vetoed = um.combine_and_decide({"gated_score": 25.0}, step3)   # 50 * 0.5
+        assert undampened["direction"] in ("BUY", "STRONG_BUY")
+        assert vetoed["direction"] not in ("BUY", "STRONG_BUY"), (
+            "if a VETO cannot flip this, the cutoff argument is wrong")
+        assert 50.0 > um.sentiment_call_cutoff(60.0, 0.6, 0.4)
+
+    def test_below_cutoff_skips_the_api_call_entirely(self, tmp_path):
+        calls = []
+
+        def fetcher(*a, **kw):
+            calls.append(1)
+            raise AssertionError("must not be called below the cutoff")
+
+        step2 = um.apply_reddit_step("BTC", {"step": 1, "initial_score": 10.0},
+                                     lazy=True, fetcher=fetcher,
+                                     cache_path=str(tmp_path / "c.json"), ttl_hours=0)
+        assert calls == []
+        assert step2["gate_decision"] == "SKIPPED_BELOW_THRESHOLD"
+        assert step2["gate_multiplier"] == 1.0
+        assert step2["gated_score"] == pytest.approx(10.0)
+
+    def test_above_cutoff_still_calls(self, tmp_path):
+        calls = []
+
+        def fetcher(ticker, **kw):
+            calls.append(ticker)
+            return {"decision": "PROCEED", "gate_multiplier": 1.0, "reason": "ok",
+                    "sentiment_score": 0.1, "mentions": 40,
+                    "cache_hit": False, "cache_age_hours": 0.0,
+                    "stale_fallback": False}
+
+        epm.reset_run_cache()
+        step2 = um.apply_reddit_step("BTC", {"step": 1, "initial_score": 80.0},
+                                     lazy=True, fetcher=fetcher,
+                                     cache_path=str(tmp_path / "c.json"), ttl_hours=0)
+        assert calls == ["BTC"]
+        assert step2["gate_decision"] == "PROCEED"
+
+    def test_skip_label_is_distinct_from_error(self, tmp_path):
+        # ERROR means the provider failed and the gate is silently neutral.
+        # SKIPPED_BELOW_THRESHOLD means we chose not to ask. Conflating them
+        # would hide a real outage inside a routine optimisation.
+        step2 = um.apply_reddit_step("BTC", {"step": 1, "initial_score": 5.0},
+                                     lazy=True, fetcher=lambda *a, **k: None,
+                                     cache_path=str(tmp_path / "c.json"), ttl_hours=0)
+        assert step2["gate_decision"] == "SKIPPED_BELOW_THRESHOLD"
+        assert step2["gate_decision"] != "ERROR"
+        assert step2["gate_decision"] != "SKIPPED"
+
+    def test_lazy_off_by_default_preserves_old_behaviour(self, tmp_path):
+        epm.reset_run_cache()
+        calls = []
+
+        def fetcher(ticker, **kw):
+            calls.append(ticker)
+            return {"decision": "PROCEED", "gate_multiplier": 1.0, "reason": "ok",
+                    "cache_hit": False, "cache_age_hours": 0.0, "stale_fallback": False}
+
+        um.apply_reddit_step("BTC", {"step": 1, "initial_score": 1.0}, fetcher=fetcher,
+                             cache_path=str(tmp_path / "c.json"), ttl_hours=0)
+        assert calls == ["BTC"], "default must remain always-call"
+
+
+class TestPerRunSentimentCache:
+
+    @pytest.fixture(autouse=True)
+    def _td(self, tmp_path):
+        self._tmpdir = tmp_path
+
+    def test_same_ticker_twice_in_one_run_calls_once(self):
+        epm.reset_run_cache()
+        calls = []
+
+        def fetcher(ticker, **kw):
+            calls.append(ticker)
+            return {"decision": "PROCEED", "gate_multiplier": 1.0, "reason": "ok",
+                    "sentiment_score": 0.2, "mentions": 30}
+
+        import os as _os
+        cp = str(self._tmpdir / "c.json")
+        epm.cached_sentiment_check("BTC", fetcher=fetcher, api_key="k",
+                                   cache_path=cp, ttl_hours=4)
+        if _os.path.exists(cp):
+            _os.remove(cp)          # kill the DISK layer
+        epm.cached_sentiment_check("BTC", fetcher=fetcher, api_key="k",
+                                   cache_path=cp, ttl_hours=4)
+        assert calls == ["BTC"], (
+            f"disk cache was deleted, so the per-run cache must have served "
+            f"the second call; got {calls}")
+
+    def test_different_tickers_are_not_shared(self):
+        # Adanos is keyed per token (/v1/token/{symbol}), NOT market-wide.
+        # Serving BTC's reading for ETH would be a correctness bug, not a
+        # saving.
+        epm.reset_run_cache()
+        calls = []
+
+        def fetcher(ticker, **kw):
+            calls.append(ticker)
+            return {"decision": "PROCEED", "gate_multiplier": 1.0, "reason": ticker,
+                    "sentiment_score": 0.2, "mentions": 30}
+
+        cp = str(self._tmpdir / "c2.json")
+        a = epm.cached_sentiment_check("BTC", fetcher=fetcher, api_key="k",
+                                       cache_path=cp, ttl_hours=4)
+        b = epm.cached_sentiment_check("ETH", fetcher=fetcher, api_key="k",
+                                       cache_path=cp, ttl_hours=4)
+        assert calls == ["BTC", "ETH"]
+        assert a["reason"] != b["reason"]
+
+    def test_run_cache_does_not_memoise_an_error(self, tmp_path):
+        # An ERROR must be retried by the next ticker/run, not cached.
+        # Uses an EMPTY on-disk cache: with a populated one the error path
+        # correctly falls back to a stale reading instead of ERROR, which
+        # is a different (also desirable) behaviour.
+        epm.reset_run_cache()
+        cp = str(tmp_path / "no_such_cache.json")
+        calls = []
+
+        def boom(ticker, **kw):
+            calls.append(ticker)
+            raise ConnectionError("down")
+
+        for _ in range(2):
+            g = epm.cached_sentiment_check("BTC", fetcher=boom, api_key="k",
+                                           cache_path=cp, ttl_hours=0)
+            assert g["decision"] == "ERROR"
+        assert len(calls) == 2, "a failed call must not be cached as a result"

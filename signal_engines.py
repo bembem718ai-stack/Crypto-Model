@@ -2872,6 +2872,30 @@ def _is_real_reading(gate: dict) -> bool:
     return gate.get("decision") in ("PROCEED", "CAUTION", "VETO")
 
 
+# ----------------------------------------------------------------------
+# PER-RUN CACHE
+# ----------------------------------------------------------------------
+# Within ONE process, ask Adanos about a given token at most once. A
+# multi-ticker check that touches the same symbol twice (or a retry higher
+# up the stack) should not pay twice.
+#
+# KEYED BY SYMBOL, DELIBERATELY. Adanos is a per-token endpoint --
+# GET /v1/token/{symbol} -- so BTC and ETH return DIFFERENT readings. A
+# cache shared across tickers would serve BTC's sentiment for ETH: that is
+# a correctness bug wearing the costume of a saving. If the provider ever
+# gains a genuinely market-wide endpoint, that is a different function with
+# a different key, not a widening of this one.
+#
+# Failures are NOT memoised: an ERROR must be retried by the next caller,
+# or one transient blip would silence the gate for the whole run.
+_RUN_SENTIMENT_CACHE = {}
+
+
+def reset_run_cache() -> None:
+    """Drop the per-run sentiment cache (new run, or test isolation)."""
+    _RUN_SENTIMENT_CACHE.clear()
+
+
 def cached_sentiment_check(ticker: str, ttl_hours: float = None,
                             min_mentions_for_confidence: int = 15,
                             cache_path: str = None, api_key: str = None,
@@ -2889,6 +2913,7 @@ def cached_sentiment_check(ticker: str, ttl_hours: float = None,
     ttl_hours=0 disables caching entirely (original behaviour).
     """
     ttl = SENTIMENT_TTL_HOURS if ttl_hours is None else ttl_hours
+    now_arg = now                      # was time explicitly supplied?
     now = now or datetime.now(timezone.utc)
     fetcher = fetcher or first_pass_sentiment_check_adanos
     key = str(ticker).upper()
@@ -2904,6 +2929,23 @@ def cached_sentiment_check(ticker: str, ttl_hours: float = None,
             age = (now - fetched).total_seconds() / 3600.0
         except (KeyError, ValueError, TypeError):
             entry, age = None, None
+
+    run_key = str(ticker).split("-")[0].upper()
+    # SUBORDINATE TO THE CACHING CONFIG. ttl <= 0 means the caller has
+    # disabled caching outright, and an explicit `now` means the caller is
+    # controlling time; in both cases honouring a process memo would
+    # override an instruction rather than optimise under it.
+    run_cache_usable = ttl > 0 and now_arg is None
+    if run_cache_usable:
+        hit = _RUN_SENTIMENT_CACHE.get(run_key)
+        if hit is not None:
+            gate = dict(hit)
+            # cache_hit documents "no API request was made", which is true
+            # here, so it must stay True; run_cache_hit says WHICH layer.
+            gate.update({"cache_hit": True, "cache_age_hours": 0.0,
+                         "run_cache_hit": True})
+            print(f"  [sentiment] per-run cache hit for {run_key} — 0 Adanos requests")
+            return gate
 
     if ttl > 0 and entry is not None and age is not None and 0 <= age < ttl:
         gate = dict(entry["gate"])
@@ -2977,6 +3019,17 @@ def cached_sentiment_check(ticker: str, ttl_hours: float = None,
                                if k not in ("cache_hit", "cache_age_hours",
                                             "stale_fallback")}}
         _save_sentiment_cache(cache, cache_path)
+    # Remember for the rest of THIS process only. Reached only on a
+    # successful fetch -- the ERROR branch above returns before this, so a
+    # failure is never memoised and the next caller retries.
+    # SAME PREDICATE AS THE DISK CACHE. _is_real_reading rejects
+    # LOW_CONFIDENCE and ERROR -- results that came from an upstream
+    # failure rather than from the crowd. Memoising one of those would
+    # silently switch the gate off for the rest of the run, which is the
+    # exact bug the disk cache already refuses to commit.
+    if run_cache_usable and _is_real_reading(gate):
+        _RUN_SENTIMENT_CACHE[run_key] = {k: v for k, v in gate.items()
+                                         if k != "run_cache_hit"}
     return gate
 
 
