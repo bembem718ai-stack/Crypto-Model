@@ -1,18 +1,26 @@
 name: Signal Check
 
 # WHEN THIS RUNS:
-#   - On the schedule below (cron is always UTC)
-#   - Any time you click "Run workflow" manually on the Actions tab
+#   - ONLY when something dispatches it: cron-job.org calls the
+#     workflow_dispatch API, or you click "Run workflow" on the Actions tab.
+#
+# THERE IS DELIBERATELY NO `schedule:` BLOCK HERE.
+#   There used to be (`cron: '0 * * * *'`), AND cron-job.org was dispatching
+#   as well, so BOTH fired. Measured over the last 100 runs on 2026-08-27:
+#   52 `schedule` + 48 `workflow_dispatch` — median gap 0.50h instead of the
+#   intended 1h. That doubled the cadence and doubled Adanos spend against a
+#   200/month free tier. GitHub's native cron was already judged too
+#   unreliable for this job (that is why cron-job.org drives it), so the
+#   native schedule was pure duplicate load with no benefit.
+#
+#   If you ever re-add a `schedule:` block, TURN OFF the cron-job.org job in
+#   the same change, or the double-firing comes straight back.
 #
 # !!! QUOTA WARNING !!!
-#   Every 25 minutes x 1 ticker (BTC) = ~58 Adanos requests/day =
-#   ~1,740/month. A 200/month free-tier key will be exhausted in roughly
-#   3 days at this rate. Only run this schedule if you're on a paid/
-#   higher-quota Adanos tier. If you're still on free, change the cron
-#   line below to '0 0,12 * * *' (twice daily, ~60/month for 1 ticker).
+#   One dispatch = 1 ticker (BTC) = up to 1 Adanos request. Hourly is ~720
+#   requests/month against a 200/month free tier. Set the cron-job.org
+#   interval to match the tier you are actually on.
 on:
-  schedule:
-    - cron: '0 * * * *'
   workflow_dispatch: {}
 
 # Prevents two runs (e.g. a scheduled one + a manual "Run workflow" click)
