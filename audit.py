@@ -492,17 +492,50 @@ def check_ml_auc(ticker):
 # SECTION C — DEPLOYMENT HEALTH
 # ======================================================================
 
+def _origin_log(path="signal_log.csv"):
+    """The log as it exists on origin/main, which is what the LIVE bot
+    writes to. Returns (DataFrame, note) or (None, why-not).
+
+    WHY THIS EXISTS: this check used to read the local working copy. On any
+    developer machine that has not pulled, the local file is stale BY
+    DEFINITION, and the check reported a production outage that was not
+    happening -- it cried wolf twice on 2026-08-27, when the live log was
+    current and only the local clone was one commit behind. Local staleness
+    is not deployment staleness.
+    """
+    try:
+        subprocess.run(["git", "fetch", "origin", "--quiet"],
+                       capture_output=True, timeout=60, check=False)
+        r = subprocess.run(["git", "show", f"origin/main:{path}"],
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode != 0 or not r.stdout.strip():
+            return None, "origin/main copy unavailable"
+        return pd.read_csv(io.StringIO(r.stdout)), "origin/main"
+    except Exception as e:                     # offline, no remote, no git
+        return None, f"{type(e).__name__}"
+
+
 def check_log_freshness(path="signal_log.csv"):
     """Hourly checks run via cron-job.org → workflow_dispatch. A stale log
-    is how you find out the cron died without anyone noticing."""
+    is how you find out the cron died without anyone noticing.
+
+    Measured against origin/main -- what the live bot actually wrote --
+    falling back to the local copy only when origin is unreachable, and
+    LABELLING it clearly as local-clone lag when it does.
+    """
     if not os.path.exists(path):
         return record("C. Deployment", "Signal log is fresh", SKIP,
                       f"{path} not found (fine if running outside the repo)")
-    try:
-        df = pd.read_csv(path)
-    except Exception as e:
-        return record("C. Deployment", "Signal log is fresh", FAIL,
-                      f"unreadable: {type(e).__name__}: {e}")
+    df, source = _origin_log(path)
+    if df is None:
+        why = source
+        try:
+            df = pd.read_csv(path)
+        except Exception as e:
+            return record("C. Deployment", "Signal log is fresh", FAIL,
+                          f"unreadable: {type(e).__name__}: {e}")
+        source = (f"LOCAL CLONE ONLY ({why}) — this measures local-clone lag, "
+                  f"NOT the live deployment; pull before believing it")
     tcol = next((c for c in df.columns
                  if "time" in c.lower() or "date" in c.lower()), None)
     if tcol is None or df.empty:
@@ -513,13 +546,62 @@ def check_log_freshness(path="signal_log.csv"):
         return record("C. Deployment", "Signal log is fresh", INSUFFICIENT,
                       "no parseable timestamps")
     age_h = (pd.Timestamp.now(tz="UTC") - last).total_seconds() / 3600
-    ev = {"rows": len(df), "last_entry": str(last), "age_hours": round(age_h, 1)}
+    ev = {"rows": len(df), "last_entry": str(last),
+          "age_hours": round(age_h, 1), "measured_against": source}
     if age_h <= BASELINES["log_stale_hours"]:
         return record("C. Deployment", "Signal log is fresh", PASS,
-                      f"{len(df)} rows, newest {age_h:.1f}h old", ev)
+                      f"{len(df)} rows, newest {age_h:.1f}h old [{source}]", ev)
     return record("C. Deployment", "Signal log is fresh", FAIL,
-                  f"newest entry {age_h:.1f}h old (> {BASELINES['log_stale_hours']}h) — "
-                  f"the hourly trigger may have stopped firing", ev)
+                  f"newest entry {age_h:.1f}h old (> {BASELINES['log_stale_hours']}h) "
+                  f"[{source}] — the trigger may have stopped firing", ev)
+
+
+def check_sentiment_gate_errors(path="signal_log.csv"):
+    """How many of the MOST RECENT runs ended with gate_decision == ERROR.
+
+    A single ERROR is a blip. A run of them means Step 2 has been switched
+    off in production without anything failing loudly: the gate errors,
+    falls back to a neutral 1.0 multiplier, and the workflow still reports
+    success. On 2026-08-27 the last 300 logged runs were ALL ERROR and the
+    Actions runs were 100/100 green.
+    """
+    df, source = _origin_log(path)
+    if df is None:
+        if not os.path.exists(path):
+            return record("C. Deployment", "Sentiment gate not erroring", SKIP,
+                          f"{path} not found")
+        try:
+            df = pd.read_csv(path)
+        except Exception as e:
+            return record("C. Deployment", "Sentiment gate not erroring", SKIP,
+                          f"unreadable: {type(e).__name__}")
+        source = "LOCAL CLONE ONLY"
+    if "gate_decision" not in df.columns or df.empty:
+        return record("C. Deployment", "Sentiment gate not erroring", INSUFFICIENT,
+                      "no gate_decision column yet")
+    dec = df["gate_decision"].astype(str)
+    streak = 0
+    for v in reversed(dec.tolist()):
+        if v.strip().upper() == "ERROR":
+            streak += 1
+        else:
+            break
+    ev = {"consecutive_error_runs": streak, "rows": len(df),
+          "measured_against": source,
+          "last_non_error": (None if streak >= len(dec)
+                             else str(dec.iloc[len(dec) - streak - 1]))}
+    if streak == 0:
+        return record("C. Deployment", "Sentiment gate not erroring", PASS,
+                      f"most recent run's gate is {dec.iloc[-1]} [{source}]", ev)
+    if streak >= 10:
+        return record("C. Deployment", "Sentiment gate not erroring", FAIL,
+                      f"{streak} CONSECUTIVE runs ended gate_decision=ERROR "
+                      f"[{source}] — Step 2 is neutral in production and the "
+                      f"workflow still reports success. Check the Adanos "
+                      f"quota/key; the run log now carries the HTTP status",
+                      ev)
+    return record("C. Deployment", "Sentiment gate not erroring", DEGRADED,
+                  f"{streak} consecutive ERROR run(s) [{source}]", ev)
 
 
 def check_adanos_accounting():
@@ -782,6 +864,7 @@ def main():
     check_launch_readiness()
 
     check_log_freshness()
+    check_sentiment_gate_errors()
     check_adanos_accounting()
     check_outcomes_tracking()
     check_sentiment_measurable()

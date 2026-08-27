@@ -2723,6 +2723,33 @@ def get_api_key_from_env() -> str:
     return os.environ.get("ADANOS_API_KEY")
 
 
+def redact_secret(text, api_key: str = None) -> str:
+    """Strip the API key out of anything we are about to print.
+
+    The repo is PUBLIC and Actions logs are public with it. Every diagnostic
+    path below prints server responses, so the key must never survive into
+    one. Redacts the key passed in AND whatever is in the environment, so a
+    body that echoes the key back is still safe.
+    """
+    if text is None:
+        return ""
+    s = str(text)
+    for k in (api_key, get_api_key_from_env()):
+        if k and len(str(k)) >= 6:
+            s = s.replace(str(k), "***REDACTED***")
+    return s
+
+
+def gh_annotate(level: str, title: str, message: str) -> None:
+    """Emit a GitHub Actions annotation so a failure shows on the run
+    summary instead of being buried in step output. No-op off Actions."""
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return
+    safe = redact_secret(message).replace("\r", " ").replace("\n", " ")[:800]
+    safe = safe.replace("::", ":")            # cannot nest a command marker
+    print(f"::{level} title={title}::{safe}", flush=True)
+
+
 def fetch_token_sentiment(ticker: str, api_key: str = None, max_retries: int = 3) -> dict:
     """
     Calls GET /v1/token/{symbol}. Returns the parsed JSON response, or
@@ -2743,10 +2770,14 @@ def fetch_token_sentiment(ticker: str, api_key: str = None, max_retries: int = 3
     url = f"{API_BASE}/v1/token/{base}"
     headers = {"X-API-Key": api_key}
     last_error = None
+    last_status = None      # carried onto the raised error so the CAUSE survives
+    last_body = None
 
     for attempt in range(1, max_retries + 1):
         try:
             resp = requests.get(url, headers=headers, timeout=15)
+            last_status = resp.status_code
+            last_body = redact_secret(resp.text, api_key)
 
             if resp.status_code == 404:
                 return {"symbol": base, "found": False}
@@ -2755,8 +2786,16 @@ def fetch_token_sentiment(ticker: str, api_key: str = None, max_retries: int = 3
                     "Adanos rejected the API key (401) — check ADANOS_API_KEY is set correctly."
                 )
             if resp.status_code == 429:
+                # QUOTA/RATE LIMIT. This branch used to `continue` WITHOUT
+                # setting last_error, so after the final attempt the raise
+                # below reported "... after 3 attempts: None" -- the single
+                # most useful fact (HTTP 429, quota exhausted) was thrown
+                # away. Record it so the failure is diagnosable.
+                last_error = ConnectionError(
+                    f"HTTP 429 rate limited/quota exhausted: {last_body[:200]}")
                 wait = 5 * attempt
-                print(f"  [adanos] rate limited, waiting {wait}s...")
+                print(f"  [adanos] rate limited (429), waiting {wait}s... "
+                      f"body: {last_body[:200]}")
                 time.sleep(wait)
                 continue
 
@@ -2774,7 +2813,14 @@ def fetch_token_sentiment(ticker: str, api_key: str = None, max_retries: int = 3
                       f"({type(e).__name__}); retrying in {wait}s...")
                 time.sleep(wait)
 
-    raise ConnectionError(f"Failed to fetch {url} after {max_retries} attempts: {last_error}")
+    err = ConnectionError(
+        f"Failed to fetch {url} after {max_retries} attempts "
+        f"(last HTTP status {last_status}): {last_error}")
+    # Attached so the gate's ERROR handler can report the real cause
+    # instead of only an exception class name.
+    err.http_status = last_status
+    err.http_body = last_body
+    raise err
 
 
 # ======================================================================
@@ -2897,12 +2943,28 @@ def cached_sentiment_check(ticker: str, ttl_hours: float = None,
         # proceeds, the row logs with decision "ERROR" so the failure
         # shows up in the log instead of as silence, and _is_real_reading
         # already guarantees this result is never cached.
-        print(f"  [sentiment] live call failed with no cache to fall back on "
-              f"({type(e).__name__}: {e}) — proceeding NEUTRAL, gate marked ERROR")
+        #
+        # MAKE THE FAILURE VISIBLE. The fallback below is UNCHANGED -- the
+        # run still proceeds neutral -- but a gate that has been erroring
+        # for 300 consecutive runs must not look like a quiet success. The
+        # HTTP status and response body are the two facts that distinguish
+        # "quota exhausted" (429) from "bad key" (401) from "endpoint moved"
+        # (404/5xx), and neither used to be printed at all.
+        status = getattr(e, "http_status", None)
+        body = redact_secret(getattr(e, "http_body", None))
+        detail = (f"HTTP {status}" if status is not None else "no HTTP response")
+        if body:
+            detail += f" body={body[:300]}"
+        msg = (f"Adanos sentiment gate FAILED ({type(e).__name__}): {detail}. "
+               f"No cached reading to fall back on — gate is NEUTRAL for this "
+               f"run, so Step 2 is not affecting the score. Check quota/key.")
+        print(f"  [sentiment] {redact_secret(str(e))}")
+        print(f"  [sentiment] {msg}")
+        gh_annotate("warning", "Sentiment gate ERROR", msg)
         return {"decision": "ERROR", "gate_multiplier": 1.0,
-                "reason": (f"Adanos unavailable ({type(e).__name__}) and no "
-                           f"cached reading exists — gate neutral for this "
-                           f"run. If this persists, check quota/key."),
+                "reason": (f"Adanos unavailable ({type(e).__name__}, {detail}) "
+                           f"and no cached reading exists — gate neutral for "
+                           f"this run. If this persists, check quota/key."),
                 "sentiment_score": None, "mentions": None,
                 "cache_hit": False, "cache_age_hours": None,
                 "stale_fallback": False}

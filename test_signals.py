@@ -3053,3 +3053,134 @@ class TestExitLevelPrecision:
         assert lvl["target"] == pytest.approx(106.0)
         assert lvl["stop"] == pytest.approx(97.0)
         assert lvl["risk_reward"] == 2.0
+
+
+# ======================================================================
+# PRODUCTION DIAGNOSTICS — the silently-erroring sentiment gate
+# ======================================================================
+# The gate had been returning decision=ERROR for 1,350 consecutive runs
+# while every GitHub Actions run reported success: the gate errors, falls
+# back to a neutral 1.0 multiplier, and the pipeline carries on. The
+# FALLBACK IS CORRECT and is not changed by any of this -- a dead sentiment
+# provider must not take the signal service down (it did once, for 2+ days).
+# What was wrong is that the failure was invisible: no HTTP status, no
+# response body, no annotation, no count.
+class TestSentimentGateDiagnostics:
+
+    def test_redact_secret_removes_the_key(self):
+        body = '{"error":"quota","key":"SUPERSECRETKEY123"}'
+        out = epm.redact_secret(body, "SUPERSECRETKEY123")
+        assert "SUPERSECRETKEY123" not in out
+        assert "REDACTED" in out and "quota" in out
+
+    def test_redact_secret_also_scrubs_the_env_key(self, monkeypatch):
+        monkeypatch.setenv("ADANOS_API_KEY", "ENVKEY9999")
+        assert "ENVKEY9999" not in epm.redact_secret("leak ENVKEY9999 here")
+
+    def test_redact_secret_handles_none_and_short_keys(self):
+        assert epm.redact_secret(None) == ""
+        # A 3-char "key" must not blank out every occurrence of that
+        # substring in an unrelated body.
+        assert epm.redact_secret("abcdef", "abc") == "abcdef"
+
+    def test_gh_annotate_is_silent_off_actions(self, capsys, monkeypatch):
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        epm.gh_annotate("warning", "T", "message")
+        assert capsys.readouterr().out == ""
+
+    def test_gh_annotate_emits_warning_on_actions(self, capsys, monkeypatch):
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        epm.gh_annotate("warning", "Sentiment gate ERROR", "HTTP 429 quota")
+        out = capsys.readouterr().out
+        assert out.startswith("::warning title=Sentiment gate ERROR::")
+        assert "HTTP 429 quota" in out
+
+    def test_gh_annotate_never_leaks_the_key(self, capsys, monkeypatch):
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        monkeypatch.setenv("ADANOS_API_KEY", "LEAKME12345")
+        epm.gh_annotate("warning", "T", "body contained LEAKME12345")
+        assert "LEAKME12345" not in capsys.readouterr().out
+
+    def test_gh_annotate_is_single_line(self, capsys, monkeypatch):
+        # A newline would truncate the annotation and orphan the remainder
+        # as raw log text.
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        epm.gh_annotate("warning", "T", "line one\nline two\r\nthree")
+        assert capsys.readouterr().out.count("\n") == 1
+
+    def test_gate_error_reports_http_status_and_body(self, capsys):
+        # The whole point: an ERROR must carry the CAUSE.
+        err = ConnectionError("boom")
+        err.http_status = 429
+        err.http_body = '{"detail":"monthly quota exceeded"}'
+
+        def boom(*a, **kw):
+            raise err
+
+        gate = epm.cached_sentiment_check(
+            "BTC", fetcher=boom, api_key="k", cache_path="", ttl_hours=0)
+        out = capsys.readouterr().out
+        assert gate["decision"] == "ERROR"
+        assert gate["gate_multiplier"] == 1.0      # fallback UNCHANGED
+        assert "429" in out and "quota exceeded" in out
+        assert "429" in gate["reason"]
+
+    def test_gate_error_still_returns_neutral_fallback(self):
+        # Guard the thing that must NOT change.
+        def boom(*a, **kw):
+            raise ConnectionError("no status attached")
+
+        gate = epm.cached_sentiment_check(
+            "BTC", fetcher=boom, api_key="k", cache_path="", ttl_hours=0)
+        assert gate["decision"] == "ERROR"
+        assert gate["gate_multiplier"] == 1.0
+        assert gate["sentiment_score"] is None
+
+
+class TestAuditGateErrorStreak:
+
+    def _audit(self):
+        import importlib
+        return importlib.import_module("audit")
+
+    def _log(self, tmp_path, decisions):
+        p = tmp_path / "signal_log.csv"
+        pd.DataFrame({"timestamp_utc": pd.date_range("2026-01-01", periods=len(decisions),
+                                                     freq="h").astype(str),
+                      "gate_decision": decisions}).to_csv(p, index=False)
+        return str(p)
+
+    def test_counts_consecutive_trailing_errors(self, tmp_path, monkeypatch):
+        a = self._audit()
+        monkeypatch.setattr(a, "_origin_log", lambda path="x": (None, "no remote"))
+        p = self._log(tmp_path, ["PROCEED", "PROCEED", "ERROR", "ERROR", "ERROR"])
+        a._results.clear()
+        a.check_sentiment_gate_errors(p)
+        assert a._results[-1]["evidence"]["consecutive_error_runs"] == 3
+
+    def test_a_later_success_resets_the_streak(self, tmp_path, monkeypatch):
+        a = self._audit()
+        monkeypatch.setattr(a, "_origin_log", lambda path="x": (None, "no remote"))
+        p = self._log(tmp_path, ["ERROR", "ERROR", "PROCEED"])
+        a._results.clear()
+        a.check_sentiment_gate_errors(p)
+        assert a._results[-1]["evidence"]["consecutive_error_runs"] == 0
+        assert a._results[-1]["status"] == a.PASS
+
+    def test_long_streak_is_a_hard_fail(self, tmp_path, monkeypatch):
+        a = self._audit()
+        monkeypatch.setattr(a, "_origin_log", lambda path="x": (None, "no remote"))
+        p = self._log(tmp_path, ["ERROR"] * 12)
+        a._results.clear()
+        a.check_sentiment_gate_errors(p)
+        assert a._results[-1]["status"] == a.FAIL
+
+    def test_freshness_labels_a_local_only_measurement(self, tmp_path, monkeypatch):
+        # It cried wolf twice by reporting local-clone lag as an outage.
+        a = self._audit()
+        monkeypatch.setattr(a, "_origin_log", lambda path="x": (None, "no remote"))
+        p = tmp_path / "signal_log.csv"
+        pd.DataFrame({"timestamp_utc": ["2020-01-01T00:00:00"]}).to_csv(p, index=False)
+        a._results.clear()
+        a.check_log_freshness(str(p))
+        assert "LOCAL CLONE ONLY" in a._results[-1]["detail"]
