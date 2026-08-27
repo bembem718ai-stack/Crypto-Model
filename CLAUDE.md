@@ -127,6 +127,28 @@ Research is kept separate from the live system, and stays separate.
    mean anything.
 6. **Research commits are separate from signal-check commits.** Never fold
    research output into an hourly `Signal check:` commit.
+7. **DISCOVERY does not run placebo draws.** Discovery ranks rules against
+   each other on the pre-registered metric; it does not need a null
+   distribution to do that. Placebo belongs in exactly two places: the
+   reference rows (where the incumbent is measured against chance) and
+   CONFIRMATION (where a frozen shortlist is). Drawing placebos across a
+   whole discovery grid costs thousands of backtests for a number nothing
+   in the selection rule reads.
+8. **Per-ticker data is built ONCE per ticker and reused by every rule.**
+   The resampled daily frame, its indicators, and the 4h ATR depend only
+   on the ticker, never on the rule being scored. Rebuilding them inside
+   the per-rule loop multiplies the whole grid by the number of rules.
+   `pipeline.backtest_exit_geometry` calls `build_4h_atr` on every
+   invocation (pipeline.py:1612) — once per fold per rule, 1,440 times for
+   a 120-rule grid. `research/harness.py` memoizes it at the harness
+   boundary; research does not edit pipeline.py to fix this (rule 1), it
+   caches around it.
+   MEASURED, so nobody re-litigates it: that cache is worth ~1.0x and the
+   frame-slimming beside it ~1.1x. Neither is the cost driver — the full
+   120-rule x 3-ticker grid runs in ~45s either way. The 25 minutes in the
+   first run were placebo draws, which is what rule 7 removes. Keep both
+   as hygiene; do not go hunting further per-rule micro-optimisations
+   expecting a win that is not there.
 
 ## Known open issues
 
