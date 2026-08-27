@@ -1567,10 +1567,20 @@ def resolve_on_4h(bars_4h: pd.DataFrame, entry_ts, entry: float,
                    max_bars: int) -> dict:
     """Walk 4h bars strictly after entry_ts. Same pessimistic rules as
     everywhere else: both touched in one bar counts as a stop."""
+    tgt_dist, stop_dist = abs(target - entry), abs(entry - stop)
+    # A zero stop distance is ALWAYS an upstream bug (it used to come from
+    # compute_exit_levels rounding sub-dollar levels onto each other). It
+    # must fail here rather than return a NaN pnl_r, because .mean() in
+    # stats_from_trades silently skips NaN -- so the corruption showed up
+    # as a plausible-looking expectancy computed over a different subset of
+    # trades than the win rate beside it.
+    if not stop_dist > 0:
+        raise ValueError(
+            f"zero stop distance: entry={entry} stop={stop}. Exit levels are "
+            f"degenerate; refusing to produce a NaN pnl_r.")
     fwd = bars_4h[bars_4h.index > entry_ts].iloc[:max_bars]
     if fwd.empty:
         return {"outcome": None, "bars": 0, "pnl_r": None, "mfe": 0.0}
-    tgt_dist, stop_dist = abs(target - entry), abs(entry - stop)
     mfe = 0.0
     for n, (_, row) in enumerate(fwd.iterrows(), 1):
         hi, lo = row["High"], row["Low"]
@@ -1677,6 +1687,19 @@ def stats_from_trades(trades: list) -> dict:
     if not trades:
         return {"n": 0, "trades": []}
     t = pd.DataFrame(trades)
+    # FAIL LOUDLY ON NaN P&L. Every summary below uses .mean(), which SKIPS
+    # NaN. So a corrupt trade set used to report an expectancy averaged over
+    # the surviving trades while target_rate/stop_rate were computed over
+    # ALL of them -- two columns describing different sets, with nothing
+    # saying so. A NaN here always means degenerate exit levels upstream.
+    for col in ("pnl_r", "pnl_r_net"):
+        if col in t.columns and t[col].isna().any():
+            bad = int(t[col].isna().sum())
+            raise ValueError(
+                f"{bad} of {len(t)} trades have NaN {col}. This means "
+                f"degenerate exit levels (zero stop distance) upstream. "
+                f"Refusing to average over a subset while reporting rates "
+                f"over the whole set.")
     return {"n": len(t),
             "target_rate": (t["outcome"] == "target").mean(),
             "stop_rate": t["outcome"].isin(["stop", "ambiguous_stop"]).mean(),

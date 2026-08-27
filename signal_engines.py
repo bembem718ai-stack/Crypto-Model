@@ -26,6 +26,7 @@ Requires: pip install requests vaderSentiment pandas numpy yfinance
 """
 
 import json
+import math
 import os
 import time
 import argparse
@@ -450,6 +451,30 @@ def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return tr.ewm(alpha=1.0 / period, adjust=False, min_periods=period).mean()
 
 
+_PRICE_SIGFIGS = 8
+
+
+def _price_round(x: float, reference: float, sigfigs: int = _PRICE_SIGFIGS) -> float:
+    """Round a price to `sigfigs` significant figures relative to `reference`.
+
+    WHY NOT round(x, 2): a fixed decimal count is a statement about the
+    asset's price scale, and this pipeline runs on assets from $78,000 to
+    $0.00145. At 2dp every level of a sub-cent asset collapses onto 0.00,
+    which zeroes the stop distance and poisons every P&L derived from it.
+
+    All three levels are rounded against the SAME reference (the entry
+    price) so their spacing is preserved -- rounding each to its own
+    magnitude would distort the target:stop ratio.
+    """
+    if x == 0 or not (x == x) or math.isinf(x):
+        return x
+    mag = abs(reference) if reference and reference == reference else abs(x)
+    if mag <= 0 or math.isinf(mag):
+        return x
+    decimals = max(2, sigfigs - int(math.floor(math.log10(mag))) - 1)
+    return round(x, min(decimals, 12))
+
+
 def compute_exit_levels(entry_price: float, direction: str, atr: float,
                         stop_mult: float = 1.5, target_mult: float = 3.0) -> dict:
     """
@@ -488,14 +513,42 @@ def compute_exit_levels(entry_price: float, direction: str, atr: float,
         stop = entry_price + stop_dist
 
     rr = target_dist / stop_dist if stop_dist else float("nan")
+
+    # PRICE-RELATIVE PRECISION, not a fixed 2 decimals. See _price_round:
+    # rounding entry/target/stop to 2dp collapsed them onto each other for
+    # any asset whose ATR distance was under half a cent, which silently
+    # produced zero stop distance and NaN P&L. Round to a constant number
+    # of SIGNIFICANT figures instead, so the geometry is identical at
+    # $78,000 and at $0.00145.
+    e_r = _price_round(entry_price, entry_price)
+    t_r = _price_round(target, entry_price)
+    s_r = _price_round(stop, entry_price)
+
+    # The levels that get returned are the ones every downstream consumer
+    # derives stop distance from (pipeline computes abs(entry - stop)), so
+    # they must stay distinct after rounding. If rounding ever collapsed
+    # them, fall back to the exact unrounded values rather than emit a
+    # degenerate level set.
+    if not (abs(e_r - s_r) > 0 and abs(t_r - e_r) > 0):
+        e_r, t_r, s_r = entry_price, target, stop
+
+    if not abs(e_r - s_r) > 0:
+        # Unreachable for atr > 0 and a finite entry, both already checked
+        # above. Kept as the contract: NEVER return a level set whose stop
+        # distance is zero -- that is what produced NaN pnl_r downstream.
+        return {"applicable": False,
+                "reason": f"degenerate exit levels (entry={entry_price}, atr={atr})"}
+
     return {
         "applicable": True,
         "direction": direction,
         "side": "long" if bullish else "short",
-        "entry": round(entry_price, 2),
-        "target": round(target, 2),
-        "stop": round(stop, 2),
-        "atr": round(atr, 2),
+        "entry": e_r,
+        "target": t_r,
+        "stop": s_r,
+        "atr": _price_round(atr, entry_price),
+        "stop_dist": abs(e_r - s_r),
+        "target_dist": abs(t_r - e_r),
         "stop_mult": stop_mult,
         "target_mult": round(scaled_target_mult, 3),
         "risk_reward": round(rr, 2),

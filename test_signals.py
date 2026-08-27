@@ -2953,3 +2953,103 @@ class TestAdaptiveRRAndCeiling:
 
     def test_ceiling_refuses_thin_samples(self):
         assert "too few" in um.target_ceiling_report([])
+
+
+# ======================================================================
+# EXIT-LEVEL PRECISION — the sub-dollar rounding defect
+# ======================================================================
+# compute_exit_levels used to round entry/target/stop to a FIXED 2 decimals.
+# At BTC's $78,000 that is immaterial. For an asset trading at $0.00145 the
+# entry, the target and the stop all collapse onto 0.00, and then:
+#   * stop_dist = abs(entry - stop) = 0, so resolve_on_4h's
+#     `tgt_dist / stop_dist` guard returned NaN pnl_r;
+#   * `high >= target` is trivially true against a target of 0.00, so the
+#     trade was labelled `target` on its first bar -- a MANUFACTURED 100%
+#     win rate;
+#   * stats_from_trades averages with .mean(), which SKIPS NaN, so win% was
+#     computed over every trade while expectancy was computed over only the
+#     non-NaN ones. The two columns described different trade sets.
+# Measured on the 82-ticker basket: 185 of 645 STRONG_BUY trades (28.7%)
+# across 35 tickers carried NaN P&L. The bot has been live with this.
+class TestExitLevelPrecision:
+
+    def test_sub_penny_asset_gets_distinct_levels(self):
+        import signal_engines as se
+        lvl = se.compute_exit_levels(0.00145, "STRONG_BUY", atr=0.00003)
+        assert lvl["applicable"]
+        e, t, s = lvl["entry"], lvl["target"], lvl["stop"]
+        assert e != t and e != s and t != s, f"levels collapsed: {e}, {t}, {s}"
+        assert abs(e - s) > 0, "stop distance rounded away to zero"
+        assert t > e > s, "long levels must be ordered target > entry > stop"
+
+    def test_low_volatility_dollar_asset_gets_distinct_levels(self):
+        # Not just cheap coins: the trigger is 1.5*ATR falling under half a
+        # cent in ABSOLUTE terms, which low volatility reaches at $1+ too.
+        import signal_engines as se
+        lvl = se.compute_exit_levels(1.25, "BUY", atr=0.002)
+        assert lvl["applicable"]
+        e, t, s = lvl["entry"], lvl["target"], lvl["stop"]
+        assert e != t and e != s, f"levels collapsed: {e}, {t}, {s}"
+        assert abs(e - s) > 0
+        assert t > e > s
+
+    def test_stop_distance_is_a_fixed_fraction_of_entry_at_any_price(self):
+        # The whole point of ATR bands: the geometry must not depend on the
+        # asset's price scale. 1.5*ATR/entry should be identical for a
+        # $78,000 asset and a $0.00145 one with proportional ATR.
+        import signal_engines as se
+        big = se.compute_exit_levels(78000.0, "BUY", atr=1560.0)     # ATR = 2% of price
+        small = se.compute_exit_levels(0.00145, "BUY", atr=0.000029)  # ATR = 2% of price
+        f_big = abs(big["entry"] - big["stop"]) / big["entry"]
+        f_small = abs(small["entry"] - small["stop"]) / small["entry"]
+        assert f_big == pytest.approx(f_small, rel=1e-3), (
+            f"stop fraction depends on price scale: {f_big} vs {f_small}")
+
+    def test_resolve_on_4h_never_returns_nan_pnl(self):
+        idx = pd.date_range("2024-01-01", periods=10, freq="4h")
+        bars = pd.DataFrame({"Open": 0.00145, "High": 0.00150, "Low": 0.00140,
+                             "Close": 0.00145, "Volume": 1.0}, index=idx)
+        lvl = epm.compute_exit_levels(0.00145, "STRONG_BUY", atr=0.00003)
+        r = um.resolve_on_4h(bars, idx[0], lvl["entry"], lvl["target"],
+                             lvl["stop"], True, max_bars=9)
+        assert r["pnl_r"] is None or r["pnl_r"] == r["pnl_r"], \
+            f"resolve_on_4h returned NaN pnl_r: {r}"
+
+    def test_resolve_on_4h_refuses_a_zero_stop_distance(self):
+        # If a caller ever hands it entry == stop, that is a bug upstream.
+        # It must fail loudly, not hand back a NaN that .mean() will hide.
+        idx = pd.date_range("2024-01-01", periods=5, freq="4h")
+        bars = pd.DataFrame({"Open": 1.0, "High": 1.1, "Low": 0.9,
+                             "Close": 1.0, "Volume": 1.0}, index=idx)
+        with pytest.raises(ValueError):
+            um.resolve_on_4h(bars, idx[0], 1.0, 1.2, 1.0, True, max_bars=4)
+
+    def test_stats_from_trades_raises_on_nan_pnl(self):
+        # .mean() skipping NaN is what let a corrupt trade set report a
+        # clean-looking expectancy alongside a win rate over a DIFFERENT set.
+        bad = [{"outcome": "target", "pnl_r": float("nan"),
+                "pnl_r_net": float("nan"), "cost_r": 0.0, "stop_pct": 0.0,
+                "days_held": 1.0, "score": 70.0},
+               {"outcome": "stop", "pnl_r": -1.0, "pnl_r_net": -1.0,
+                "cost_r": 0.0, "stop_pct": 2.0, "days_held": 1.0, "score": 70.0}]
+        with pytest.raises(ValueError):
+            um.stats_from_trades(bad)
+
+    def test_stats_from_trades_still_accepts_clean_trades(self):
+        good = [{"outcome": "target", "pnl_r": 2.0, "pnl_r_net": 1.97,
+                 "cost_r": 0.03, "stop_pct": 2.0, "days_held": 1.0, "score": 70.0},
+                {"outcome": "stop", "pnl_r": -1.0, "pnl_r_net": -1.03,
+                 "cost_r": 0.03, "stop_pct": 2.0, "days_held": 1.0, "score": 70.0}]
+        s = um.stats_from_trades(good)
+        assert s["n"] == 2 and s["expectancy_r"] == pytest.approx(0.5)
+
+    def test_big_asset_levels_are_unchanged_by_the_fix(self):
+        # Regression guard: the majors must not move. 2dp was already
+        # correct for them and every previously reported number depends on
+        # it staying correct.
+        import signal_engines as se
+        lvl = se.compute_exit_levels(100.0, "BUY", atr=2.0)
+        assert lvl["entry"] == 100.0
+        assert lvl["target"] == pytest.approx(106.0)
+        assert lvl["stop"] == pytest.approx(97.0)
+        assert lvl["risk_reward"] == 2.0
