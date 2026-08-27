@@ -1,0 +1,227 @@
+{
+  "B_tradable_26_STRONG_BUY": {
+    "DISCOVERY": {
+      "n": 46,
+      "episodes": 31,
+      "win_pct": 34.78260869565217,
+      "net_all": 0.23893478260869563,
+      "ex_best": null,
+      "folds_pos": 1,
+      "folds_counted": 2,
+      "total_R": 10.990999999999996,
+      "maxDD_R": 13.596,
+      "placebo_mean": 0.07127341779835587,
+      "placebo_p95": 0.5703739130434783,
+      "beats_p95": false,
+      "ex_pos": false
+    },
+    "CONFIRMATION": {
+      "n": 87,
+      "episodes": 52,
+      "win_pct": 50.57471264367817,
+      "net_all": 0.814551724137931,
+      "ex_best": 0.4241600000000001,
+      "folds_pos": 4,
+      "folds_counted": 4,
+      "total_R": 70.86599999999999,
+      "maxDD_R": 15.161999999999999,
+      "placebo_mean": -0.026686244390606267,
+      "placebo_p95": 0.33203306025369983,
+      "beats_p95": true,
+      "ex_pos": true
+    }
+  },
+  "B_tradable_26_STRONG_BUY_verdict": "FAIL",
+  "B_FULL_82_STRONG_BUY": {
+    "DISCOVERY": {
+      "n": 122,
+      "episodes": 70,
+      "win_pct": 38.52459016393443,
+      "net_all": 0.368,
+      "ex_best": 0.1935555555555555,
+      "folds_pos": 2,
+      "folds_counted": 3,
+      "total_R": 44.895999999999994,
+      "maxDD_R": 34.83,
+      "placebo_mean": 0.07864183883091926,
+      "placebo_p95": 0.40729590163934426,
+      "beats_p95": false,
+      "ex_pos": true
+    },
+    "CONFIRMATION": {
+      "n": 518,
+      "episodes": 240,
+      "win_pct": 46.91119691119691,
+      "net_all": -2.0162567567567566,
+      "ex_best": -2.613817042606516,
+      "folds_pos": 0,
+      "folds_counted": 4,
+      "total_R": -1044.4209999999994,
+      "maxDD_R": 1072.0789999999993,
+      "placebo_mean": -0.12528724132722494,
+      "placebo_p95": 0.05027055010391263,
+      "beats_p95": false,
+      "ex_pos": false
+    }
+  },
+  "B_FULL_82_STRONG_BUY_verdict": "FAIL",
+  "B_tradable_26_INC_BUY_ALL": {
+    "DISCOVERY": {
+      "n": 1678,
+      "episodes": 496,
+      "win_pct": 33.55184743742551,
+      "net_all": -0.011171036948748481,
+      "ex_best": -0.030053627760252357,
+      "folds_pos": 3,
+      "folds_counted": 4,
+      "total_R": -18.745000000000108,
+      "maxDD_R": 115.46900000000002,
+      "placebo_mean": 0.20899248282229232,
+      "placebo_p95": 0.2801696169374759,
+      "beats_p95": false,
+      "ex_pos": false
+    },
+    "CONFIRMATION": {
+      "n": 2414,
+      "episodes": 661,
+      "win_pct": 36.16404308202154,
+      "net_all": 0.06748011599005803,
+      "ex_best": 0.010163558870538122,
+      "folds_pos": 3,
+      "folds_counted": 4,
+      "total_R": 162.89699999999993,
+      "maxDD_R": 110.84599999999986,
+      "placebo_mean": 0.01497881642622214,
+      "placebo_p95": 0.06772949251186097,
+      "beats_p95": false,
+      "ex_pos": true
+    }
+  },
+  "B_tradable_26_INC_BUY_ALL_verdict": "FAIL",
+  "B_FULL_82_INC_BUY_ALL": {
+    "DISCOVERY": {
+      "n": 3639,
+      "episodes": 1098,
+      "win_pct": 32.97609233305853,
+      "net_all": -0.030687276724374792,
+      "ex_best": -0.05407039337474119,
+      "folds_pos": 1,
+      "folds_counted": 4,
+      "total_R": -111.67100000000018,
+      "maxDD_R": 383.061,
+      "placebo_mean": 0.13609708114783484,
+      "placebo_p95": 0.18522623778998784,
+      "beats_p95": false,
+      "ex_pos": false
+    },
+    "CONFIRMATION": {
+      "n": 8453,
+      "episodes": 2185,
+      "win_pct": 33.68035017153673,
+      "net_all": -0.19524334555779013,
+      "ex_best": -0.23412757201646084,
+      "folds_pos": 0,
+      "folds_counted": 4,
+      "total_R": -1650.3919999999946,
+      "maxDD_R": 1701.4489999999946,
+      "placebo_mean": -0.08796206260133985,
+      "placebo_p95": -0.05210801507696998,
+      "beats_p95": false,
+      "ex_pos": false
+    }
+  },
+  "B_FULL_82_INC_BUY_ALL_verdict": "FAIL",
+  "C": {
+    "Q1": {
+      "n": 41,
+      "episodes": 21,
+      "win_pct": 48.78048780487805,
+      "net_all": 0.7432926829268293,
+      "ex_best": null,
+      "folds_pos": 2,
+      "folds_counted": 2,
+      "total_R": 30.474999999999994,
+      "maxDD_R": 7.352999999999998
+    },
+    "Q2": {
+      "n": 44,
+      "episodes": 24,
+      "win_pct": 56.81818181818182,
+      "net_all": 1.043681818181818,
+      "ex_best": 0.6003999999999998,
+      "folds_pos": 3,
+      "folds_counted": 3,
+      "total_R": 45.92199999999998,
+      "maxDD_R": 4.1640000000000015
+    },
+    "Q3": {
+      "n": 28,
+      "episodes": 19,
+      "win_pct": 21.428571428571427,
+      "net_all": -0.24989285714285708,
+      "ex_best": null,
+      "folds_pos": 1,
+      "folds_counted": 2,
+      "total_R": -6.997,
+      "maxDD_R": 9.889
+    },
+    "Q4": {
+      "n": 23,
+      "episodes": 17,
+      "win_pct": 47.82608695652174,
+      "net_all": 0.7230869565217392,
+      "ex_best": null,
+      "folds_pos": 1,
+      "folds_counted": 1,
+      "total_R": 16.631,
+      "maxDD_R": 6.260000000000001
+    }
+  },
+  "C_verdict": "FAIL",
+  "tier_curve": {
+    "75": {
+      "n": 46,
+      "episodes": 31,
+      "win_pct": 34.78260869565217,
+      "net_all": 0.23893478260869563,
+      "ex_best": null,
+      "folds_pos": 1,
+      "folds_counted": 2,
+      "total_R": 10.990999999999996,
+      "maxDD_R": 13.596
+    },
+    "70": {
+      "n": 256,
+      "episodes": 128,
+      "win_pct": 29.296875,
+      "net_all": 0.0440234375,
+      "ex_best": -0.059744186046511605,
+      "folds_pos": 2,
+      "folds_counted": 4,
+      "total_R": 11.269999999999996,
+      "maxDD_R": 42.048
+    },
+    "65": {
+      "n": 908,
+      "episodes": 349,
+      "win_pct": 29.955947136563875,
+      "net_all": 0.07026762114537445,
+      "ex_best": 0.015631732168850068,
+      "folds_pos": 3,
+      "folds_counted": 4,
+      "total_R": 63.80299999999999,
+      "maxDD_R": 83.46599999999998
+    },
+    "60": {
+      "n": 1782,
+      "episodes": 503,
+      "win_pct": 29.741863075196406,
+      "net_all": 0.06757182940516276,
+      "ex_best": 0.02897386109036596,
+      "folds_pos": 3,
+      "folds_counted": 4,
+      "total_R": 120.41299999999931,
+      "maxDD_R": 114.52100000000019
+    }
+  }
+}

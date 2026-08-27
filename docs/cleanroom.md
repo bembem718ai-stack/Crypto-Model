@@ -889,3 +889,213 @@ BEFORE any of this was seen, so narrowing it now is a NEW hypothesis
 needing its own number and its own pre-registration (research rule 4). It
 must not be applied retroactively to #163-#166 as though it had always
 been there. Recorded, not decided.
+
+## Hypothesis #167 — TRADABILITY FILTER (registered before B/C ran)
+
+**#163-#166 STAND AS REGISTERED.** They were registered on the full
+86-ticker universe and that is the universe they describe. Nothing about
+them is being rewritten, narrowed, or re-run under a new definition.
+**#167 is a TRADABLE-SUBSET VARIANT** carried alongside them, not a
+replacement for them. H-basket-B is reported on BOTH the #167 subset and
+the full 82 so the filter's effect is visible rather than hidden.
+
+### The filter, defined on PRICES ONLY and decided now
+
+A ticker is **tradable** if, over SEALED:
+
+1. its share of flat 4h bars (`High == Low`) is **<= 10%**, AND
+2. its median `1.5 x ATR` stop is **>= 0.5% of entry**.
+
+Both are properties of the price series alone. Neither looks at a
+direction label, a trade outcome, an expectancy, or any result from
+#163-#166. The motivation is recorded above: on pairs that barely trade
+on Binance.US the 4h bars are flat, the ATR collapses, and the derived
+stop lands 0.025% from entry — at which point 8bps of round-trip cost is
+3.2R of risk and the trade is uneconomic before it starts. The filter
+removes instruments whose ATR is not a usable risk unit. It is NOT a
+performance screen.
+
+### Result: 26 of 82 tradable
+
+All 56 exclusions fail on the flat-bar criterion; **0 tickers fail the
+stop criterion independently** (the two are near-collinear, as expected —
+flat bars are what collapse the ATR).
+
+**TRADABLE (26):**
+
+| ticker | flat 4h bars | median 1.5xATR stop |
+|--------|--------------|---------------------|
+| BTC | 0.02% | 2.250% |
+| ETH | 0.02% | 2.969% |
+| ADA | 0.02% | 3.657% |
+| BNB | 0.04% | 2.749% |
+| XRP | 0.06% | 2.817% |
+| LTC | 0.16% | 3.455% |
+| VET | 0.19% | 4.382% |
+| LINK | 0.21% | 3.588% |
+| AVAX | 0.27% | 3.851% |
+| SOL | 0.39% | 4.284% |
+| XLM | 0.50% | 3.419% |
+| DOT | 0.83% | 3.397% |
+| ALGO | 1.22% | 3.710% |
+| ONE | 1.40% | 5.118% |
+| ATOM | 1.49% | 4.158% |
+| DOGE | 1.57% | 3.662% |
+| BCH | 1.84% | 3.404% |
+| TRX | 3.48% | 1.982% |
+| VTHO | 3.48% | 4.920% |
+| NEAR | 3.53% | 4.134% |
+| FET | 4.66% | 4.879% |
+| AAVE | 4.67% | 3.947% |
+| UNI | 4.68% | 4.301% |
+| GALA | 6.53% | 4.476% |
+| OP | 7.18% | 4.023% |
+| ETC | 7.60% | 3.659% |
+
+**EXCLUDED (56):** APE MANA THETA ZEC NEO ICP BAT FIL CRV ZRX ZEN FLUX ROSE LPT ONT 1INCH EGLD ENS AXS ENJ BAND TFUEL STORJ LDO AUDIO SUSHI ACH QTUM KNC SNX WAXP CHZ OCEAN NMR KSM YFI CTSI API3 COTI SLP CELO FLOW CELR SYS SKL ILV VOXEL OGN RLC TLM T BICO REQ RAD LSK BNT
+
+### Amendment registered now: EPISODE-MATCHED PLACEBO
+
+H-basket-B's placebo draws random **EPISODES matching the incumbent's
+observed run-length distribution per ticker**, not independent days.
+
+Why, recorded before the numbers: the incumbent's 19 BTC STRONG_BUY
+trades come from only **8 episodes** — consecutive signal days riding one
+price move, several of which exit on the same 4h bar. An independent-day
+placebo scatters its draws and gets near-independent outcomes, so it is
+**lower-variance than the thing it benchmarks**, and the incumbent clears
+its p95 far more easily than the percentile implies. That flaw was
+already recorded against the Prompt-1 reference rows; this fixes it.
+
+Construction, per ticker: take the observed run-lengths of consecutive
+STRONG_BUY signal days; draw the same NUMBER of runs with the same
+LENGTHS at random non-overlapping start positions in the same window;
+apply the same 2-day confirm, so a run of length L yields L-1 trades
+exactly as the observed runs do. **300 seeds.**
+
+Everything else in H-basket-B and H-basket-C is unchanged from #164/#165:
+the same pooled statistics, the same time-cut folds, and the same
+registered pass directions — `ex_best` > 0 on BOTH windows AND `net_all`
+above the placebo p95 on BOTH for B; positive in ALL FOUR quartiles for C.
+H-tier-curve (#166) stays DESCRIPTIVE and selects nothing.
+
+## Results of H-basket-B (#164), H-basket-C (#165), H-tier-curve (#166)
+
+Run on the #167 tradable subset (26 tickers) and, for B, on the full 82
+alongside so the filter's effect is visible rather than hidden. Placebo is
+the episode-matched draw registered in #167: 300 seeds, random runs
+matching each ticker's observed run-length distribution.
+
+SEALED 2019-09-24 -> 2026-02-26 | DISCOVERY -> 2023-04-06 | CONFIRMATION
+-> 2026-02-26. Every trade produced by `pipeline.backtest_exit_geometry`
+with `LIVE_GEOMETRY`; the day->trade lookup used to make 300-seed
+placebos tractable was verified to reproduce `harness.incumbent_rows`
+trade-for-trade on both tiers before any of this was reported.
+
+### H-basket-B — ALL FOUR VARIANTS FAIL
+
+Registered direction: `ex_best` > 0 on BOTH windows AND `net_all` above
+the placebo p95 on BOTH.
+
+| variant | window | n | eps | win% | net_all | ex_best | folds+/cnt | totR | maxDD | plc mean | plc p95 | ex>0 | net>p95 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| tradable 26 / STRONG_BUY | DISCOVERY | 46 | 31 | 34.8 | +0.239 | — | 1/2 | +11.0 | 13.6 | +0.071 | +0.570 | N | N |
+| tradable 26 / STRONG_BUY | CONFIRMATION | 87 | 52 | 50.6 | +0.815 | +0.424 | 4/4 | +70.9 | 15.2 | -0.027 | +0.332 | Y | Y |
+| FULL 82 / STRONG_BUY | DISCOVERY | 122 | 70 | 38.5 | +0.368 | +0.194 | 2/3 | +44.9 | 34.8 | +0.079 | +0.407 | Y | N |
+| FULL 82 / STRONG_BUY | CONFIRMATION | 518 | 240 | 46.9 | -2.016 | -2.614 | 0/4 | -1044.4 | 1072.1 | -0.125 | +0.050 | N | N |
+| tradable 26 / INC_BUY_ALL | DISCOVERY | 1678 | 496 | 33.6 | -0.011 | -0.030 | 3/4 | -18.7 | 115.5 | +0.209 | +0.280 | N | N |
+| tradable 26 / INC_BUY_ALL | CONFIRMATION | 2414 | 661 | 36.2 | +0.067 | +0.010 | 3/4 | +162.9 | 110.8 | +0.015 | +0.068 | Y | N |
+| FULL 82 / INC_BUY_ALL | DISCOVERY | 3639 | 1098 | 33.0 | -0.031 | -0.054 | 1/4 | -111.7 | 383.1 | +0.136 | +0.185 | N | N |
+| FULL 82 / INC_BUY_ALL | CONFIRMATION | 8453 | 2185 | 33.7 | -0.195 | -0.234 | 0/4 | -1650.4 | 1701.4 | -0.088 | -0.052 | N | N |
+
+- **tradable 26 / STRONG_BUY: FAIL**
+- **FULL 82 / STRONG_BUY: FAIL**
+- **tradable 26 / INC_BUY_ALL: FAIL**
+- **FULL 82 / INC_BUY_ALL: FAIL**
+
+**Why each failed.**
+
+- *tradable 26 / STRONG_BUY* — CONFIRMATION passes BOTH conditions
+  cleanly (net +0.815 vs p95 +0.332, `ex_best` +0.424, 4 of 4 folds
+  positive). DISCOVERY does not: `ex_best` is UNDEFINED (only 2 folds
+  reach 10 trades) and net +0.239 sits below its p95 of +0.570. The rule
+  requires both windows. **One good window is not the hypothesis.**
+- *FULL 82 / STRONG_BUY* — CONFIRMATION collapses to **-2.016R** with
+  totR **-1044R**. That is the illiquidity cost artifact recorded above:
+  518 pooled trades against the tradable subset's 87, the extra 431
+  coming from pairs whose ATR-derived stop is a fraction of a percent, so
+  `cost_r = 8bps / stop_fraction` dominates. This is the filter's effect
+  made visible: **+0.815 tradable vs -2.016 unfiltered on the same
+  window.**
+- *tradable 26 / INC_BUY_ALL* — CONFIRMATION misses by **0.001R**: net
+  +0.067 against a placebo p95 of +0.068. Recorded as a FAIL exactly as
+  registered. "Almost" was pre-declared to be a failure and it is being
+  treated as one; it does not get a second look at a looser bar.
+  DISCOVERY is negative anyway (-0.011, `ex_best` -0.030).
+- *FULL 82 / INC_BUY_ALL* — negative on both windows.
+
+Note the placebo is not weak. On DISCOVERY/INC_BUY_ALL the episode-
+matched placebo MEAN (+0.209 tradable, +0.136 full) BEATS the incumbent's
+observed net (-0.011, -0.031). Random clustered entries did better than
+the signal on that window.
+
+### H-basket-C — FAIL (3 of 4 quartiles positive, not 4)
+
+Registered direction: pooled STRONG_BUY `net_all` AND `ex_best` positive
+in ALL FOUR quartiles on SEALED. Quartiles fixed by seed 20260827 before
+any scoring; membership here is each quartile intersected with the #167
+tradable subset.
+
+| quartile | tradable/total | n | eps | win% | net_all | ex_best | folds+/cnt | totR | maxDD |
+|---|---|---|---|---|---|---|---|---|---|
+| Q1 | 5/22 | 41 | 21 | 48.8 | +0.743 | — | 2/2 | +30.5 | 7.4 |
+| Q2 | 7/22 | 44 | 24 | 56.8 | +1.044 | +0.600 | 3/3 | +45.9 | 4.2 |
+| Q3 | 8/21 | 28 | 19 | 21.4 | -0.250 | — | 1/2 | -7.0 | 9.9 |
+| Q4 | 6/21 | 23 | 17 | 47.8 | +0.723 | — | 1/1 | +16.6 | 6.3 |
+
+- Q1: AAVE ALGO BTC LINK XRP
+- Q2: ATOM AVAX BNB DOGE ETC ETH VTHO
+- Q3: ADA BCH FET NEAR ONE SOL TRX XLM
+- Q4: DOT GALA LTC OP UNI VET
+
+**VERDICT: FAIL.** Q3 is negative (-0.250R on 28 trades). And the deeper
+problem is that `ex_best` — the statistic the pass condition names — is
+**UNDEFINED in three of the four quartiles**: Q1, Q3 and Q4 never reach 3
+folds carrying 10 trades. Only Q2 can produce the number at all. So C does
+not fail narrowly; it fails because splitting an already-thin signal four
+ways leaves nothing measurable. This is H-basket-A's finding (0 of 82
+tickers reach a defined `ex_best`) reappearing one level up.
+
+### H-tier-curve (#166) — DESCRIPTIVE, SELECTS NOTHING
+
+DISCOVERY, tradable subset, days at or above the score painted STRONG_BUY
+so the geometry is constant across the curve and the rows are comparable.
+
+| score >= | n | eps | win% | net_all | ex_best | folds+/cnt | totR | maxDD |
+|---|---|---|---|---|---|---|---|---|
+| 75 | 46 | 31 | 34.8 | +0.239 | — | 1/2 | +11.0 | 13.6 |
+| 70 | 256 | 128 | 29.3 | +0.044 | -0.060 | 2/4 | +11.3 | 42.0 |
+| 65 | 908 | 349 | 30.0 | +0.070 | +0.016 | 3/4 | +63.8 | 83.5 |
+| 60 | 1782 | 503 | 29.7 | +0.068 | +0.029 | 3/4 | +120.4 | 114.5 |
+
+The curve is NOT monotonic in the way a real conviction ladder would be.
+The highest tier (>=75) has the best net (+0.239) but only 46 trades and
+no computable `ex_best`; >=70 is the WORST row (+0.044, `ex_best`
+-0.060); >=65 and >=60 are flat at +0.070/+0.068 with `ex_best` barely
+above zero (+0.016/+0.029) on 908 and 1,782 trades. Loosening the score
+buys trade count and buys almost no edge.
+
+**NOTHING IS SELECTED FROM THIS.** Per #166 no threshold may be promoted
+on the strength of this curve; any future use of a score cut is a NEW
+hypothesis with its own number, tested on data this curve did not touch.
+It is recorded so a later "we always knew 65 was the level" is checkable
+against what was actually seen, and when.
+
+### Program status after #163-#167
+
+Every registered hypothesis in the EVENT RATE program has now failed:
+#163 (0 of 82 tickers measurable), #164 (all four B variants), #165
+(3 of 4 quartiles, and unmeasurable in three). #166 is descriptive and
+selects nothing. #167 did what it was for — it made the difference
+between +0.815 and -2.016 on the same window visible — but a filter is
+not a result.
