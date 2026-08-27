@@ -194,3 +194,698 @@ Registered BEFORE any rule was scored. The grid is a grammar, not a shortlist: 3
 | 159 | `weekly_cross10w+above_sma200` | Weekly close crosses above its 10-week SMA | close > SMA200 (own trend) |
 | 160 | `weekly_cross10w+btc_above_sma200` | Weekly close crosses above its 10-week SMA | BTC close > BTC SMA200 (market regime) |
 | 161 | `weekly_cross10w+lowvol` | Weekly close crosses above its 10-week SMA | 30-day realized vol below its 100-day median |
+
+### Hypothesis #162 — CONFIRMATION of the 5 rules frozen on DISCOVERY
+
+**Registered BEFORE the confirmation run.** Scored ONCE. There is no second
+attempt, no parameter change, and no partial credit: a rule that misses on
+one ticker fails, and a rule that is "almost" fails.
+
+**The 5 rules, frozen by the DISCOVERY selection rule** (rank by MINIMUM
+`ex_best` across tickers, rarity guard n >= 20/ticker):
+
+| # | rule | DISCOVERY min ex_best |
+|---|------|----------------------|
+| 42 | `donchian10+none` | -0.073 |
+| 154 | `obv_break20+none` | -0.114 |
+| 102 | `roc10_zero+none` | -0.168 |
+| 118 | `nr7+none` | -0.179 |
+| 94 | `rsi7_cross50+none` | -0.180 |
+
+**Window.** CONFIRMATION only. The 4h feed is sealed at the lockbox
+boundary, which BINDS here (unlike DISCOVERY): a trade entered near the end
+of CONFIRMATION cannot resolve without reading sealed bars, so it is dropped
+rather than resolved on data research may not see.
+
+**PASS RULE (both conditions, on ALL THREE tickers):**
+1. `ex_best` > 0, and
+2. `net_all` strictly above the count-matched placebo's 99th percentile.
+
+p99 rather than p95 because 5 rules were selected: a Bonferroni-style
+correction for having taken the best of a grid. 200 placebo seeds per rule
+per ticker, count-matched and painted with the same event convention.
+
+**Also run, on the identical window and threshold:** `INC_STRONG_BUY`, so
+the incumbent is measured against the same bar rather than being assumed to
+clear it. Its placebo is painted STRONG_BUY to match the 1.333x conviction
+target.
+
+**Gauntlet, for survivors only:** 4y/5-fold and 5y/4-fold over the full
+non-lockbox window, requiring `ex_best` > 0 on all three tickers.
+
+**Pre-declared expectation:** all 5 had NEGATIVE minimum `ex_best` on
+DISCOVERY, so the honest prior is that none passes. Recording that here so
+a null result cannot later be dressed up as a surprise.
+
+#### Result of #162 — recorded 2026-08-27
+
+Scored ONCE on CONFIRMATION 2023-09-16 -> 2026-02-26 (893 days), 4 folds, 2+2bps per side, 4h feed sealed at the lockbox boundary. 200 placebo seeds per row per ticker.
+
+| row | ticker | n | win% | net_all | ex_best | placebo p99 | pctile | ex_best>0 | net>p99 |
+|-----|--------|---|------|---------|---------|-------------|--------|-----------|---------|
+| `donchian10+none` | BTC | 104 | 35.6 | +0.023 | -0.244 | +0.474 | 31.5 | N | N |
+| `obv_break20+none` | BTC | 136 | 41.9 | +0.213 | +0.154 | +0.395 | 77.5 | Y | N |
+| `roc10_zero+none` | BTC | 69 | 44.9 | +0.304 | +0.112 | +0.528 | 86.0 | Y | N |
+| `nr7+none` | BTC | 143 | 35.0 | +0.000 | -0.031 | +0.379 | 14.5 | N | N |
+| `rsi7_cross50+none` | BTC | 75 | 54.7 | +0.598 | +0.458 | +0.540 | 99.0 | Y | Y |
+| `INC_STRONG_BUY` | BTC | 10 | 60.0 | +1.146 | - | +1.247 | 98.0 | N | N |
+| `donchian10+none` | ETH | 92 | 43.5 | +0.272 | +0.108 | +0.513 | 80.5 | Y | N |
+| `obv_break20+none` | ETH | 108 | 37.0 | +0.085 | -0.049 | +0.491 | 37.5 | N | N |
+| `roc10_zero+none` | ETH | 65 | 41.5 | +0.213 | +0.167 | +0.583 | 71.5 | Y | N |
+| `nr7+none` | ETH | 141 | 34.0 | -0.013 | -0.106 | +0.408 | 9.5 | N | N |
+| `rsi7_cross50+none` | ETH | 77 | 33.8 | -0.021 | -0.193 | +0.490 | 20.0 | N | N |
+| `INC_STRONG_BUY` | ETH | 5 | 60.0 | +1.160 | - | +1.413 | 97.0 | N | N |
+| `donchian10+none` | SOL | 104 | 28.8 | -0.157 | -0.220 | +0.283 | 10.0 | N | N |
+| `obv_break20+none` | SOL | 133 | 36.1 | +0.060 | -0.070 | +0.294 | 66.5 | N | N |
+| `roc10_zero+none` | SOL | 59 | 33.9 | -0.007 | -0.205 | +0.459 | 43.0 | N | N |
+| `nr7+none` | SOL | 147 | 31.3 | -0.085 | -0.157 | +0.300 | 17.5 | N | N |
+| `rsi7_cross50+none` | SOL | 71 | 52.1 | +0.539 | +0.504 | +0.394 | 99.5 | Y | Y |
+| `INC_STRONG_BUY` | SOL | 0 | nan | - | - | +2.652 | - | N | N |
+
+**VERDICTS — all six FAIL. Nothing survives to the gauntlet.**
+
+| row | verdict | why |
+|-----|---------|-----|
+| `donchian10+none` | **FAIL** | ex_best negative on BTC (-0.244) and SOL (-0.220); net_all below p99 on all three. |
+| `obv_break20+none` | **FAIL** | ex_best positive on BTC only (+0.154); negative on ETH and SOL; net_all below p99 on all three. |
+| `roc10_zero+none` | **FAIL** | ex_best positive on BTC/ETH but negative on SOL (-0.205); net_all below p99 on all three. |
+| `nr7+none` | **FAIL** | ex_best negative on all three; net_all ~0 or negative; percentiles 9.5-17.5. |
+| `rsi7_cross50+none` | **FAIL** | THE NEAR-MISS. Passes BOTH conditions on BTC (net +0.598 > p99 +0.540, ex_best +0.458) and SOL (net +0.539 > p99 +0.394, ex_best +0.504), but fails ETH outright: ex_best -0.193, net -0.021, 20th percentile. Registered rule admits no partial credit. |
+| `INC_STRONG_BUY` | **FAIL** | Cannot meet condition 1 anywhere: 0 counted folds on all three tickers, so ex_best is undefined, not positive. Condition 2 also missed - BTC 98.0th pctile (net +1.146 vs p99 +1.247), ETH 97.0th (+1.160 vs +1.413). SOL produced ZERO trades: 2 STRONG_BUY days, no consecutive pair, so confirm_days=2 never fires. |
+
+**Gauntlet (4y/5-fold, 5y/4-fold): NOT RUN — no survivors.**
+
+**Recorded findings.**
+
+1. The DISCOVERY selection carried no signal forward. All 5 rules had negative minimum `ex_best` on DISCOVERY, and none met the CONFIRMATION bar. This is the pre-declared expected outcome (#162), not a surprise.
+
+2. `rsi7_cross50+none` cleared both conditions on 2 of 3 tickers and is recorded here IN FULL precisely because it is the tempting one. Its ETH leg is not marginal (20th percentile, ex_best -0.193), so this is a genuine cross-ticker failure, not noise at the boundary. Under research rule 4 it does not get a second look with a changed threshold, a dropped ticker, or a different window.
+
+3. The incumbent's STRONG_BUY tier does not clear the bar it is being used to judge new rules against, on the same window. It is too rare to evaluate: 10, 5 and 0 trades over 2.4 years, never reaching 3 counted folds on any ticker. On SOL it placed no trade at all. A tier that cannot be measured cannot be said to work.
+
+4. Both incumbent legs that DID trade sit at the 97th-98th percentile of their count-matched placebo - high, but below the p99 bar the 5 rules were held to, and on 10 and 5 trades respectively.
+
+#### Correction to the DISCOVERY baseline table (recorded, not silently edited)
+
+The `ALWAYS_LONG` rows above (n=1087) and the placebo percentiles beside
+them were computed before two defects in `research/harness.py` were found.
+The original numbers are LEFT IN PLACE above; these are the corrected ones.
+
+1. **Non-comparable baseline.** `ALWAYS_LONG` was scored over the resampled
+   daily frame's full span (2020-09-21 ->, 2.98y) while `INC_*` and the
+   placebo only spanned merged's warmed-up range (2021-10-24 ->, 1.89y). The
+   drift baseline covered 13 months of the 2020-21 run-up the incumbent
+   never saw. Corrected by clipping all rows to the shared span.
+2. **Borrowed percentile.** Only `INC_STRONG_BUY` ever had a percentile;
+   `INC_BUY_ALL` and `ALWAYS_LONG` displayed a `placebo_p95` drawn for a
+   different trade count AND a different conviction geometry.
+
+Corrected DISCOVERY reference rows (each with its OWN count-matched placebo,
+300 seeds; `INC_BUY_ALL`'s placebo painted with the incumbent's actual
+STRONG_BUY/BUY mix so average R:R matches):
+
+| ticker | row | n | win% | net_all | ex_best | placebo p95 | pctile |
+|--------|-----|---|------|---------|---------|-------------|--------|
+| BTC | INC_STRONG_BUY | 8 | 100.0 | +2.622 | - | +0.627 | 100.0 |
+| BTC | INC_BUY_ALL | 58 | 39.7 | +0.237 | +0.207 | +0.013 | 100.0 |
+| BTC | ALWAYS_LONG | 689 | 29.0 | -0.148 | -0.182 | - | n/a |
+| ETH | INC_STRONG_BUY | 3 | 33.3 | +0.167 | - | +0.824 | 75.0 |
+| ETH | INC_BUY_ALL | 59 | 28.8 | -0.175 | -0.395 | +0.031 | 47.7 |
+| ETH | ALWAYS_LONG | 689 | 29.0 | -0.159 | -0.184 | - | n/a |
+| SOL | INC_STRONG_BUY | 1 | 100.0 | +2.644 | - | +0.912 | 99.7 |
+| SOL | INC_BUY_ALL | 59 | 27.1 | -0.201 | -0.438 | +0.099 | 21.0 |
+| SOL | ALWAYS_LONG | 689 | 31.2 | -0.078 | -0.103 | - | n/a |
+
+`ALWAYS_LONG` has NO percentile and one was not invented: its count is every
+eligible day, so exactly one count-matched draw exists (all of them) and it
+equals ALWAYS_LONG itself.
+
+**Clustering caveat, unchanged.** The STRONG_BUY percentiles rest on 2, 2
+and 1 independent episodes (8 trades on BTC resolve on 4 distinct exit
+bars; SOL's single trade on 1). The placebo scatters its draws and gets
+near-independent trades, so it is far lower-variance than the row it
+benchmarks - 100.0 and 99.7 are artifacts of that mismatch. `INC_BUY_ALL`
+does NOT have this problem (58 trades / 13 episodes / 47 distinct exit bars
+on BTC), so its percentiles are real ones.
+
+## Attribution - where does the expectancy come from?
+
+Produced by `research/attribution.py`. Nothing here decides a trade: every
+trade dissected was produced by `pipeline.evaluate_geometry_folds` through
+`research/harness.py`. The module only measures properties of those trades.
+
+**Scope.** `INC_STRONG_BUY` plus the top 3 DISCOVERY rules - nothing survived
+CONFIRMATION (#162), so the fallback applies. Window is the full non-lockbox
+span, DISCOVERY + CONFIRMATION (2020-09-21 -> 2026-02-26 for the resampled
+daily frame; 2021-10-24 -> 2026-02-26 for the incumbent's merged frame, which
+starts later). Pooled because `INC_STRONG_BUY` fires 8/3/1 times on DISCOVERY
+and 10/5/0 on CONFIRMATION - split any finer and there is nothing to
+attribute. The lockbox stays sealed in both the daily frames and the 4h feed.
+
+**Two notes on how to read the numbers.**
+
+- `best fold share` above 100% is not an error. It means the single best fold
+  contributes more R than the strategy made in total, i.e. the other three
+  folds are net NEGATIVE. 139% means: remove the best fold and you lose money.
+- MFE/MAE are in R. `pipeline` stores only favourable excursion as a fraction
+  of TARGET distance and no MAE at all, so MFE_R is rescaled by the R:R (2.0
+  for BUY, 2.667 for STRONG_BUY) and MAE is measured directly off the 4h bars
+  between pipeline's own entry and exit.
+
+### The headline: for the three rules, the edge IS mostly drift plus geometry
+
+Under this geometry a trade can only end three ways, and timeouts are ~0-1%.
+So gross expectancy is almost exactly `2 x P(target) - P(stop)` - a mechanical
+function of the hit rate. That makes the comparison below the whole story:
+
+| ticker | row | n | target% | stop% | net exp |
+|--------|-----|---|---------|-------|---------|
+| BTC | ALWAYS_LONG (drift baseline) | 1979 | 34.9 | 64.4 | +0.016 |
+| ETH | ALWAYS_LONG (drift baseline) | 1979 | 35.1 | 64.5 | +0.031 |
+| SOL | ALWAYS_LONG (drift baseline) | 1979 | 34.4 | 64.7 | +0.024 |
+| BTC | `donchian10+none` | 216 | 37.0 | 61.6 | +0.089 |
+| BTC | `obv_break20+none` | 246 | 37.4 | 62.2 | +0.088 |
+| BTC | `roc10_zero+none` | 167 | 38.9 | 60.5 | +0.133 |
+| ETH | `donchian10+none` | 226 | 37.6 | 62.4 | +0.101 |
+| ETH | `obv_break20+none` | 228 | 38.6 | 61.0 | +0.132 |
+| ETH | `roc10_zero+none` | 138 | 36.2 | 63.8 | +0.055 |
+| SOL | `donchian10+none` | 203 | 33.0 | 65.5 | -0.009 |
+| SOL | `obv_break20+none` | 304 | 39.8 | 59.9 | +0.180 |
+| SOL | `roc10_zero+none` | 147 | 35.4 | 63.3 | +0.065 |
+
+Being long every single day already hits target ~35% of the time and earns
++0.016 to +0.031R per trade. The three rules hit target 33-40% of the time.
+**The entire contribution of the signal is a 2-4 percentage point lift in hit
+rate** - everything else in their expectancy is the 2:1 payoff structure
+applied to a market that drifted up. On SOL, `donchian10+none` does not even
+manage that: 33.0% target vs the 34.4% you get from buying every day, which is
+why its expectancy (-0.009R) is BELOW the drift baseline (+0.024R).
+
+And the 2-4pp lift does not hold together across time:
+
+| row | ticker | total R | best fold R | best fold share | excess over drift |
+|-----|--------|---------|-------------|-----------------|-------------------|
+| `donchian10+none` | BTC | +19.3 | +18.0 | 93% | +0.073 |
+| `donchian10+none` | ETH | +22.9 | +18.2 | 80% | +0.070 |
+| `donchian10+none` | SOL | -1.8 | +10.1 | n/a (total R <= 0) | -0.033 |
+| `obv_break20+none` | BTC | +21.7 | +13.9 | 64% | +0.072 |
+| `obv_break20+none` | ETH | +30.1 | +17.8 | 59% | +0.101 |
+| `obv_break20+none` | SOL | +54.7 | +22.9 | 42% | +0.156 |
+| `roc10_zero+none` | BTC | +22.3 | +19.2 | 86% | +0.117 |
+| `roc10_zero+none` | ETH | +7.6 | +10.0 | 131% | +0.024 |
+| `roc10_zero+none` | SOL | +9.5 | +13.2 | 139% | +0.041 |
+
+`roc10_zero+none` on ETH (131%) and SOL (139%) makes money in one fold and
+loses it in the other three. `donchian10+none` on BTC takes 93% of its total R
+from a single fold. This is the same concentration that made `ex_best` negative
+on DISCOVERY, now visible as a share of profit rather than a summary statistic.
+
+### Regime and exit detail
+
+| row | ticker | exp above SMA200 | exp below SMA200 | vol lo / mid / hi |
+|-----|--------|------------------|------------------|-------------------|
+| `donchian10+none` | BTC | +0.070 (n=130) | +0.119 (n=86) | +0.218 / +0.084 / +0.003 |
+| `donchian10+none` | ETH | +0.148 (n=125) | +0.043 (n=101) | +0.324 / +0.028 / -0.006 |
+| `donchian10+none` | SOL | -0.025 (n=128) | +0.019 (n=75) | -0.097 / -0.079 / +0.148 |
+| `obv_break20+none` | BTC | +0.035 (n=157) | +0.181 (n=89) | +0.101 / +0.232 / -0.027 |
+| `obv_break20+none` | ETH | +0.041 (n=138) | +0.271 (n=90) | -0.011 / +0.131 / +0.290 |
+| `obv_break20+none` | SOL | +0.061 (n=179) | +0.350 (n=125) | +0.036 / +0.230 / +0.276 |
+| `roc10_zero+none` | BTC | +0.018 (n=83) | +0.247 (n=84) | +0.250 / +0.185 / -0.100 |
+| `roc10_zero+none` | ETH | -0.124 (n=66) | +0.219 (n=72) | -0.000 / -0.095 / +0.216 |
+| `roc10_zero+none` | SOL | +0.222 (n=58) | -0.038 (n=89) | -0.169 / +0.205 / +0.158 |
+
+**No consistent regime story.** `obv_break20+none` and `roc10_zero+none` do
+better BELOW the 200-day SMA on BTC and ETH (+0.181/+0.271, +0.247/+0.219) -
+the opposite of the trend-filter intuition - but `roc10_zero+none` flips to
+preferring ABOVE on SOL (+0.222 vs -0.038). The vol terciles disagree across
+tickers the same way: `donchian10+none` is best in LOW vol on BTC (+0.218) and
+ETH (+0.324) but best in HIGH vol on SOL (+0.148). Three tickers, three
+different stories, is what noise looks like.
+
+**The exit mix is almost identical everywhere** - ~37% target / ~62% stop /
+~0-1% timeout for every rule on every ticker. The shape of a winner and the
+shape of a loser are also stable: winners run to MFE ~2.4-2.5R while only
+giving back ~0.33-0.42R against them; losers reach only ~0.52-0.65R in favour
+before being stopped at ~1.4R. Stopped trades never got close to target. That
+uniformity is the signature of geometry doing the work, not selection.
+
+### Overlap with the incumbent
+
+| row | BTC | ETH | SOL |
+|-----|-----|-----|-----|
+| `donchian10+none` | 0.015 | 0.007 | 0.010 |
+| `obv_break20+none` | 0.025 | 0.029 | 0.028 |
+| `roc10_zero+none` | 0.074 | 0.072 | 0.051 |
+
+Jaccard similarity of signal days against the incumbent's BUY/STRONG_BUY days
+is 0.007-0.074 - essentially no overlap. **These rules are NOT relabellings of
+the incumbent.** They fire on genuinely different days. That is the one
+positive finding here: the grid explored new territory. It just did not find
+anything in it.
+
+### INC_STRONG_BUY - a different answer: not attributable
+
+| ticker | n | exp | ALWAYS_LONG | excess | target% | best fold share |
+|--------|---|-----|-------------|--------|---------|-----------------|
+| BTC | 18 | +1.802 | -0.017 | +1.819 | 78 | 40% |
+| ETH | 8 | +0.788 | +0.007 | +0.781 | 50 | 92% |
+| SOL | 1 | +2.644 | -0.031 | +2.675 | 100 | 100% |
+
+The incumbent's STRONG_BUY tier is **not** drift and **not** geometry. Drift on
+its window is ~0 (-0.017 / +0.007 / -0.031), so essentially all of its +1.802 /
++0.788 / +2.644 is excess. And it does not get there through the 2:1 mechanism
+the rules rely on: it hits target 78% of the time on BTC and 50% on ETH,
+against a ~35% base rate. When it loses, it loses cleanly - stopped BTC trades
+reached only 0.10R in favour before dying.
+
+**But this cannot be called an edge, because there is not enough of it.** n =
+18, 8 and 1 over five and a half years. The BTC trades are 2 clustered
+episodes resolving on 4 distinct exit bars (recorded under the baseline
+correction above), so 18 trades are nowhere near 18 independent observations.
+ETH takes 92% of its R from one fold; SOL's entire record is a single trade.
+`ex_best` is undefined on all three tickers because no ticker reaches 3 folds
+with 10+ trades.
+
+The Jaccard figures for this row (0.098 / 0.059 / 0.022) are degenerate and
+should not be read as overlap: STRONG_BUY is a strict SUBSET of BUY, so the
+ratio just restates how rare the tier is.
+
+**Plain answer: the incumbent's STRONG_BUY expectancy comes from a genuinely
+high target-hit rate on a handful of clustered trades. It is not explained
+away by drift or geometry - and it is also not established. Too rare to
+attribute is the finding, not a verdict either way.**
+
+---
+
+# PROGRAM: EVENT RATE (basket)
+
+Registered BEFORE any of it ran. The previous program (#42-#162) tested
+151 pre-registered price-only rules on 3 tickers; none replicated, and
+the incumbent's STRONG_BUY tier fired ~4x/year so `ex_best` was never
+even defined. This program moves on ONE axis: event rate, by widening
+the universe from 3 tickers to 86.
+
+## Setup changes (done before registration, recorded here)
+
+1. **Python TLS fixed, verification never disabled.** This machine runs a
+   TLS-intercepting filter driver whose root is in the Windows store but
+   not in `certifi`. `research/tls.py` routes verification through the OS
+   trust store. TWO transports needed fixing: `truststore` for Python's
+   `ssl` (requests), and `CURL_CA_BUNDLE` for `curl_cffi` (yfinance, which
+   was silently returning EMPTY dataframes rather than raising). There is
+   no `verify=False` anywhere in the repo.
+2. **`data/` re-exported at full depth.** N raised 12,600 -> 20,000 (the
+   paginator ceiling) and the daily side from `period="5y"` to `"max"`.
+   BTC/ETH: 15,177 4h bars, 6.93y (was 5.93y); daily 2,502 rows, 6.85y
+   (was 1,762 / 4.82y). SOL: 13,014 bars, 5.94y. MANIFEST now records
+   region, REST base, spans and provenance. Committed separately.
+3. **Three guards added in `research/`, never in `pipeline.py`** (rule 1):
+   `fetch_macro` memoized so ^VIX/DXY are pulled ONCE per run instead of
+   once per ticker (172 redundant downloads across 86 tickers); tickers
+   with <200 daily rows SKIPPED and REPORTED, never truncated, because
+   `add_all_indicators` needs 200 for SMA200; and a per-ticker overlap
+   assertion on the `how="inner"` join at `pipeline.py:931`, which
+   otherwise truncates to the shorter feed in silence.
+
+## !! WINDOW CHANGE — #42-#162 are no longer directly comparable
+
+Windows are derived from the daily frame's span, so re-exporting at full
+depth MOVED them. BTC/ETH DISCOVERY now cuts at **2023-04-06**, not
+2023-09-16. Every result recorded above this line was produced on the old
+windows. They are not being re-run and they are not being deleted; they
+simply describe a different split and must not be compared line-for-line
+against anything below.
+
+## Definitions, fixed
+
+- **SEALED** = the whole usable span, i.e. everything EXCEPT the last 6
+  months. The last 6 months are the lockbox and are never read by any
+  research script (rule 2). *(The prompt's wording admitted two readings;
+  this is the one taken, because H-basket-C scores ON SEALED and so SEALED
+  must be readable. Recorded here so the choice is on the record.)*
+- **DISCOVERY / CONFIRMATION** = `harness.make_windows`'s existing time
+  split of that usable span (first 55% / remaining 45%).
+- **COMMON BASKET WINDOWS.** `harness.make_windows` anchors on each
+  frame's OWN first date, which after the refresh already makes SOL's cut
+  (2023-09-15) differ from BTC/ETH's (2023-04-06). Across 86 tickers with
+  86 listing dates that would give 86 different DISCOVERY/CONFIRMATION
+  boundaries and pooling would be incoherent. So the basket uses ONE set
+  of windows for every ticker, anchored on **BTC** (deepest feed, market
+  reference). A ticker simply contributes no trades before it listed.
+
+## Universe
+
+Binance.US spot USDT pairs with >=4y of 4h history AND a Yahoo listing
+with >=4y (the incumbent's daily frame comes from Yahoo and is inner-
+joined), minus 6 excluded as degenerate for a trend/breakout model:
+USDC (stablecoin), PAXG (gold), and the fan tokens LAZIO, PORTO, SANTOS,
+ALPINE. **Final count: 86.**
+
+```
+  BTC LTC IMX BCH BNB ETH XRP ADA
+  BAT ETC XLM ZRX DOGE NEO QTUM STORJ
+  ZEN MANA ZEC LINK ENJ NMR REQ TRX
+  RLC BNT SYS LSK FIL WAXP ONE THETA
+  ONT SNX VET VTHO FLUX COMP LPT FET
+  ATOM TFUEL CELR OCEAN COTI ALGO CHZ BAND
+  UNI KSM OGN SOL CTSI CELO GRT SLP
+  AVAX YFI SHIB CRV DOT SUSHI EGLD ACH
+  GALA AAVE APE NEAR AUDIO AXS ROSE API3
+  SKL 1INCH LDO FLOW RAD ILV TLM ICP
+  KNC ENS BICO VOXEL T OP
+```
+
+## H-basket-A (#163) — MEASURABILITY. *This is the headline number.*
+
+Run the incumbent **UNCHANGED** -- same thresholds, same `LIVE_GEOMETRY`,
+same 2+2bps costs -- on every ticker in the universe. Per ticker report
+STRONG_BUY trades, episodes (trades separated by more than the 15-day max
+hold), and whether `ex_best` is DEFINED (>=3 folds with >=10 trades).
+
+**Reported outcome:** how many of the 86 tickers reach a defined
+`ex_best`. No pass/fail threshold -- this measures whether the incumbent's
+STRONG_BUY tier is assessable at all once event rate is raised. It is a
+measurement, not a hypothesis about edge.
+
+## H-basket-B (#164) — EDGE
+
+Pool every ticker's STRONG_BUY trades into ONE series, on DISCOVERY and
+on CONFIRMATION separately. Report n, episodes, win%, `net_all`,
+`ex_best` (folds cut by TIME, pooled across tickers), `total_R`,
+`maxDD_R`. Count-matched placebo, **300 seeds**, drawing from the same
+ticker mix and the same dates-per-ticker eligibility as the observed set.
+
+**REGISTERED PASS DIRECTION:** `ex_best` > 0 on BOTH windows AND `net_all`
+above the placebo **p95** on BOTH windows. Anything less is a FAIL,
+including "almost". Repeated identically for **INC_BUY_ALL** pooled.
+
+## H-basket-C (#165) — REPLICATION
+
+The universe is split into 4 random ticker quartiles with a fixed seed,
+**registered here before any scoring**. Report pooled STRONG_BUY
+`net_all` and `ex_best` per quartile on SEALED.
+
+**REGISTERED PASS DIRECTION:** positive in ALL FOUR quartiles. This
+replaces "all three tickers" as this project's replication test -- four
+disjoint ticker sets is a stronger claim than three correlated majors.
+
+Seed = `20260827`, `numpy.random.default_rng(seed).permutation(n)`, 
+assigned round-robin `order[k::4]`.
+
+- **Q1** (22): AAVE ALGO AXS BICO BTC CELO CELR FIL ICP ILV IMX KNC LINK NEO ONT RLC SNX STORJ SUSHI T XRP YFI
+- **Q2** (22): 1INCH ATOM AVAX BAND BAT BNB CHZ COTI CTSI DOGE EGLD ENJ ETC ETH LPT OCEAN QTUM SKL SYS VTHO ZEC ZRX
+- **Q3** (21): ADA BCH BNT ENS FET FLUX LDO LSK MANA NEAR ONE RAD ROSE SLP SOL TFUEL THETA TRX VOXEL WAXP XLM
+- **Q4** (21): ACH APE API3 AUDIO COMP CRV DOT FLOW GALA GRT KSM LTC NMR OGN OP REQ SHIB TLM UNI VET ZEN
+
+## H-tier-curve (#166) — DESCRIPTIVE ONLY, SELECTS NOTHING
+
+Pooled n, win%, `net_all`, `ex_best` at `combined_final_score` >= 75, 70,
+65, 60 on DISCOVERY. **A curve to look at.** No threshold may be chosen
+from it, no rule may be promoted on it, and any future hypothesis that
+uses a score cut must be registered separately with its own number and
+tested on data this curve did not touch. Recorded so that a later
+"we always knew 65 was the level" is checkable against what was
+actually seen and when.
+
+## Operating rules for this program
+
+Per-ticker daily bars and the 4h ATR are built ONCE per ticker and reused
+(rule 8). No placebo anywhere except H-basket-B. Every result, including
+every failure and every skipped ticker, is recorded here. Research
+commits stay separate from signal-check commits (rule 6).
+
+## Result of H-basket-A (#163) — recorded 2026-08-27
+
+Incumbent UNCHANGED (`LIVE_GEOMETRY`, same thresholds, 2+2bps per side),
+STRONG_BUY tier, SEALED window **2019-09-24 -> 2026-02-26**. Windows common
+to all tickers, anchored on BTC. Lockbox 2026-02-26 -> 2026-08-26 never read;
+4h feed sealed at the boundary.
+
+### Export outcome: 82 of 86 tickers frozen
+
+| symbol | outcome | detail |
+|--------|---------|--------|
+| COMPUSDT | **excluded** | run_backtest raised: no overlapping dates between squeeze and technical history |
+| SHIBUSDT | **excluded** | run_backtest raised: no overlapping dates |
+| IMXUSDT | **excluded** | thin-merged guard: 59 rows after the inner join |
+| GRTUSDT | **excluded** | thin-merged guard: 44 rows after the inner join |
+
+The overlap assertion (guard 3) flagged three more that were KEPT, since
+excluding a ticker after seeing its data would be rule-4 curation:
+
+- `ONEUSDT` — merged 712 rows vs a raw date intersection of 2,192 (**32.5%**).
+  A 1,480-day silent truncation by the `how="inner"` join at pipeline.py:931.
+- `UNIUSDT` — 1,636 of 2,006 (81.6%); `APEUSDT` — 1,291 of 1,624 (79.5%).
+  Both roughly consistent with indicator warm-up plus gaps.
+
+The overlap fraction compares the merged frame to the RAW date intersection,
+which ignores ~200 rows of indicator warm-up and any dropna, so it is an
+upper bound. ONE at 32.5% is far beyond that; UNI/APE around 80% are not.
+
+### HEADLINE: 0 of 82 tickers reach a defined `ex_best`
+
+`ex_best` needs >=3 folds carrying >=10 trades each, i.e. >=30 trades placed
+in the right shape across 6.4 years. **No ticker in the basket reaches it.**
+The densest, BICO, fires 32 STRONG_BUY trades — which spread over 4 folds is
+8 per fold, under the bar. Raising event rate from 3 tickers to 82 moved the
+count from 0 of 3 to **0 of 82**.
+
+- tickers with 0 STRONG_BUY trades: **3** (ENJ, ONE, THETA)
+- median trades per ticker: **6**
+- total STRONG_BUY trades across the basket: **645**
+- total independent episodes (>15d apart): **306**
+- best single ticker: BICO, 32 trades / 8 episodes — still 0 counted folds
+
+The tier is not rare because BTC is unusual. It is rare **per ticker,
+everywhere**, and widening the universe does not fix that: it produces many
+thin per-ticker records rather than one thick one. Pooling (H-basket-B) is
+the only route to a defined `ex_best`, and pooling is exactly what breaks
+the per-ticker independence `ex_best` assumes.
+
+### DEFECT FOUND — 2-decimal rounding corrupts sub-dollar tickers
+
+**This program surfaced a latent defect in the incumbent.**
+`signal_engines.compute_exit_levels` returns `entry`, `target` and `stop`
+**rounded to 2 decimals** (signal_engines.py:495-497). At BTC's $78,000 that
+is immaterial. For a token trading at $0.00145, entry, target and stop all
+round to `0.00`, and then:
+
+- `stop_dist = abs(entry - stop) = 0`, so `resolve_on_4h` returns
+  `pnl_r = nan` (pipeline.py:1586, the `if stop_dist else nan` branch);
+- `hi >= target` is trivially true against a target of `0.00`, so the trade
+  is labelled **`target`** on its first bar — a manufactured 100% win rate;
+- `stats_from_trades` averages with `.mean()`, which SKIPS NaN. So `win%`
+  is computed over ALL trades while `net_all` is computed over only the
+  non-NaN ones. **The two columns describe different trade sets.**
+
+That is why the raw table contains impossible rows: SYS at 75% win and
+-1.003R, RAD at 84.2% and -1.000R, and SLP/VTHO/NMR at 100% win with a NaN
+expectancy.
+
+Measured contamination on SEALED:
+
+- **185 of 645 STRONG_BUY trades (28.7%) carry `pnl_r = NaN`**
+- **35 of 82 tickers** have at least one such trade
+- 29 of the 45 tickers under $1 median close are affected — and so are 6
+  tickers ABOVE $1 (e.g. RAD, median $1.25, 84% of its trades NaN). The
+  trigger is not price alone: it is `1.5 x ATR` falling under half a cent in
+  absolute terms, so low volatility reaches it at higher prices too.
+
+**The headline survives this.** On the 44 clean tickers (no NaN trades,
+224 trades), the answer is still **0 of 44** with a defined `ex_best`. Trade
+COUNTS are unaffected by the rounding; only the P&L columns are.
+
+**Consequence for H-basket-B and H-basket-C: they must not run yet.** Both
+pool `net_all` and `ex_best` across tickers, and 28.7% of the pooled trades
+would contribute a NaN that `.mean()` silently drops — pooling a biased
+subset while reporting a win rate over the full set. The fix belongs in
+`signal_engines.compute_exit_levels`, a core file, so under research rule 1
+it is a separate decision and a separate commit, not something research
+changes on its own. It also alters live behaviour for any sub-dollar asset.
+
+### Per-ticker table (SEALED, STRONG_BUY)
+
+`net_all` / `win%` marked * are contaminated by the rounding defect and
+must not be read as results. `ex_best` is `—` for every ticker: none
+reached 3 counted folds.
+
+| ticker | events | trades | episodes | win% | net_all | ex_best | folds+/counted |
+|--------|--------|--------|----------|------|---------|---------|----------------|
+| BICO | 43 | 32 | 8 | 62.5 | -1.004 | — | 0/1 |
+| OGN | 51 | 32 | 11 | 56.2 | -0.801 | — | 0/2 |
+| VOXEL | 44 | 29 | 9 | 69.0 | -0.161 | — | 0/1 |
+| ILV | 36 | 23 | 9 | 21.7 | -0.595 | — | 0/1 |
+| T | 38 | 22 | 8 | 4.5 | -1.000 | — | 0/1 |
+| SYS | 30 | 20 | 5 | 75.0 | -1.003 | — | 0/1 |
+| RAD | 27 | 19 | 2 | 84.2 | -1.000 | — | 0/1 |
+| BTC | 30 | 19 | 8 | 73.7 | +1.653 | — | 1/1 |
+| OCEAN | 26 | 17 | 4 | 47.1 | -0.371 | — | 0/1 |
+| TLM | 26 | 16 | 7 | 56.2 | -1.000 | — | 0/1 |
+| LSK | 25 | 15 | 7 | 26.7 | -1.004 | — | 0/0 |
+| REQ | 23 | 14 | 3 | 57.1 | -1.000 | — | 0/0 |
+| API3 | 23 | 13 | 6 | 53.8 | -0.168 | — | 0/0 |
+| BNT | 24 | 13 | 7 | 46.2 | -0.419 | — | 0/0 |
+| FLOW | 22 | 12 | 5 | 58.3 | -0.351 | — | 0/0 |
+| RLC | 23 | 12 | 6 | 33.3 | -1.010 | — | 0/1 |
+| FLUX | 19 | 12 | 5 | 16.7 | -0.342 | — | 0/1 |
+| COTI | 23 | 11 | 6 | 36.4 | -1.002 | — | 0/0 |
+| WAXP | 21 | 11 | 7 | 45.5 | -0.501 | — | 0/0 |
+| ZEC | 16 | 10 | 4 | 0.0 | -1.024 | — | 0/0 |
+| SKL | 21 | 10 | 7 | 10.0 | -1.000 | — | 0/0 |
+| DOGE | 17 | 10 | 4 | 90.0 | +0.736 | — | 0/0 |
+| KSM | 19 | 10 | 4 | 10.0 | -0.692 | — | 0/0 |
+| CELR | 21 | 9 | 5 | 77.8 | -0.779 | — | 0/0 |
+| KNC | 14 | 9 | 5 | 44.4 | -0.004 | — | 0/0 |
+| ETH | 21 | 9 | 6 | 44.4 | +0.587 | — | 0/0 |
+| BNB | 21 | 9 | 5 | 66.7 | +1.390 | — | 0/0 |
+| XLM | 18 | 8 | 5 | 25.0 | -0.389 | — | 0/0 |
+| YFI | 14 | 8 | 5 | 25.0 | -0.131 | — | 0/0 |
+| TFUEL | 20 | 8 | 6 | 0.0 | -1.001 | — | 0/0 |
+| LINK | 14 | 8 | 5 | 12.5 | -0.577 | — | 0/0 |
+| ADA | 15 | 7 | 5 | 28.6 | -0.435 | — | 0/0 |
+| BAT | 15 | 7 | 3 | 28.6 | -1.000 | — | 0/0 |
+| AXS | 19 | 7 | 5 | 42.9 | +0.539 | — | 0/0 |
+| NEO | 16 | 7 | 2 | 42.9 | +0.516 | — | 0/0 |
+| APE | 12 | 7 | 4 | 42.9 | +0.658 | — | 0/0 |
+| XRP | 15 | 7 | 4 | 42.9 | +0.414 | — | 0/0 |
+| VET | 20 | 6 | 5 | 50.0 | -0.930 | — | 0/0 |
+| QTUM | 14 | 6 | 4 | 50.0 | +0.469 | — | 0/0 |
+| FIL | 13 | 6 | 4 | 16.7 | -0.432 | — | 0/0 |
+| CTSI | 12 | 6 | 4 | 66.7 | -1.000 | — | 0/0 |
+| ATOM | 14 | 6 | 3 | 83.3 | +2.030 | — | 0/0 |
+| ALGO | 10 | 6 | 3 | 33.3 | -0.342 | — | 0/0 |
+| SLP | 12 | 6 | 4 | 100.0 | NaN | — | 0/0 |
+| ZEN | 9 | 5 | 2 | 0.0 | -1.022 | — | 0/0 |
+| CHZ | 12 | 5 | 4 | 0.0 | -1.000 | — | 0/0 |
+| ACH | 7 | 5 | 2 | 0.0 | -1.000 | — | 0/0 |
+| BAND | 17 | 5 | 3 | 20.0 | -0.350 | — | 0/0 |
+| 1INCH | 9 | 5 | 2 | 80.0 | +1.576 | — | 0/0 |
+| VTHO | 15 | 5 | 3 | 100.0 | NaN | — | 0/0 |
+| EGLD | 14 | 5 | 4 | 40.0 | +0.431 | — | 0/0 |
+| MANA | 10 | 5 | 1 | 40.0 | +0.267 | — | 0/0 |
+| ICP | 18 | 5 | 3 | 40.0 | +0.434 | — | 0/0 |
+| GALA | 13 | 5 | 3 | 40.0 | -1.000 | — | 0/0 |
+| ONT | 14 | 5 | 3 | 80.0 | +0.983 | — | 0/0 |
+| ROSE | 10 | 4 | 3 | 50.0 | -1.000 | — | 0/0 |
+| LTC | 12 | 4 | 3 | 75.0 | +1.726 | — | 0/0 |
+| BCH | 13 | 4 | 3 | 0.0 | -1.054 | — | 0/0 |
+| ENS | 8 | 4 | 2 | 25.0 | -0.154 | — | 0/0 |
+| TRX | 4 | 3 | 1 | 100.0 | -0.006 | — | 0/0 |
+| AUDIO | 10 | 3 | 3 | 33.3 | -1.000 | — | 0/0 |
+| SUSHI | 10 | 3 | 2 | 66.7 | -1.043 | — | 0/0 |
+| DOT | 7 | 3 | 2 | 33.3 | +0.061 | — | 0/0 |
+| ETC | 9 | 3 | 1 | 100.0 | +2.644 | — | 0/0 |
+| OP | 8 | 3 | 2 | 0.0 | -1.025 | — | 0/0 |
+| NEAR | 7 | 3 | 2 | 33.3 | +0.308 | — | 0/0 |
+| FET | 8 | 2 | 2 | 0.0 | -1.022 | — | 0/0 |
+| AVAX | 8 | 2 | 2 | 50.0 | +0.790 | — | 0/0 |
+| STORJ | 5 | 2 | 2 | 0.0 | -1.013 | — | 0/0 |
+| UNI | 7 | 2 | 2 | 100.0 | +2.697 | — | 0/0 |
+| LDO | 7 | 2 | 1 | 0.0 | -1.000 | — | 0/0 |
+| CELO | 7 | 2 | 2 | 0.0 | -1.033 | — | 0/0 |
+| AAVE | 8 | 1 | 1 | 100.0 | +2.644 | — | 0/0 |
+| LPT | 3 | 1 | 1 | 100.0 | +2.625 | — | 0/0 |
+| ZRX | 5 | 1 | 1 | 100.0 | +3.314 | — | 0/0 |
+| NMR | 7 | 1 | 1 | 100.0 | NaN | — | 0/0 |
+| CRV | 6 | 1 | 1 | 100.0 | +1.933 | — | 0/0 |
+| SNX | 5 | 1 | 1 | 100.0 | +2.959 | — | 0/0 |
+| SOL | 6 | 1 | 1 | 100.0 | +2.644 | — | 0/0 |
+| ENJ | 3 | 0 | 0 | — | — | — | 0/0 |
+| ONE | 1 | 0 | 0 | — | — | — | 0/0 |
+| THETA | 1 | 0 | 0 | — | — | — | 0/0 |
+
+Full machine-readable table: `research/basket_A_strong_buy.csv`.
+Basket frames: `data/basket/` (19MB, gitignored; MANIFEST records every
+ticker's status, spans and overlap fraction).
+
+## Exit-level rounding defect — FIXED, and H-basket-A re-run
+
+Commit `ffa3191`, tests first. Recorded here because the H-basket-A
+numbers above were produced with the defect present.
+
+### What was wrong
+
+`compute_exit_levels` rounded entry/target/stop to a FIXED 2 decimals.
+For an asset at $0.00145 all three collapse onto `0.00`, so `stop_dist`
+was 0, `resolve_on_4h` returned NaN `pnl_r`, `high >= target` was
+trivially true against a target of 0.00 (a manufactured 100% win rate),
+and `stats_from_trades` averaged with `.mean()`, which SKIPS NaN --
+reporting a win rate over every trade and an expectancy over only the
+survivors. **The live bot has been publishing with this**; BTC/ETH/SOL
+were never affected, which is why 5.5 years of reporting never caught it.
+
+### The fix
+
+- `_price_round`: 8 SIGNIFICANT FIGURES relative to the entry price, so
+  the geometry is identical at $78,000 and $0.00145. All three levels
+  round against the same reference, preserving their spacing.
+- `compute_exit_levels` never returns a zero stop distance (falls back to
+  unrounded, else `applicable=False`), and now returns `stop_dist`.
+- `resolve_on_4h` RAISES on zero stop distance instead of returning NaN.
+- `stats_from_trades` RAISES on any NaN P&L instead of averaging around it.
+- 8 new tests (`TestExitLevelPrecision`), 6 of which failed on the old
+  code. Suite: **381 passed, 2 skipped**.
+
+### Verification after the fix
+
+| check | result |
+|-------|--------|
+| trades with NaN `pnl_r` | **0** (was 185 of 645, 28.7%) |
+| 100%-win rows with NaN expectancy | **0** (was 3: SLP, VTHO, NMR) |
+| rows above the 2.667R theoretical max | **0** (ZRX previously showed +3.314R) |
+| tickers whose `net_all` changed | 74 of 82 |
+| tickers unchanged | 8, including BTC and ETH bit-identical |
+
+| ticker | n | win% before | win% after | net_all before | net_all after |
+|--------|---|-------------|------------|----------------|---------------|
+| BTC | 19 | 73.7 | 73.7 | +1.653 | +1.653 |
+| ETH | 9 | 44.4 | 44.4 | +0.587 | +0.587 |
+| BICO | 32 | 62.5 | 65.6 | -1.004 | -3.250 |
+| SYS | 20 | 75.0 | 80.0 | -1.003 | -5.671 |
+| RAD | 19 | 84.2 | 84.2 | -1.000 | -9.323 |
+| SLP | 6 | 100.0 | 33.3 | NaN | +0.165 |
+| VTHO | 5 | 100.0 | 20.0 | NaN | -0.301 |
+
+**The H-basket-A headline is unchanged: 0 of 82 tickers reach a defined
+`ex_best`**, on 645 trades and 306 episodes — identical counts, because
+the defect corrupted P&L columns, never trade selection.
+
+### NEW FINDING — the fix exposed degenerate ATR geometry on illiquid pairs
+
+Removing the NaN mask revealed something underneath. BICO went -1.004 ->
+-3.250R, SYS -1.003 -> -5.671R, RAD -1.000 -> **-9.323R**. A stop is -1R,
+so a mean of -9.3R looks impossible. It is not, and the arithmetic is now
+correct: `pnl_r` is properly bounded (-1.0 to +2.7). The magnitude comes
+entirely from `cost_r = 8bps / stop_fraction`. When the stop sits 0.025%
+from entry, 8bps of round-trip cost IS 3.2R of risk.
+
+Why the stops are that tight: **these pairs barely trade on Binance.US, so
+their 4h bars are flat and the ATR collapses.**
+
+| | flat 4h bars (High==Low) | median stop | median `cost_r` |
+|---|---|---|---|
+| BTC | 0.0% | 1.776% | 0.045R |
+| ETH | 0.0% | 2.003% | 0.040R |
+| SOL | 0.4% | 2.116% | 0.038R |
+| RAD | **73.3%** | **0.025%** | **3.24R** |
+| BICO | 70.9% | 0.050% | 1.61R |
+| LSK | **77.2%** | 0.070% | 1.14R |
+
+Across the 79 tickers that placed a trade: median flat-bar share **28.5%**
+(worst 79.1%); **46 tickers above 20%**, **20 above 50%**; **18 tickers**
+have a median `cost_r` above 0.1R and **9 above 1.0R**, against ~0.04R for
+the majors. Per-ticker figures in `research/basket_liquidity_health.csv`.
+
+**This is a real economic result, not an artifact:** on an asset whose ATR
+is a rounding error, an ATR-derived stop is not a risk unit, and the trade
+is uneconomic before it starts. But it means a pooled `net_all` over the
+basket would be dominated by cost artifacts from pairs that cannot
+actually be traded at this geometry.
+
+**Open decision before H-basket-B/C.** A liquidity precondition (e.g. a
+maximum flat-bar share, or a minimum stop fraction) would be the honest
+way to keep the pool tradeable — but the universe was registered at 86
+BEFORE any of this was seen, so narrowing it now is a NEW hypothesis
+needing its own number and its own pre-registration (research rule 4). It
+must not be applied retroactively to #163-#166 as though it had always
+been there. Recorded, not decided.
