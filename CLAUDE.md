@@ -9,7 +9,7 @@ Repo is PUBLIC: `bembem718ai-stack/Crypto-Model`.
 $py = "C:\Users\gubby\AppData\Local\Programs\Python\Python312\python.exe"
 $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 
-& $py -m pytest test_signals.py -q        # 404 passed + 1 skipped, must stay green
+& $py -m pytest test_signals.py -q        # 413 passed + 1 skipped, must stay green
 & $py audit.py --offline                  # structural health, seconds, no network
 & $py audit.py BTC ETH SOL --years 4      # full audit, 10-40 min
 & $py pipeline.py run BTC                 # live signal — COSTS 1 ADANOS REQUEST
@@ -31,7 +31,7 @@ Four core files plus the audit, and two directories that support research:
   classification, backtests, position sizing, robustness validation.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 404 tests covering all decision logic.
+- `test_signals.py` — 413 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
 - `data/` — the frozen offline dataset: ~5y of Binance.US 4h bars plus the
   incumbent's daily frame per ticker (BTC/ETH/SOL), with `MANIFEST.json`
@@ -167,9 +167,23 @@ Research is kept separate from the live system, and stays separate.
 
 ## Deployment
 
-Hourly signal checks run on GitHub Actions, triggered by cron-job.org via
-`workflow_dispatch` (GitHub's native cron is too unreliable). Chart is on
-GitHub Pages at
+Hourly signal checks run on GitHub Actions under **two triggers on
+purpose**: GitHub's native `schedule` cron AND cron-job.org calling
+`workflow_dispatch`. Each has failed alone — native cron was dropped once
+for unreliability, and dispatch-only left an 11h gap on 2026-08-27 — so
+both run and a missed tick from either is covered by the other.
+
+What makes that safe is the **guard step**: `live_tools.py should-run`
+reads the newest `signal_log.csv` timestamp and stands down if it is under
+50 minutes old, so whichever trigger arrives second does no work. Without
+it both simply ran (measured 2026-08-27: 52 `schedule` + 48
+`workflow_dispatch` over 100 runs, median gap 0.50h instead of 1h — double
+cadence, double Adanos spend). The guard FAILS OPEN: a missing, empty or
+unparseable log proceeds, because silently stopping the signal service is
+worse than one duplicate run. It always exits 0, and the run summary
+records which trigger executed.
+
+Chart is on GitHub Pages at
 `https://bembem718ai-stack.github.io/Crypto-Model/BTC.html`.
 
 Workflows: `signal-check.yml` (hourly), `robustness.yml` (manual),

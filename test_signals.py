@@ -3353,3 +3353,84 @@ class TestPerRunSentimentCache:
                                            cache_path=cp, ttl_hours=0)
             assert g["decision"] == "ERROR"
         assert len(calls) == 2, "a failed call must not be cached as a result"
+
+
+# ======================================================================
+# TRIGGER REDUNDANCY GUARD
+# ======================================================================
+# Native cron and cron-job.org both drive this workflow on purpose now:
+# either one alone has been unreliable (an 11h gap on 2026-08-27 with
+# dispatch-only; and GitHub's own cron was abandoned earlier for the same
+# reason). Redundancy is the point. The guard is what stops redundancy
+# becoming double-spend: whichever trigger arrives second sees a log entry
+# newer than the window and stands down.
+#
+# FAIL-OPEN, ALWAYS. Every ambiguous case (missing file, empty file,
+# unparseable timestamp, unreadable) returns should_run=True. A guard that
+# fails closed would silently stop the signal service, which is a far worse
+# failure than one duplicate run.
+class TestTriggerGuard:
+
+    def _log(self, tmp_path, minutes_old):
+        p = tmp_path / "signal_log.csv"
+        ts = pd.Timestamp.now(tz="UTC") - pd.Timedelta(minutes=minutes_old)
+        pd.DataFrame({"timestamp_utc": [ts.isoformat()]}).to_csv(p, index=False)
+        return str(p)
+
+    def test_recent_entry_stands_down(self):
+        import live_tools as lt
+        run, why = lt.should_run_now(self._log(self._tp, 10), max_age_minutes=50)
+        assert run is False
+        assert "10" in why or "min" in why
+
+    def test_old_entry_proceeds(self):
+        import live_tools as lt
+        run, _ = lt.should_run_now(self._log(self._tp, 65), max_age_minutes=50)
+        assert run is True
+
+    def test_boundary_just_inside_stands_down(self):
+        import live_tools as lt
+        assert lt.should_run_now(self._log(self._tp, 49), max_age_minutes=50)[0] is False
+
+    def test_boundary_just_outside_proceeds(self):
+        import live_tools as lt
+        assert lt.should_run_now(self._log(self._tp, 51), max_age_minutes=50)[0] is True
+
+    def test_missing_file_fails_open(self):
+        import live_tools as lt
+        run, why = lt.should_run_now(str(self._tp / "nope.csv"), max_age_minutes=50)
+        assert run is True and "no log" in why.lower()
+
+    def test_empty_log_fails_open(self):
+        import live_tools as lt
+        p = self._tp / "empty.csv"
+        pd.DataFrame({"timestamp_utc": []}).to_csv(p, index=False)
+        assert lt.should_run_now(str(p), max_age_minutes=50)[0] is True
+
+    def test_unparseable_timestamps_fail_open(self):
+        import live_tools as lt
+        p = self._tp / "junk.csv"
+        pd.DataFrame({"timestamp_utc": ["not-a-date"]}).to_csv(p, index=False)
+        assert lt.should_run_now(str(p), max_age_minutes=50)[0] is True
+
+    def test_writes_github_output(self, monkeypatch):
+        import live_tools as lt
+        out = self._tp / "gh_out"
+        monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+        lt.emit_should_run(self._log(self._tp, 10), max_age_minutes=50)
+        assert "should_run=false" in out.read_text()
+        out.write_text("")
+        lt.emit_should_run(self._log(self._tp, 99), max_age_minutes=50)
+        assert "should_run=true" in out.read_text()
+
+    def test_emit_returns_zero_even_when_standing_down(self, monkeypatch):
+        # Standing down is a normal outcome, not a failure. A non-zero exit
+        # would paint the Actions run red for working correctly.
+        import live_tools as lt
+        monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+        assert lt.emit_should_run(self._log(self._tp, 5), max_age_minutes=50) == 0
+        assert lt.emit_should_run(self._log(self._tp, 500), max_age_minutes=50) == 0
+
+    @pytest.fixture(autouse=True)
+    def _tmp(self, tmp_path):
+        self._tp = tmp_path

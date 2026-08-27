@@ -1600,7 +1600,74 @@ def main_check():
 # CLI DISPATCHER — subcommands: monitor / graph / check
 # ======================================================================
 
+# ======================================================================
+# TRIGGER REDUNDANCY GUARD
+# ======================================================================
+# Two triggers drive the signal check on purpose: GitHub's native cron AND
+# cron-job.org's workflow_dispatch. Either alone has proven unreliable --
+# dispatch-only left an 11h gap on 2026-08-27, and native cron was
+# abandoned before that for the same reason. Running both is deliberate
+# redundancy; this guard is what keeps redundancy from becoming
+# double-spend against the Adanos quota.
+#
+# Whichever trigger arrives second sees a signal_log entry newer than the
+# window and stands down. The `concurrency` group already serialises the
+# two runs, so the second one checks out AFTER the first has pushed.
+#
+# FAIL-OPEN, DELIBERATELY. Missing file, empty file, unparseable
+# timestamp, unreadable -- every ambiguous case returns True and the run
+# proceeds. A guard that fails closed would silently stop the signal
+# service, which is a far worse outcome than one duplicate run.
+
+def should_run_now(log_path: str = "signal_log.csv",
+                   max_age_minutes: float = 50.0) -> tuple:
+    """(should_run, reason). True whenever the answer is not clearly no."""
+    if not os.path.exists(log_path):
+        return True, f"no log at {log_path} — proceeding (fail-open)"
+    try:
+        df = pd.read_csv(log_path)
+    except Exception as e:
+        return True, f"log unreadable ({type(e).__name__}) — proceeding (fail-open)"
+    tcol = next((c for c in df.columns
+                 if "time" in c.lower() or "date" in c.lower()), None)
+    if tcol is None or df.empty:
+        return True, "log has no usable timestamp column — proceeding (fail-open)"
+    last = pd.to_datetime(df[tcol], errors="coerce", utc=True).max()
+    if pd.isna(last):
+        return True, "no parseable timestamps — proceeding (fail-open)"
+    age_min = (pd.Timestamp.now(tz="UTC") - last).total_seconds() / 60.0
+    if age_min < max_age_minutes:
+        return False, (f"newest entry is {age_min:.1f} min old (< {max_age_minutes:g}) "
+                       f"— another trigger already ran this window, standing down")
+    return True, f"newest entry is {age_min:.1f} min old (>= {max_age_minutes:g}) — proceeding"
+
+
+def emit_should_run(log_path: str = "signal_log.csv",
+                    max_age_minutes: float = 50.0) -> int:
+    """Print the decision, publish it as a GitHub Actions output, exit 0.
+
+    Always 0: standing down is a correct outcome, and a non-zero exit would
+    paint the run red for behaving as designed.
+    """
+    run, why = should_run_now(log_path, max_age_minutes)
+    trigger = os.environ.get("GITHUB_EVENT_NAME", "local")
+    print(f"  [guard] trigger={trigger} should_run={str(run).lower()}: {why}")
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a", encoding="utf-8") as fh:
+            fh.write("should_run=" + str(run).lower() + os.linesep)
+            fh.write("trigger=" + str(trigger) + os.linesep)
+    return 0
+
+
 def main():
+    if len(sys.argv) >= 2 and sys.argv[1] == "should-run":
+        ap = argparse.ArgumentParser(prog="live_tools.py should-run")
+        ap.add_argument("--max-age-minutes", type=float, default=50.0)
+        ap.add_argument("--log", default="signal_log.csv")
+        a = ap.parse_args(sys.argv[2:])
+        sys.exit(emit_should_run(a.log, a.max_age_minutes))
+
     if len(sys.argv) < 2 or sys.argv[1] not in ("monitor", "graph", "check", "outcomes"):
         print("Usage: python live_tools.py <monitor|graph|check> [args...]\n"
               "  monitor BTC ETH ...  - continuous loop + desktop alerts (needs a machine that stays on)\n"

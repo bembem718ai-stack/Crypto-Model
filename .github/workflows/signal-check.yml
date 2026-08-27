@@ -1,26 +1,31 @@
 name: Signal Check
 
 # WHEN THIS RUNS:
-#   - ONLY when something dispatches it: cron-job.org calls the
-#     workflow_dispatch API, or you click "Run workflow" on the Actions tab.
+#   - GitHub's native hourly cron, AND
+#   - cron-job.org calling the workflow_dispatch API, AND
+#   - the "Run workflow" button.
 #
-# THERE IS DELIBERATELY NO `schedule:` BLOCK HERE.
-#   There used to be (`cron: '0 * * * *'`), AND cron-job.org was dispatching
-#   as well, so BOTH fired. Measured over the last 100 runs on 2026-08-27:
-#   52 `schedule` + 48 `workflow_dispatch` — median gap 0.50h instead of the
-#   intended 1h. That doubled the cadence and doubled Adanos spend against a
-#   200/month free tier. GitHub's native cron was already judged too
-#   unreliable for this job (that is why cron-job.org drives it), so the
-#   native schedule was pure duplicate load with no benefit.
+# BOTH SCHEDULERS ON PURPOSE. Each has failed alone: GitHub's native cron
+# was abandoned once for unreliability, and dispatch-only left an 11h gap on
+# 2026-08-27. Two independent clocks means a missed tick from either is
+# covered by the other. That is redundancy, and it is wanted.
 #
-#   If you ever re-add a `schedule:` block, TURN OFF the cron-job.org job in
-#   the same change, or the double-firing comes straight back.
+# WHAT MAKES REDUNDANCY SAFE IS THE GUARD STEP BELOW. Without it the two
+# triggers simply both ran: measured over 100 runs on 2026-08-27, 52
+# `schedule` + 48 `workflow_dispatch`, median gap 0.50h instead of 1h —
+# double the cadence and double the Adanos spend. The guard reads the last
+# signal_log timestamp and stands down if another trigger already covered
+# this window, so redundancy costs coverage, not quota.
 #
-# !!! QUOTA WARNING !!!
-#   One dispatch = 1 ticker (BTC) = up to 1 Adanos request. Hourly is ~720
-#   requests/month against a 200/month free tier. Set the cron-job.org
-#   interval to match the tier you are actually on.
+# !!! QUOTA !!!
+#   One executed run = 1 ticker (BTC) = at most 1 Adanos request, and only
+#   when Step 1 clears the derived cutoff (see live_tools.run_single_check).
+#   Measured: ~381 requests/month at hourly cadence, vs 720 ungated. Still
+#   above a 200/month free tier — set the cron-job.org interval to match the
+#   tier you are actually on.
 on:
+  schedule:
+    - cron: '0 * * * *'
   workflow_dispatch: {}
 
 # Prevents two runs (e.g. a scheduled one + a manual "Run workflow" click)
@@ -57,12 +62,35 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Two triggers drive this workflow (see the header). Whichever arrives
+      # second sees a signal_log entry newer than 50 minutes and stands
+      # down, so redundant coverage does not become redundant spend. The
+      # `concurrency` group already serialises the pair, so the second run
+      # checks out AFTER the first has pushed its row.
+      #
+      # Fails OPEN: missing/empty/unparseable log all proceed. A guard that
+      # failed closed would silently stop the signal service, which is worse
+      # than one duplicate run. Always exits 0 — standing down is a correct
+      # outcome, not a red run.
+      - name: Guard against double-firing
+        id: guard
+        run: python live_tools.py should-run --max-age-minutes 50
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+
+      - name: Report which trigger executed
+        run: |
+          echo "trigger=${{ github.event_name }} should_run=${{ steps.guard.outputs.should_run }}"
+          echo "### Signal check — trigger \`${{ github.event_name }}\`, should_run=\`${{ steps.guard.outputs.should_run }}\`" >> $GITHUB_STEP_SUMMARY
+
       - name: Run Signal check
+        if: steps.guard.outputs.should_run == 'true'
         env:
           ADANOS_API_KEY: ${{ secrets.ADANOS_API_KEY }}
         run: python live_tools.py check BTC --log-all --confirm-days 2 --long-only
 
       - name: Build hosted charts (docs/ folder, served by GitHub Pages)
+        if: steps.guard.outputs.should_run == 'true'
         run: |
           mkdir -p docs
           python - <<'PY'
@@ -96,9 +124,11 @@ jobs:
           PY
 
       - name: Resolve live signal outcomes (0 Adanos requests)
+        if: steps.guard.outputs.should_run == 'true'
         run: python live_tools.py outcomes || echo "outcomes step non-fatal"
 
       - name: Commit updated log + hosted charts
+        if: steps.guard.outputs.should_run == 'true'
         run: |
           git config user.name "signal-bot"
           git config user.email "actions@users.noreply.github.com"
