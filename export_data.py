@@ -1,20 +1,74 @@
-import json, os
-import pipeline as p, signal_engines as cf
+"""
+export_data.py
+==============
+Freeze the offline research dataset into data/: full-depth Binance.US 4h
+bars plus the incumbent's daily frame, per ticker, with a MANIFEST.
 
-N = 12600
+Run with BINANCE_REGION=US.
+
+TLS. This machine runs a TLS-intercepting filter driver whose root lives
+in the Windows certificate store, which Python's certifi bundle does not
+contain. research/tls.py routes verification through the OS trust store.
+Verification stays ON -- there is no verify=False anywhere in this repo.
+
+DEPTH. N is the 4h bar target. Binance.US actually holds ~6.93y for
+BTC/ETH (from 2019-09-23) and ~5.94y for SOL; the previous freeze asked
+for 12,600 bars and so stopped at ~5.9y for everyone, truncating BTC/ETH
+by about a year for no reason other than the request size. The paginator's
+ceiling is 20 requests x 1000 bars returned by Binance.US = 20,000, so
+N=20000 takes everything available. `period="max"` does the same for the
+daily side, which otherwise capped the merged frame at 5y.
+"""
+import json
+import os
+import sys
+import datetime as dt
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "research"))
+import tls  # noqa: E402
+tls.enable(verbose=True)
+
+import pipeline as p          # noqa: E402
+import signal_engines as cf   # noqa: E402
+
+N = 20000                     # paginator ceiling: 20 requests x 1000 bars
+PERIOD = "max"
+TICKERS = ["BTC", "ETH", "SOL"]
+
 os.makedirs("data", exist_ok=True)
-man = {}
-for t in ["BTC", "ETH", "SOL"]:
+man = {
+    "_meta": {
+        "written_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+        "binance_region": os.environ.get("BINANCE_REGION", "GLOBAL"),
+        "rest_base": cf.BINANCE_REST_BASE,
+        "klines_path": cf.BINANCE_KLINES_PATH,
+        "target_4h_bars": N,
+        "daily_period": PERIOD,
+    }
+}
+
+for t in TICKERS:
     print("=== " + t)
     bars = cf.fetch_klines_paginated(cf.to_binance_symbol(t), interval="4h", target_bars=N)
     bars.to_csv("data/" + t + "_4h.csv")
-    print("  bars " + str(len(bars)) + " " + str(bars.index.min()) + " to " + str(bars.index.max()))
-    merged = p.run_backtest(t, period="5y", squeeze_bars=N)
+    print("  bars %d  %s -> %s" % (len(bars), bars.index.min(), bars.index.max()))
+
+    merged = p.run_backtest(t, period=PERIOD, squeeze_bars=N)
     merged.to_csv("data/" + t + "_merged.csv")
-    print("  daily " + str(len(merged)) + " " + str(merged.index.min()) + " to " + str(merged.index.max()))
-    man[t] = {"bars_4h": len(bars), "daily_rows": len(merged),
-              "bars_last": str(bars.index.max()), "daily_last": str(merged.index.max()),
-              "directions": {k: int(v) for k, v in merged["direction"].value_counts().to_dict().items()}}
+    print("  daily %d  %s -> %s" % (len(merged), merged.index.min(), merged.index.max()))
+
+    man[t] = {
+        "bars_4h": len(bars),
+        "bars_first": str(bars.index.min()),
+        "bars_last": str(bars.index.max()),
+        "bars_years": round((bars.index.max() - bars.index.min()).days / 365.25, 2),
+        "daily_rows": len(merged),
+        "daily_first": str(merged.index.min()),
+        "daily_last": str(merged.index.max()),
+        "daily_years": round((merged.index.max() - merged.index.min()).days / 365.25, 2),
+        "directions": {k: int(v) for k, v in merged["direction"].value_counts().to_dict().items()},
+    }
+
 with open("data/MANIFEST.json", "w", encoding="utf-8") as f:
     json.dump(man, f, indent=2)
 print("done")

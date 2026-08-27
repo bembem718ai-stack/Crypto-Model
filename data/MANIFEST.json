@@ -1,40 +1,60 @@
 {
+  "_meta": {
+    "written_utc": "2026-08-27 18:22:32",
+    "binance_region": "US",
+    "rest_base": "https://api.binance.us",
+    "klines_path": "/api/v3/klines",
+    "target_4h_bars": 20000,
+    "daily_period": "max"
+  },
   "BTC": {
-    "bars_4h": 13000,
-    "daily_rows": 1762,
-    "bars_last": "2026-08-27 04:00:00",
-    "daily_last": "2026-08-21 00:00:00",
+    "bars_4h": 15177,
+    "bars_first": "2019-09-23 08:00:00",
+    "bars_last": "2026-08-27 16:00:00",
+    "bars_years": 6.93,
+    "daily_rows": 2502,
+    "daily_first": "2019-10-16 00:00:00",
+    "daily_last": "2026-08-22 00:00:00",
+    "daily_years": 6.85,
     "directions": {
-      "WATCH": 701,
-      "SELL": 567,
-      "BUY": 280,
-      "STRONG_SELL": 187,
-      "STRONG_BUY": 27
+      "WATCH": 1021,
+      "SELL": 798,
+      "BUY": 395,
+      "STRONG_SELL": 258,
+      "STRONG_BUY": 30
     }
   },
   "ETH": {
-    "bars_4h": 13000,
-    "daily_rows": 1762,
-    "bars_last": "2026-08-27 04:00:00",
-    "daily_last": "2026-08-21 00:00:00",
+    "bars_4h": 15177,
+    "bars_first": "2019-09-23 08:00:00",
+    "bars_last": "2026-08-27 16:00:00",
+    "bars_years": 6.93,
+    "daily_rows": 2502,
+    "daily_first": "2019-10-16 00:00:00",
+    "daily_last": "2026-08-22 00:00:00",
+    "daily_years": 6.85,
     "directions": {
-      "WATCH": 714,
-      "SELL": 560,
-      "BUY": 285,
-      "STRONG_SELL": 187,
-      "STRONG_BUY": 16
+      "WATCH": 1035,
+      "SELL": 804,
+      "BUY": 382,
+      "STRONG_SELL": 260,
+      "STRONG_BUY": 21
     }
   },
   "SOL": {
-    "bars_4h": 13000,
-    "daily_rows": 1762,
-    "bars_last": "2026-08-27 04:00:00",
-    "daily_last": "2026-08-21 00:00:00",
+    "bars_4h": 13014,
+    "bars_first": "2020-09-18 12:00:00",
+    "bars_last": "2026-08-27 16:00:00",
+    "bars_years": 5.94,
+    "daily_rows": 2141,
+    "daily_first": "2020-10-11 00:00:00",
+    "daily_last": "2026-08-22 00:00:00",
+    "daily_years": 5.86,
     "directions": {
-      "WATCH": 735,
-      "SELL": 548,
-      "BUY": 300,
-      "STRONG_SELL": 171,
+      "WATCH": 877,
+      "SELL": 656,
+      "BUY": 387,
+      "STRONG_SELL": 213,
       "STRONG_BUY": 8
     }
   }
