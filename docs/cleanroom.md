@@ -2039,3 +2039,53 @@ exists.
 A PASS leaves the claim standing, with the figures updated to the refreshed
 split and the old ones marked superseded.
 
+### Result of #171 — recorded 2026-08-28
+
+BTC INC_BUY_ALL on the refreshed full-depth dataset. The day->trade lookup
+was verified against `harness.incumbent_rows` trade-for-trade on both
+windows before any placebo ran (93 and 108 trades, MATCH).
+
+| window | n | **episodes** | win% | net_all | ex_best | folds+/cnt | placebo p95 |
+|---|---|---|---|---|---|---|---|
+| DISCOVERY | 93 | **30** | 28.0 | -0.167 | -0.475 | 1/4 | +0.247 |
+| CONFIRMATION | 108 | **23** | 39.8 | +0.195 | +0.097 | 3/4 | +0.330 |
+
+### VERDICT: **FAIL** — 1 of 4 conditions
+
+| window | condition | measured | |
+|---|---|---|---|
+| DISCOVERY | `ex_best` > 0 | −0.475 | **FAIL** |
+| DISCOVERY | net > placebo p95 | −0.167 vs +0.247 | **FAIL** |
+| CONFIRMATION | `ex_best` > 0 | +0.097 | **PASS** |
+| CONFIRMATION | net > placebo p95 | +0.195 vs +0.330 | **FAIL** |
+
+### The claim did not survive the dataset being extended
+
+`claims.md` asserts, under SUPPORTED: **BTC INC_BUY_ALL +0.237R on
+DISCOVERY, at the 100.0th percentile of its placebo (p95 +0.013)**. On the
+refreshed dataset the same measurement on the same ticker is **−0.167R,
+below a p95 of +0.247**. The sign flipped.
+
+**Nothing broke.** Both numbers are correct for the data they were computed
+on. The full-depth re-export (`acf2f59`) added a year of history, which
+moved DISCOVERY's cut from 2023-09-16 to 2023-04-06 and grew the sample
+from 58 trades to 93. It is a different window over different years, and
+the answer changed with it.
+
+**That is the finding.** The claim was window-dependent, and nothing in the
+original measurement disclosed that. A +0.237R at the 100th percentile
+reads as robust; it was one split away from −0.167R. This is precisely the
+failure mode #171 was registered to detect, and the reason the registration
+fixed the consequence in advance.
+
+### Triggered: `claims.md` revision (registered consequence)
+
+Per the registration, this FAIL requires the "positive on BTC and only
+BTC" entry to leave SUPPORTED, and the +0.237R / 100.0th-percentile figure
+to be restated or withdrawn. **Not yet applied** — `claims.md` currently
+still carries the superseded figure and should not be quoted from until the
+revision lands.
+
+A secondary point for that revision: CONFIRMATION is the only window where
+`ex_best` is positive (+0.097 on 108 trades / 23 episodes), and it still
+fails the placebo bar. The tier is not rescued by the other window.
