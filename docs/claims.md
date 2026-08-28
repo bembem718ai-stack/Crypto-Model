@@ -8,6 +8,35 @@ Written 2026-08-28. Sources: cleanroom #42–#167, `signal_outcomes.csv`
 (19 closed episodes), `signal_log.csv` (1,771 rows, 2026-07-22 → 2026-08-28),
 `CLAUDE.md` Known open issues.
 
+### Provenance note — the numbered record is incomplete, and understates itself
+
+**The tested count in this document is a floor, not a total.** `docs/cleanroom.md`
+begins at **#42**. An earlier body of work — roughly **#1–#31** — predates the
+cleanroom. Those hypotheses exist as registrations in `pipeline.py` code
+comments, and their ledger, `docs/findings.md`, sits on an offline machine and
+has never been committed. Until it is retrieved, **the total number of
+pre-registered tests this project has run is understated by about 31.**
+
+Two caveats on that, both recorded rather than resolved:
+
+- **It cannot be verified from this repository.** `docs/findings.md` is absent
+  here, and a search of `pipeline.py` for hypothesis-style registrations
+  returned nothing in the form the cleanroom uses. The account above is the
+  maintainer's, carried here as an attestation, not as something this repo
+  demonstrates.
+- **The numbering does not reconcile yet.** The cleanroom reserves **#1–#41**
+  ("for the pre-existing findings already recorded in the code and in
+  `CLAUDE.md`"), while the earlier work is described as **#1–#31** — a gap of
+  ten numbers that are either unused or unaccounted for. Which it is should be
+  settled when the ledger is retrieved.
+
+**This cuts one way only.** Recovering those 31 would make the search *larger*
+and the "zero cross-ticker survivors" record *stronger*, not weaker — the four
+pre-existing findings the cleanroom names (ML replication failure, 4-year
+degradation, VIX regime candidate, short-side viability) are all negative or
+unproven. No claim in this document depends on them, and none should be made
+from them until the ledger is in the repo and its numbers can be read.
+
 **The one-line summary: this is a research project with a documented record of
 mostly negative findings and a small, currently losing live record. It is not a
 product with a win rate.**
@@ -262,6 +291,29 @@ one of them describes what a follower would have traded.
 | **LONG (published)** | **8** | 3 | 5 | **37.5%** | **+1.00R** | 3 |
 | SHORT (logged, not published) | 11 | 0 | 11 | 0.0% | −11.00R | 11 |
 | ALL | 19 | 3 | 16 | 15.8% | −10.00R | 8 |
+
+### Which number is *your* number
+
+**A follower's experience matches the LONG row: 8 episodes, 3 winners, 5
+losers, +1.00R.** That is the only line in this table describing signals the
+system actually published. Short signals are suppressed on the live path
+(`--long-only`), so nobody was ever told to take one; the 11 short episodes
+were recorded by the outcome tracker because it reads every direction in the
+log, not because they were issued.
+
+**So why show the full log at all?** Three reasons, and none of them is
+padding:
+
+1. **The suppression is a decision, and decisions should be auditable.** The
+   0-for-11 short record is the evidence that switching shorts off was right.
+   Deleting it would delete the justification.
+2. **It is the honest denominator for "how often is the model wrong".** The
+   model formed a directional opinion 19 times and 16 of those resolved
+   against it. A reader who only sees the long row learns that the published
+   subset went 3–5; they do not learn that the unpublished subset went 0–11.
+3. **Publishing only the filtered row is how selective reporting starts.** The
+   filter here is defensible and pre-existing. It would stop being defensible
+   the moment the filter were chosen *because* it improved the number.
 
 **The published long record is 8 episodes and +1.00R.** Three winners at +2.0R
 each, five losers at −1.0R each. Entry scores ranged 60.11–62.99 — all just
