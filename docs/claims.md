@@ -202,12 +202,40 @@ which is neither a pass nor a fail.
 reached STRONG_BUY at its peak (2026-08-06, BTC, entry score 62.99). It
 **stopped out at −1.0R**.
 
-**What would move it.** `ex_best > 0` on **≥3 tickers** with **≥30 trades
-each**, AND pooled `net_all` above the episode-matched placebo p95 on **both**
-DISCOVERY and CONFIRMATION. The pooled tradable-26 run cleared exactly that bar
-on CONFIRMATION (+0.815R vs p95 +0.332, `ex_best` +0.424, 4/4 folds) and failed
-DISCOVERY (`ex_best` undefined, +0.239 vs p95 +0.570) — so **one window of two
-is already there; the other is not.**
+**The 1h version of it now has a MEASURED negative (#170).** This is new, and
+it is the first time any version of the STRONG_BUY construction has been
+refuted rather than merely left unmeasured. Ported to 1h bars keeping every
+parameter's bar count (ARM B), the construction produced enough trades for
+`ex_best` to be computable for the first time in the project's history — and
+the answer was no, on **all four registered conditions, on both windows**:
+
+| window | n (BTC/ETH/SOL) | **episodes** | `ex_best` > 0 on ≥2 of 3 | pooled net vs placebo p95 |
+|---|---|---|---|---|
+| DISCOVERY | 253 / 184 / 109 | **25 / 25 / 21** | **0 of 3** | +0.055 vs +0.231 |
+| CONFIRMATION | 737 / 553 / 401 | **57 / 48 / 35** | **1 of 3** (SOL +0.079) | −0.069 vs +0.145 |
+
+`ex_best` is defined in 5 of 6 ticker-window cells and **negative in 5 of
+them**. Both windows agree and neither is close.
+
+The time-equivalent port (ARM A, #168) failed separately: BTC hit target
+**33.3% against a 34.1% base rate** — below chance, where the 4h tier ran 78%
+against ~35%. The hit-rate mechanism did not survive the change of resolution.
+
+**What this does NOT settle.** #170 refutes the *bar-equivalent 1h
+construction*, which runs on a 4x shorter timescale and is a different strategy
+sharing a parameter table. #168 tested a *rescaled* construction and was
+registered as robustness on one ticker, never as replication. **Neither
+adjudicates the original 4h tier**, whose n=18 excess remains exactly where it
+was: unmeasurable, neither confirmed nor refuted.
+
+**What would move the 4h claim** is unchanged: `ex_best > 0` on **≥3 tickers**
+with **≥30 trades each**, AND pooled `net_all` above the episode-matched
+placebo p95 on **both** DISCOVERY and CONFIRMATION. At ~4 STRONG_BUY trades per
+ticker per year that is roughly **7–8 more years per ticker**, or a design
+change that fires the tier more often. The pooled tradable-26 run (#164)
+cleared exactly that bar on CONFIRMATION (+0.815R vs p95 +0.332, `ex_best`
++0.424, 4/4 folds) and failed DISCOVERY (`ex_best` undefined, +0.239 vs p95
++0.570) — so **one window of two has been reached once; the other has not.**
 
 ### "The score measures conviction"
 

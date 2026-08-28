@@ -1857,3 +1857,132 @@ second.
 | #170 | B (edge) | **FAIL** — all four conditions, both windows |
 
 **Nothing further runs without a new registration.**
+
+---
+
+# PROGRAM CLOSE-OUT — 1h PROGRAM (#168-#170)
+
+**Closed 2026-08-28. All three registered hypotheses resolved. Nothing
+further runs on this axis without a new registration.**
+
+## Outcome
+
+| # | arm | question | outcome |
+|---|-----|----------|---------|
+| **#168** | A, time-equivalent | Does the phenomenon survive being measured at 1h? | **FAIL** — 1 of 3 conditions |
+| **#169** | B, measurability | Is `ex_best` definable at 1h? | **GATE PASS** — definable on all three tickers, a first |
+| **#170** | B, edge | Is there an edge? | **FAIL** — all four conditions, both windows |
+
+## #168 — FAIL
+
+BTC, sealed span 2019-09-23 -> 2026-02-28.
+
+| condition | measured | |
+|---|---|---|
+| (a) excess over 1h ALWAYS_LONG > 0, net of costs | +0.114 − (−0.056) = **+0.170** | PASS |
+| (b) target rate >= +15pp over the 1h base rate | 33.3% − 34.1% = **−0.7pp** | **FAIL** |
+| (c) net_all above episode-matched placebo p95 | +0.114 vs **+1.221** | **FAIL** |
+
+BTC **45 trades / 4 episodes**; ETH 60 / 4; SOL **0 trades in 6.4 years**.
+
+The hit-rate mechanism did not survive the port. At 4h the tier hit target 78%
+against a ~35% base; at 1h it hit 33.3% against 34.1% — below chance, not
+15pp above. Both registered handicaps were confirmed and neither explains it:
+`cost_r` rose 1.08-1.66x and indicator staleness measured 0-23h (median 12h),
+but a stale indicator and a doubled cost move `net_all`, not the target rate.
+
+ARM A also **could not have fixed measurability by construction** — rescaling
+the confirm to 48 bars scales the streak requirement with resolution, so it
+subdivides occasions rather than multiplying them. Episodes FELL against 4h
+(BTC 8 -> 4, ETH 6 -> 4, SOL 1 -> 0) while bars rose 4x.
+
+## #169 — GATE PASS, and the program's one affirmative result
+
+ARM B parameters, DISCOVERY only.
+
+| ticker | trades | **episodes** | folds counted | `ex_best` |
+|---|---|---|---|---|
+| BTC | 253 | **25** | 4 of 4 | −0.228 |
+| ETH | 184 | **25** | 4 of 4 | −0.282 |
+| SOL | 109 | **21** | 3 of 4 | −0.270 |
+
+**`ex_best` had never once been computable for the STRONG_BUY tier** — not on
+3 tickers (#42-#162), not on 82 (#163: 0 of 82), not pooled into quartiles
+(#165: undefined in 3 of 4), not under ARM A (#168: BTC 1 counted fold). Under
+ARM B it is defined on all three, **for the predicted structural reason**: the
+2-bar confirm shrinks the streak requirement from 2 days to 2 hours, so it
+multiplies occasions instead of subdividing them. That mechanism was written
+into the record BEFORE the run.
+
+## #170 — FAIL on all four conditions, both windows
+
+Every trade count is given with its episode count, because the trade counts
+are what made `ex_best` computable and the episode counts are what the result
+rests on — roughly ten overlapping entries per occasion inside a 90-bar hold.
+
+**DISCOVERY** (2019-09-23 -> 2023-04-07)
+
+| ticker | n | **episodes** | win% | net_all | ex_best | placebo p95 |
+|---|---|---|---|---|---|---|
+| BTC | 253 | **25** | 36.4 | +0.204 | −0.228 | +0.417 |
+| ETH | 184 | **25** | 25.5 | −0.167 | −0.282 | +0.499 |
+| SOL | 109 | **21** | 31.2 | +0.083 | −0.270 | +0.517 |
+| POOLED | 546 | **71** | 31.7 | **+0.055** | −0.127 | **+0.231** |
+
+**CONFIRMATION** (2023-04-07 -> 2026-02-28)
+
+| ticker | n | **episodes** | win% | net_all | ex_best | placebo p95 |
+|---|---|---|---|---|---|---|
+| BTC | 737 | **57** | 24.7 | −0.275 | −0.468 | +0.240 |
+| ETH | 553 | **48** | 31.6 | +0.015 | −0.282 | +0.238 |
+| SOL | 401 | **35** | 34.7 | +0.194 | **+0.079** | +0.386 |
+| POOLED | 1,691 | **140** | 29.3 | **−0.069** | −0.266 | **+0.145** |
+
+| window | condition | measured | |
+|---|---|---|---|
+| DISCOVERY | `ex_best` > 0 on >= 2 of 3 | **0 of 3** | **FAIL** |
+| DISCOVERY | pooled net > placebo p95 | +0.055 vs +0.231 | **FAIL** |
+| CONFIRMATION | `ex_best` > 0 on >= 2 of 3 | **1 of 3** (SOL) | **FAIL** |
+| CONFIRMATION | pooled net > placebo p95 | −0.069 vs +0.145 | **FAIL** |
+
+`ex_best` is defined in **5 of 6 ticker-window cells and negative in 5 of
+them**. The single positive is SOL on CONFIRMATION (+0.079), one cell of six
+against a rule requiring two per window. Both windows agree and neither is
+close: the pooled figures sit well inside the placebo distribution on both
+halves of the data.
+
+## SCOPE — what this closes, and what it does not
+
+**CLOSED: the resolution axis for the bar-equivalent construction.** #170 is
+the project's **first fully measured negative** on the STRONG_BUY
+construction. Every previous attempt returned *unmeasurable*. Here the
+statistic exists, on both windows and all three tickers, and it says no. The
+bar-equivalent 1h construction does not carry an edge, and no further
+resolution work on it is warranted without a new hypothesis.
+
+**NOT CLOSED: the 4h tier's original n=18 excess.** It remains
+**unmeasurable and unadjudicated**, exactly as recorded in Attribution:
++1.819R excess on BTC from 18 trades / 2 independent episodes / 4 distinct
+exit bars, with `ex_best` undefined on all three tickers. Nothing in this
+program adjudicates it:
+
+- **#168 does not**, because it tested a DIFFERENT construction — every
+  parameter rescaled — and because it was registered as robustness on one
+  ticker, never as replication.
+- **#170 does not**, because the bar-equivalent construction runs on a 4x
+  shorter timescale and is a different strategy that happens to share a
+  parameter table. A negative there is a negative about *it*.
+
+The 4h tier's status is unchanged: **too rare to attribute, neither confirmed
+nor refuted.** What would move it is unchanged too — `ex_best` defined and
+positive on >= 3 tickers at >= 30 trades each, which at ~4 trades per ticker
+per year is roughly 7-8 more years of live accumulation per ticker, or a
+design change that fires it more often.
+
+**The measurability question and the edge question got different answers, and
+both are results.** #169 succeeded at what four prior programs failed to do.
+#170 then used the statistic it unlocked, and the answer was no. Being able to
+measure a thing and the thing being real are separate findings; this program
+delivered the first without the second, which is a better outcome than another
+"too rare to tell" — a computable negative closes a question that
+#163, #165 and #168 all left open.

@@ -169,6 +169,22 @@ Research is kept separate from the live system, and stays separate.
 - **Short side viability (open).** Shorts use a 50-day SMA trend filter.
   Whether they hold up across halves and tickers is what
   `short_side_verdict` decides.
+- **Resolution axis — CLOSED for the bar-equivalent construction (#168-#170,
+  2026-08-28).** The 1h program is finished. #168 (time-equivalent) FAILED:
+  BTC hit target 33.3% against a 34.1% base rate, where the 4h tier ran 78%
+  against ~35% — the hit-rate mechanism did not survive the port. #169 PASSED
+  its gate and is the program's one affirmative result: the 2-bar confirm
+  produced the **first computable `ex_best` in the project's history**, on all
+  three tickers, for the structural reason recorded before the run. #170 then
+  used that statistic and FAILED all four conditions on both windows —
+  `ex_best` negative in 5 of 6 ticker-window cells, pooled net inside the
+  placebo distribution on both halves. **This is the project's first fully
+  measured negative** rather than another "unmeasurable".
+  **It does NOT adjudicate the 4h tier.** That n=18 excess (+1.819R BTC, 2
+  independent episodes) remains unmeasurable and unadjudicated: #168 tested a
+  rescaled construction registered as robustness on one ticker, and #170 a
+  bar-equivalent one running on a 4x shorter timescale. Both are different
+  strategies. See the close-out in `docs/cleanroom.md`.
 - **Adanos tier — RESOLVED by gating, no upgrade needed.** Hourly checks
   used to need ~720 requests/month per ticker against a 200/month free
   tier. Two changes fixed it: the call is skipped below the derived cutoff
