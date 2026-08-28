@@ -1673,6 +1673,46 @@ cost move `net_all`; they do not move the TARGET RATE, which is a property
 of where the exit levels sat relative to subsequent price. 33.3% against a
 34.1% base is a statement about the signal, not about costs.
 
+### STRUCTURAL NOTE — ARM A could never have fixed measurability
+
+Episode count did **not** scale with bar count. It went DOWN.
+
+| ticker | 4h trades / episodes | ARM A 1h trades / episodes |
+|--------|----------------------|----------------------------|
+| BTC | 19 / **8** | 45 / **4** |
+| ETH | 9 / **6** | 60 / **4** |
+| SOL | 1 / **1** | 0 / **0** |
+
+Bars rose 4x (15,177 -> 60,696) and trades rose with them, but the number of
+independent occasions FELL. The cause is structural, not empirical: ARM A
+rescales the confirm requirement along with everything else, so
+`confirm_days=2` becomes **48 consecutive hourly labels**. Two consecutive
+daily STRONG_BUY readings is a far weaker condition than an unbroken two-day
+streak sampled hourly — a single hour anywhere in the window that drops out of
+STRONG_BUY breaks it. SOL never achieved 48 in a row in 6.4 years.
+
+So ARM A **subdivides** occasions rather than multiplying them: each surviving
+occasion yields many overlapping hourly entries (45 trades from 4 episodes),
+which inflates `n` while leaving the independent-observation count lower than
+the 4h original. That is precisely the failure mode `ex_best` exists to catch,
+and it is why `ex_best` stayed undefined here (BTC 1 counted fold, ETH 2).
+
+**This was true by construction, and is worth stating plainly: ARM A could not
+have fixed measurability whatever the market did.** Holding wall-clock constant
+necessarily holds the streak requirement constant in time, so it cannot
+generate more independent occasions than the 4h version — only finer slices of
+the same ones. ARM A was a robustness test and it is fair as one; it was never
+capable of answering the measurability question, and nothing about its result
+bears on that question either way.
+
+**ARM B's 2-bar confirm is the only element of this program that multiplies
+episodes rather than subdividing them.** Keeping the confirm at 2 BARS means
+the streak requirement shrinks from 2 days to 2 hours, so occasions that could
+never sustain a 48-hour label can qualify. Whether that produces enough
+independent episodes — not merely enough trades — is exactly what #169
+measures, and why its gate is written on trade count per ticker with episodes
+reported alongside.
+
 ### What ARM A does and does not establish
 
 - It does **not** establish that the 4h phenomenon is fake. The 4h figure it
