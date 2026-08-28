@@ -1986,3 +1986,56 @@ measure a thing and the thing being real are separate findings; this program
 delivered the first without the second, which is a better outcome than another
 "too rare to tell" — a computable negative closes a question that
 #163, #165 and #168 all left open.
+
+
+---
+
+## Hypothesis #171 — BTC INC_BUY_ALL revalidation on the refreshed dataset
+
+**Registered 2026-08-28, BEFORE running.**
+
+### Why this exists
+
+`claims.md` currently cites, under SUPPORTED, that the incumbent's all-BUY
+tier is **positive on BTC and only BTC**: +0.237R at the **100.0th percentile**
+of its count-matched placebo (p95 +0.013) on DISCOVERY, against ETH at the
+47.7th and SOL at the 21.0th. It is the strongest surviving claim in that
+document, and the one a reader is most likely to act on.
+
+**That number was computed on the PRE-REFRESH split.** The dataset has since
+been re-exported at full depth (commit `acf2f59`): BTC/ETH 4h went from 13,000
+bars / 5.93y to 15,177 / 6.93y, and the daily frame from 1,762 rows / 4.82y to
+2,502 / 6.85y. Because windows are anchored on the dataset's span, DISCOVERY's
+cut moved from 2023-09-16 to **2023-04-06**. The claim therefore rests on a
+split that no longer exists, and it has never been re-derived on the data the
+project now ships.
+
+A claim that cannot survive its own dataset being extended is not a claim.
+
+### Registered direction
+
+**BTC alone.** On the CURRENT frozen dataset, INC_BUY_ALL must satisfy BOTH,
+on BOTH windows:
+
+1. `ex_best` > 0, and
+2. `net_all` above the **episode-matched** placebo p95, 300 seeds.
+
+Episode-matched, not day-matched, per #167: the incumbent's signal days arrive
+in runs, and a scattered-day placebo is lower-variance than the thing it
+benchmarks. The placebo preserves the observed run-length distribution AND the
+observed STRONG_BUY/BUY conviction mix, so the average R:R matches.
+
+ETH and SOL are not tested here. They were measured negative on the old split
+(47.7th and 21.0th percentile) and nothing about this hypothesis revisits them.
+
+### Consequence, fixed in advance
+
+**A FAIL here triggers a `claims.md` revision.** The "positive on BTC and only
+BTC" entry moves out of SUPPORTED, and the specific figure — +0.237R at the
+100.0th percentile — is either restated with its new value or withdrawn. That
+consequence is registered now so it cannot be renegotiated after the number
+exists.
+
+A PASS leaves the claim standing, with the figures updated to the refreshed
+split and the old ones marked superseded.
+
