@@ -1784,3 +1784,76 @@ plus `net_all` above the episode-matched placebo p95 on BOTH windows.
 
 **#170 has not been run.** The gate is passed and the decision to proceed is
 the maintainer's.
+
+## Result of #170 (ARM B edge test) — recorded 2026-08-28
+
+Run once, both windows, exactly as registered. Episode-matched placebo,
+300 seeds. DISCOVERY `ex_best` reproduced #169's values identically
+(-0.228 / -0.282 / -0.270) and was not recomputed or reframed.
+
+### DISCOVERY  (2019-09-23 08:00:00 -> 2023-04-07 17:15:00)
+
+| ticker | n | **episodes** | win% | net_all | ex_best | placebo p95 |
+|---|---|---|---|---|---|---|
+| BTC | 253 | **25** | 36.4 | +0.204 | -0.228 | +0.417 |
+| ETH | 184 | **25** | 25.5 | -0.167 | -0.282 | +0.499 |
+| SOL | 109 | **21** | 31.2 | +0.083 | -0.270 | +0.517 |
+| **POOLED** | 546 | — | 31.7 | +0.055 | -0.127 | +0.231 |
+
+### CONFIRMATION  (2023-04-07 17:15:00 -> 2026-02-28 04:00:00)
+
+| ticker | n | **episodes** | win% | net_all | ex_best | placebo p95 |
+|---|---|---|---|---|---|---|
+| BTC | 737 | **57** | 24.7 | -0.275 | -0.468 | +0.240 |
+| ETH | 553 | **48** | 31.6 | +0.015 | -0.282 | +0.238 |
+| SOL | 401 | **35** | 34.7 | +0.194 | +0.079 | +0.386 |
+| **POOLED** | 1691 | — | 29.3 | -0.069 | -0.266 | +0.145 |
+
+### VERDICT: **FAIL** — all four registered conditions missed
+
+| window | condition | measured | result |
+|---|---|---|---|
+| DISCOVERY | 1. `ex_best` > 0 on >= 2 of 3 | **0 of 3** | **FAIL** |
+| DISCOVERY | 2. pooled net > placebo p95 | +0.055 vs +0.231 | **FAIL** |
+| CONFIRMATION | 1. `ex_best` > 0 on >= 2 of 3 | **1 of 3** (SOL) | **FAIL** |
+| CONFIRMATION | 2. pooled net > placebo p95 | -0.069 vs +0.145 | **FAIL** |
+
+### Read at its true weight
+
+**DISCOVERY episode counts: 25 / 25 / 21.** CONFIRMATION: 57 / 48 / 35.
+Those are the independent-occasion counts behind 253/184/109 and
+737/553/401 trades respectively — roughly 10 overlapping entries per
+occasion inside a 90-bar hold. The trade counts are what made `ex_best`
+computable; the episode counts are what the result actually rests on.
+
+**This is the project's first fully measured negative on the STRONG_BUY
+construction.** Every previous attempt returned *unmeasurable*: #163 (0 of
+82 tickers reached a defined `ex_best`), #165 (undefined in 3 of 4
+quartiles), #168 (BTC 1 counted fold). Here `ex_best` is defined in **5 of
+6 ticker-window cells** and is **negative in 5 of them**. The single
+positive is SOL on CONFIRMATION (+0.079), one cell of six, and the
+registered rule requires two per window.
+
+**Both windows agree, which is the part that matters.** DISCOVERY pooled
++0.055 against a placebo p95 of +0.231; CONFIRMATION pooled -0.069 against
++0.145. Neither window is close, and the direction is consistent. This is
+not a near-miss that a longer sample might rescue — the pooled figures sit
+well inside the placebo distribution on both halves of the data.
+
+**The measurability question and the edge question got different answers.**
+#169 succeeded: the 2-bar confirm did what the structural note said it
+would, multiplying occasions instead of subdividing them, and produced the
+first computable `ex_best` in the project's history. #170 then used that
+statistic and it said no. Being able to measure a thing and the thing being
+real are separate results, and this program delivered the first without the
+second.
+
+### Program status after #168-#170
+
+| # | arm | result |
+|---|-----|--------|
+| #168 | A (time-equivalent) | **FAIL** — 1 of 3 conditions; target rate 33.3% vs a 34.1% base |
+| #169 | B (measurability) | **Gate PASS** — `ex_best` definable on all three for the first time |
+| #170 | B (edge) | **FAIL** — all four conditions, both windows |
+
+**Nothing further runs without a new registration.**
