@@ -2082,9 +2082,21 @@ fixed the consequence in advance.
 
 Per the registration, this FAIL requires the "positive on BTC and only
 BTC" entry to leave SUPPORTED, and the +0.237R / 100.0th-percentile figure
-to be restated or withdrawn. **Not yet applied** — `claims.md` currently
-still carries the superseded figure and should not be quoted from until the
-revision lands.
+to be restated or withdrawn.
+
+**APPLIED 2026-08-28** (commit `90bc2ff`). The entry is out of SUPPORTED,
+with BOTH measurements shown side by side rather than the old one deleted —
++0.237R at the 100.0th percentile on the pre-refresh split, −0.167R against a
+p95 of +0.247 on the refreshed one — and the window-dependence stated plainly.
+A standing rule was added with it: **SUPPORTED entries are dated to their
+dataset freeze, and any refresh of `data/` re-opens every entry derived from
+it.** Windows are anchored on the dataset's span, so extending the data moves
+the DISCOVERY/CONFIRMATION boundary; a refresh is a different experiment, not
+more of the same one.
+
+**The record now holds ZERO supported edge claims.** BTC INC_BUY_ALL was the
+last one standing. Everything remaining under SUPPORTED is engineering,
+process, or measured absence of edge.
 
 A secondary point for that revision: CONFIRMATION is the only window where
 `ex_best` is positive (+0.097 on 108 trades / 23 episodes), and it still

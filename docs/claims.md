@@ -41,6 +41,26 @@ from them until the ledger is in the repo and its numbers can be read.
 mostly negative findings and a small, currently losing live record. It is not a
 product with a win rate.**
 
+**As of 2026-08-28 this record holds ZERO supported edge claims.** The last one
+standing — BTC INC_BUY_ALL — was withdrawn by #171 when it reversed sign on the
+refreshed dataset. Everything remaining under SUPPORTED is about engineering,
+process, or measured absence of edge.
+
+### Standing rule: SUPPORTED entries are dated to their dataset freeze
+
+Every claim in SUPPORTED is a statement about a **specific frozen dataset**, not
+a timeless fact, and each carries the freeze it was computed on. Consequently:
+
+**Any refresh of `data/` re-opens every SUPPORTED entry derived from it.** A
+claim must be re-validated on the new freeze before it may continue to be
+quoted, and until it is, it is quotable only with its original freeze named.
+
+This is not bureaucracy. Windows here are anchored on the dataset's span, so
+extending the data MOVES the DISCOVERY/CONFIRMATION boundary — a refresh is not
+"more of the same data", it is a different experiment. #171 is the worked
+example: a 100th-percentile result became negative for exactly this reason, and
+nothing about the original computation was wrong.
+
 ---
 
 ## 1. SUPPORTED
@@ -145,14 +165,10 @@ BUY/STRONG_BUY days is **0.007–0.074** across the top three rules and all thre
 tickers. The search explored new territory; it just found nothing there.
 *Source: cleanroom Attribution "Overlap with the incumbent".*
 
-**The incumbent's all-BUY tier is positive on BTC and only BTC.** `INC_BUY_ALL`
-on DISCOVERY, each row against its own count-matched placebo (300 seeds):
-**BTC +0.237R at the 100.0th percentile** (p95 +0.013), **ETH −0.175R at the
-47.7th**, **SOL −0.201R at the 21.0th**. These percentiles are real ones — 58
-trades across 13 episodes and 47 distinct exit bars on BTC, so they are not
-distorted by clustering the way the STRONG_BUY rows are. One ticker of three is
-not replication.
-*Source: cleanroom corrected DISCOVERY table and clustering caveat.*
+**WITHDRAWN 2026-08-28 — moved to NOT SUPPORTED by #171.** This section
+previously claimed the incumbent's all-BUY tier was positive on BTC. It did
+not survive the dataset being extended. See "BTC INC_BUY_ALL is positive"
+under NOT SUPPORTED.
 
 **Negative findings are recorded with the same detail as positive ones.** Every
 failure above is written into `docs/cleanroom.md` with its numbers, including
@@ -275,6 +291,37 @@ touch, registered as a new numbered hypothesis before it runs.
 **What would move it.** The same statistic, same sign, with `ex_best > 0` and
 **n ≥ 30 per ticker**, on **BTC and ETH and SOL** simultaneously, pre-registered.
 No result to date has achieved this on two tickers, let alone three.
+
+### "BTC INC_BUY_ALL is positive" — WITHDRAWN from SUPPORTED, 2026-08-28
+
+**Why not.** This was the strongest surviving claim in this document until
+#171 re-derived it on the refreshed dataset. It reversed sign.
+
+| | DISCOVERY window | n | episodes | net_all | vs placebo |
+|---|---|---|---|---|---|
+| **old split** (pre-refresh) | 2021-10-24 → 2023-09-16 | 58 | 13 | **+0.237R** | **100.0th pctile**, p95 +0.013 |
+| **refreshed** (#171) | 2019-09-24 → 2023-04-06 | 93 | 30 | **−0.167R** | below p95 **+0.247** |
+
+**Nothing broke, and neither number is wrong.** Each is correct for the data
+it was computed on. The full-depth re-export (`acf2f59`) added a year of
+history, which moved DISCOVERY's cut from 2023-09-16 to 2023-04-06 and grew
+the sample from 58 trades to 93. Different window, different years, different
+answer.
+
+**The claim was window-dependent, and the original measurement disclosed
+nothing about that.** "+0.237R at the 100th percentile" reads as robust. It
+was one dataset refresh away from negative. That is the whole lesson.
+
+CONFIRMATION is the only window where `ex_best` is positive (+0.097 on 108
+trades / 23 episodes) and it still fails the placebo bar (+0.195 vs p95
++0.330). The tier is not rescued by the other window.
+
+**What would move it back.** `ex_best` > 0 AND `net_all` above the
+episode-matched placebo p95 on **both** windows of whatever dataset is current
+at the time — the same bar #171 set. And per the dating rule below, any such
+result carries the freeze it was computed on.
+
+*Source: cleanroom #171.*
 
 ### Also not supported
 
