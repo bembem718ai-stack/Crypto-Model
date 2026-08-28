@@ -1148,3 +1148,402 @@ first run backfills a free year of Kraken funding. On a collision the value
 already on disk wins and the collision is counted and printed -- a venue
 revising its own history is something to find out about, not to adopt
 silently.
+
+---
+
+# DRAFT PRE-REGISTRATION — 1h PROGRAM (#168–#170)
+
+> **STATUS: REGISTERED 2026-08-28, WITH AMENDMENTS. NOTHING RUN YET.**
+> Approved by the maintainer with three amendments, all recorded below and
+> all made BEFORE any data was exported or any number computed. From this
+> commit onward research rule 4 applies: no parameter, threshold or pass
+> condition here may be changed on the basis of a result.
+>
+> **Amendments applied at approval:**
+> 1. #168's absolute +0.90R floor **REMOVED** and replaced with a
+>    placebo-relative condition. Reasoning recorded in full at #168 below.
+> 2. #169's gate **binds per ticker on DISCOVERY**, not on the pooled or
+>    full-span count.
+> 3. The pagination fix gains a **loud truncation assertion**, not just a
+>    raised ceiling.
+
+## The question
+
+Does the squeeze construction replicate at 1h resolution, and does it produce
+enough events to make `ex_best` **definable for the first time**?
+
+`ex_best` has never once been computable for the incumbent's STRONG_BUY tier:
+not on 3 tickers (#42–#162), not on 82 (#163: 0 of 82), not pooled four ways
+(#165: undefined in 3 of 4 quartiles). Event rate by universe width failed.
+This tests event rate by **resolution** instead.
+
+Two arms, deliberately answering different questions:
+
+- **ARM A (time-equivalent)** rescales every parameter so the model spans the
+  same wall-clock time at 1h as at 4h. If the phenomenon is real it should
+  survive being measured on finer bars. This is a **robustness** test.
+- **ARM B (bar-equivalent, fractal)** keeps every parameter's BAR count, so
+  the identical construction runs on a 4x shorter timescale. This is the
+  **measurability** play: 4x the bars in the same calendar span, so ~4x the
+  candidate events, which is the only untried route to a defined `ex_best`.
+
+---
+
+## Parameter tables — fully specified, nothing left to choose later
+
+### ARM A — time-equivalent (holds WALL-CLOCK constant)
+
+Derived from the 10-site portability map. Every value is `4h value x 4`,
+because one 4h bar is four 1h bars. No value is chosen; all are derived.
+
+| # | site | 4h production | ARM A (1h) | derivation |
+|---|------|---------------|------------|------------|
+| 1 | `backtest_squeeze_history` interval | `"4h"` | `"1h"` | the change itself |
+| 2 | `add_squeeze_features` `bb_period` | 20 | **80** | 20 x 4 |
+| 3 | `add_squeeze_features` `percentile_lookback` | 120 | **480** | 120 x 4 |
+| 4 | duration scaler (pipeline.py:880) | `/40` | **`/160`** | 40 x 4 |
+| 5 | `compute_initial_score` `max_duration_for_scaling` | 40 | **160** | 40 x 4 |
+| 6 | ATR period | 14 | **56** | 14 x 4 = 56 hours either way |
+| 7 | `bars_per_day` | 6 | **24** | bars in a day |
+| 8 | `max_hold_days` → bars | 15d = 90 bars | **360 bars** | 15 x 24 |
+| 9 | confirm | 2 days | **48 bars** | 2 x 24 hours |
+| 10 | `short_sma_filter` | 50 days | **1200 bars** | 50 x 24 (long-only: inert) |
+| — | `stop_mult` / `target_mult` | 1.5 / 3.0 | **1.5 / 3.0** | UNCHANGED — dimensionless |
+| — | conviction scale STRONG_* | 1.333 | **1.333** | UNCHANGED — dimensionless |
+| — | `buy_bar` / `sell_bar` | 60 / 40 | **60 / 40** | UNCHANGED — score space |
+
+### ARM B — bar-equivalent / fractal (holds BAR COUNT constant)
+
+Every parameter identical to production. Only the bar duration changes, so the
+whole construction runs on a timescale 4x shorter.
+
+| # | site | 4h production | ARM B (1h) | effective wall-clock |
+|---|------|---------------|------------|----------------------|
+| 2 | `bb_period` | 20 | **20** | 80h → 20h |
+| 3 | `percentile_lookback` | 120 | **120** | 480h → 120h |
+| 4/5 | duration scaler / max_duration | 40 | **40** | 160h → 40h |
+| 6 | ATR period | 14 | **14** | 56h → 14h |
+| 7 | `bars_per_day` | 6 | **24** | calendar fact, not a parameter |
+| 8 | hold | 90 bars (15d) | **90 bars** | 15d → 3.75d |
+| 9 | confirm | 2 bars (2d) | **2 bars** | 2d → 2h |
+| 10 | `short_sma_filter` | 50 bars | **50 bars** | long-only: inert |
+| — | multipliers, conviction, bars | as production | **unchanged** | dimensionless |
+
+### Geometry dicts — `LIVE_GEOMETRY` IS NOT TOUCHED
+
+Both arms define their own dict in `research/`, never in `pipeline.py`
+(research rule 1). `LIVE_GEOMETRY` remains the single source of truth for what
+the live bot does, and is read, never written.
+
+    # research/geometry_1h.py  (to be written on approval)
+    ARM_A = {"atr_source": "1h", "atr_period": 56, "max_hold_bars": 360,
+             "stop_mult": 1.5, "target_mult": 3.0, "confirm_bars": 48,
+             "short_sma_filter": 1200, "bars_per_day": 24,
+             "bb_period": 80, "percentile_lookback": 480, "max_duration": 160}
+    ARM_B = {"atr_source": "1h", "atr_period": 14, "max_hold_bars": 90,
+             "stop_mult": 1.5, "target_mult": 3.0, "confirm_bars": 2,
+             "short_sma_filter": 50, "bars_per_day": 24,
+             "bb_period": 20, "percentile_lookback": 120, "max_duration": 40}
+
+Note `atr_source: "1h"` is a THIRD branch. `backtest_exit_geometry` currently
+raises on anything but `"daily"`/`"4h"` (pipeline.py:1606), so the 1h path runs
+through a research-side resolver rather than by editing that switch.
+
+---
+
+## Entry convention on 1h bars — exact, no ambiguity
+
+Bars are indexed by `open_time`; bar `t` covers `[t, t+1h)` and its close
+occurs at `t+1h`.
+
+1. **Signal state.** Each bar `t` carries a direction label computed from data
+   through bar `t`'s close. No value from `t+1` onward may enter it.
+2. **Confirm.** Bar `t` is CONFIRMED when the labels on bars `t-(C-1) … t` are
+   all identical and actionable, where `C` = 48 (ARM A) or 2 (ARM B). This is
+   the exact analogue of `confirm_days=2` requiring two identical consecutive
+   daily labels (pipeline.py:1616-1622).
+3. **Entry.** Entry price is the **Close of the confirming bar `t`**. Entry
+   timestamp is `t + 1h` — the moment that close is known. This mirrors the
+   4h/daily rule exactly, where `entry_ts = day.normalize() + 24h` is the
+   signal day's close (pipeline.py:1637).
+4. **Resolution.** Walk bars with `open_time >= t + 1h`, i.e. strictly after
+   the entry moment, for at most `max_hold_bars`. Anything earlier is
+   lookahead.
+5. **Pessimism rule, unchanged.** Target and stop touched within the same bar
+   counts as `ambiguous_stop` at −1R. Timeout closes at the last bar's Close.
+   Unresolved at the end of history returns `outcome=None` and is DROPPED,
+   never counted.
+
+**One event, one trade.** As at 4h, a run of `L` consecutive confirmed bars
+yields `L − C + 1` trades; overlapping positions are permitted exactly as the
+incumbent permits them, and episode counting (gap > hold horizon) is reported
+alongside `n` so clustering stays visible.
+
+---
+
+## Cost model — and the caveat that must be reported per arm
+
+Costs are walkforward's defaults, unchanged: **2bps fee + 2bps slippage per
+side = 8bps round trip**, and `cost_r = 8bps / stop_fraction` where
+`stop_fraction = 1.5 x ATR / entry`.
+
+**REGISTERED CAVEAT, stated before any result exists.** True range scales
+roughly with the square root of bar duration, so a 1h ATR is roughly **half** a
+4h ATR. The stop sits at `1.5 x ATR`, so the stop fraction roughly halves and
+**`cost_r` roughly DOUBLES at 1h, in BOTH arms.**
+
+This is not avoided by ARM A's longer lookback: ATR-56 on 1h bars averages 56
+*hourly* true ranges, which is a smaller quantity than 14 *four-hourly* true
+ranges over the same 56 hours. Matching the lookback in time does not match the
+magnitude.
+
+Measured 4h baseline to compare against (from #163's liquidity table):
+
+| ticker | median 1.5xATR stop (4h) | median `cost_r` (4h) | expected 1h stop | expected 1h `cost_r` |
+|---|---|---|---|---|
+| BTC | 1.776% | 0.045R | ~0.9% | **~0.09R** |
+| ETH | 2.003% | 0.040R | ~1.0% | **~0.08R** |
+| SOL | 2.116% | 0.038R | ~1.1% | **~0.08R** |
+
+**Reporting requirement:** each arm MUST report its own measured median
+`stop_fraction` and median `cost_r` per ticker alongside every expectancy
+figure. A 1h expectancy is not comparable to a 4h one without them. ARM B is
+the more exposed of the two: a 90-bar hold is 3.75 days, so it pays the doubled
+cost over a much shorter move.
+
+**No cost parameter may be adjusted to compensate.** If doubled costs sink the
+result, that is the result.
+
+---
+
+## Windows on the 1h index
+
+Same rules as every other program, applied to the 1h index:
+
+- **LOCKBOX**: the last 6 months, sealed. Never read, in the daily frames or
+  the 1h feed (`harness.seal_bars` analogue).
+- **DISCOVERY / CONFIRMATION**: first 55% / remaining 45% of what is left,
+  split in TIME.
+- **Common to all three tickers, anchored on BTC**, as in the basket program.
+  SOL's 1h history starts 2020-09-18 and simply contributes no bars before
+  then. Per-ticker windows would make pooling incoherent.
+- Anchored on the **dataset's last bar**, never the wall clock.
+
+Expected shape (exact dates computed at export time, never hardcoded):
+
+| window | approx range | approx 1h bars |
+|--------|--------------|----------------|
+| DISCOVERY | 2019-09-23 → ~2023-04-07 | ~31,000 |
+| CONFIRMATION | ~2023-04-07 → ~2026-02-28 | ~25,400 |
+| LOCKBOX (SEALED) | ~2026-02-28 → ~2026-08-28 | ~4,340 |
+
+---
+
+## Placebo — episode-matched, as registered in #167
+
+Unchanged from #167 and for the same reason: the incumbent's signals arrive in
+clustered runs, and an independent-bar placebo is lower-variance than the thing
+it benchmarks, which makes the observed percentile look better than it is.
+
+Per ticker: take the observed run-lengths of consecutive confirmed bars; draw
+the same NUMBER of runs with the same LENGTHS at random non-overlapping start
+positions in the same window; apply the same confirm rule, so a run of length
+`L` yields `L − C + 1` trades exactly as the observed runs do. **300 seeds.**
+
+---
+
+## Performance plan
+
+### The problem
+
+`resolve_on_4h` iterates bars in Python: measured **~2.3ms per trade
+resolution** (373 calls, 0.853s cumulative, from the attribution profile). ARM
+B at 1h could plausibly produce thousands of trades per ticker. With 300
+placebo seeds x 3 tickers x 2 windows that is order **10^6–10^7 resolutions**,
+i.e. **hours**. Unacceptable.
+
+### The fix, in two parts
+
+1. **Vectorized resolver** in `research/`, numpy-based, no per-bar Python loop.
+   For each candidate entry it finds first-touch of target/stop within the hold
+   horizon, preserving every rule exactly: pessimistic both-touched-in-one-bar
+   → `ambiguous_stop` at −1R, timeout at last Close, unresolved → dropped.
+
+2. **Bar → trade lookup.** Resolve EVERY candidate bar once per ticker per arm,
+   then a placebo draw is an index selection, not a re-simulation. This is
+   exactly the technique already used in `research/basket_bc.py`, which was
+   verified to reproduce `harness.incumbent_rows` trade-for-trade on both tiers
+   before any of #164/#165 was reported.
+
+### Equivalence gate — MANDATORY, BEFORE ANY 1h RESULT IS TRUSTED
+
+The vectorized resolver must reproduce `pipeline.resolve_on_4h`
+**trade-for-trade on the EXISTING 4h data** — BTC, ETH and SOL, full
+non-lockbox span, `LIVE_GEOMETRY`, comparing `date`, `outcome`, `pnl_r`,
+`pnl_r_net` and `bars_held` on every trade. **Any mismatch blocks the
+program.** A faster resolver that disagrees with the incumbent is not a
+resolver, it is a different model.
+
+### Estimated runtime
+
+| stage | estimate |
+|-------|----------|
+| 1h export, 3 tickers | 10–15 min (network-bound) |
+| resolver equivalence gate on 4h data | 2–4 min |
+| ARM B event-count estimate (gate, see #169) | 2–3 min |
+| precompute bar→trade lookup, 3 tickers x 2 arms | 6–12 min |
+| scoring + 300-seed episode placebos (lookups) | 4–6 min |
+| **total** | **~25–40 min** |
+
+Compare: the same program with the existing per-trade resolver would be **5+
+hours**, which is why the vectorized path is a precondition and not an
+optimisation.
+
+---
+
+## What a 1h export adds to `data/`
+
+Measured availability from the portability probe (2026-08-27):
+
+| ticker | 1h first bar | span | bars |
+|--------|--------------|------|------|
+| BTCUSDT | 2019-09-23 | 6.93y | ~60,730 |
+| ETHUSDT | 2019-09-23 | 6.93y | ~60,730 |
+| SOLUSDT | 2020-09-18 | 5.94y | ~52,061 |
+
+**Full depth is available at 1h — same start dates as 4h, no penalty.**
+
+Size: current 4h files are 0.95 / 0.88 / 0.71 MB for ~15,177 bars. At ~4x the
+rows, expect **~3.8 / 3.5 / 2.8 MB, about 10–11 MB total**, roughly 4–5x the
+current 4h footprint. `data/` goes from ~8.3MB to ~19MB. Committable, but it
+should be a separate commit from any result.
+
+### Export command
+
+    BINANCE_REGION=US python export_data.py --interval 1h
+
+**BLOCKER, and it is not a detail.** `fetch_klines_paginated` defaults to
+`max_requests=20`, and Binance.US returns 1000 bars per call — a hard
+**20,000-bar ceiling**. 60,730 bars needs **>= 61 requests**. Without raising
+this, the export silently returns a truncated ~2.3-year file and every 1h
+number would be computed on a third of the available history, with nothing
+saying so.
+
+This is an **11th change site, absent from the 10-site portability map**, and
+it lives in `signal_engines.py` (a core file). Under research rule 1 it is a
+separate decision and a **separate commit** from the research code, tests
+first.
+
+**Amendment 3, fixed at approval — the ceiling is raised AND truncation is
+made loud.** Raising `max_requests` alone would fix today's export and leave
+the failure mode intact for the next one. Two changes, both required:
+
+1. `max_requests` raised to cover **61+ pages** (>= 70 for headroom), so
+   60,730 bars is reachable.
+2. A **loud assertion in the export path**: if bars returned < **95%** of bars
+   requested, the export FAILS with the counts in the message. It must never
+   again be possible for a truncated history to be written to `data/` and
+   silently become the basis of a result.
+
+The 95% tolerance exists because a legitimately short symbol (SOL starts later
+than BTC) returns fewer bars than asked for. That case is distinguished by
+reaching the true start of history — the paginator already detects it via an
+empty page — so the assertion fires on TRUNCATION, not on a ticker that simply
+has less history than requested.
+
+---
+
+## Registered hypotheses
+
+| # | arm | question | registered direction | pass rule |
+|---|-----|----------|----------------------|-----------|
+| **#168** | A | Does the phenomenon survive being measured at 1h? | BTC shows the same excess-over-drift character as the 4h incumbent | **ALL THREE:** (a) excess over 1h ALWAYS_LONG > 0 net of measured costs; (b) target rate >= 15pp above the 1h ALWAYS_LONG base rate; (c) `net_all` above the episode-matched placebo p95 on the same window. |
+| **#169** | B | Is `ex_best` DEFINABLE at 1h? | Reported measurement, no pass/fail | On how many of 3 tickers `ex_best` is defined (>=3 folds x >=10 trades). **GATE: any ticker < 30 trades on DISCOVERY -> #170 does not run**, program reports "still not measurable". |
+| **#170** | B | Is there an edge? | `ex_best` defined AND > 0 on **>= 2 of 3** tickers, AND pooled net above the episode-matched placebo p95 on **BOTH** DISCOVERY and CONFIRMATION | All conditions, or FAIL. No partial credit, no "almost". |
+
+### #168 operationalisation — FIXED AT APPROVAL
+
+On BTC, over the full non-lockbox 1h span. **All three required:**
+
+1. **Excess over drift positive** — ARM A STRONG_BUY `net_all` minus 1h
+   ALWAYS_LONG `net_all` (same geometry, same window) **> 0**, computed **net
+   of measured costs**, using each arm's own measured `cost_r` rather than the
+   4h figure.
+2. **Mechanism retained** — target rate **>= 15pp above** the 1h ALWAYS_LONG
+   base rate. At 4h the tier ran 78% against ~35%; a hit-rate lift is what
+   distinguishes the phenomenon from geometry.
+3. **Beats chance** — `net_all` above the **episode-matched placebo p95** on
+   the same window, constructed exactly as in #167.
+
+#### Why the +0.90R absolute floor was REMOVED (amendment 1)
+
+The draft proposed a third condition: excess **>= +0.90R**, derived as "half
+the 4h figure of +1.819R". That is now struck, and the reasoning is recorded
+here because it generalises beyond this hypothesis.
+
+**+1.819R is an n=18 quantity that this very record classifies as
+unmeasurable.** It comes from 18 BTC trades that are **2 independent episodes
+resolving on 4 distinct exit bars**, with `ex_best` undefined on all three
+tickers (Attribution, "INC_STRONG_BUY — a different answer: not
+attributable"). The record's own verdict on it is "too rare to attribute —
+not a verdict either way".
+
+A pass threshold built from that number would **inherit its noise and launder
+it into a criterion**. Whatever sampling error sits in +1.819R would silently
+become the bar a new result must clear, and any future reader would see a
+precise-looking "+0.90R" with no visible trace that its parent quantity was
+declared unmeasurable one section earlier. Halving it does not fix that; it
+just halves the noise along with the signal.
+
+**Standing rule, generalised: no pass threshold may take its magnitude from a
+quantity this record classifies as unmeasurable.** A threshold may be derived
+from a relationship (a placebo distribution, a drift baseline, a base rate
+computed on thousands of trades) but not from a point estimate whose own
+confidence the project has already refused to assert.
+
+Condition 3 replaces it with a bar that is **measured on the same data at run
+time** — the episode-matched placebo — so the threshold carries no inherited
+error from the 4h estimate at all.
+
+**#168 remains a ROBUSTNESS result on one ticker. It is NOT replication and
+must never be reported as such** — this project's bar is 3+ tickers (CLAUDE.md,
+"How decisions get made here", rule 2). ETH and SOL are reported alongside for
+information; they carry no pass condition in ARM A.
+
+**#168 is a ROBUSTNESS result on one ticker. It is NOT replication and must
+never be reported as such** — this project's own bar is 3+ tickers (CLAUDE.md,
+"How decisions get made here", rule 2). ETH and SOL are reported alongside for
+information; they carry no pass condition in ARM A.
+
+### #169 gate — FIXED AT APPROVAL (amendment 2)
+
+The ARM B event count is estimated FIRST, and it is a **hard gate**.
+
+**The gate binds PER TICKER, ON DISCOVERY.** If **any one** of BTC, ETH or SOL
+yields **< 30 trades on the DISCOVERY window**, **#170 does not run** and the
+program reports **"still not measurable"**.
+
+30 is not a preference: it is the arithmetic minimum for `ex_best` to exist at
+all (3 counted folds x 10 trades each). Binding per ticker and on DISCOVERY
+specifically closes two escape hatches:
+
+- **Per ticker, not pooled.** A pooled count can clear 30 while an individual
+  ticker has 4, which is exactly how #165 produced `ex_best` undefined in
+  three of four quartiles while looking adequate in aggregate.
+- **On DISCOVERY, not the full span.** CONFIRMATION is the longer window here;
+  measuring the gate on the full span could let a ticker pass on
+  CONFIRMATION's density while DISCOVERY — half of #170's pass condition —
+  remains uncomputable.
+
+Running an edge test that cannot produce its own statistic is how undefined
+results get reported as negative ones. If the gate fails, "still not
+measurable" IS the finding, and it is reported with the same detail as a pass.
+
+### Standing rules, unchanged
+
+Registered before any scoring. No parameter changed after a result (rule 4).
+Negatives reported with the same detail as positives (rule 5). The lockbox is
+never read (rule 2). Research never edits `signal_engines.py`, `pipeline.py`,
+`live_tools.py` or the workflows (rule 1) — the `max_requests` and `--interval`
+changes above are core-file work, and are a SEPARATE decision and commit, not
+part of this program.
