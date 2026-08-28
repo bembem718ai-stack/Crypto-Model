@@ -9,7 +9,7 @@ Repo is PUBLIC: `bembem718ai-stack/Crypto-Model`.
 $py = "C:\Users\gubby\AppData\Local\Programs\Python\Python312\python.exe"
 $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 
-& $py -m pytest test_signals.py -q        # 440 passed + 1 skipped, must stay green
+& $py -m pytest test_signals.py -q        # 457 passed + 1 skipped, must stay green
 & $py audit.py --offline                  # structural health, seconds, no network
 & $py audit.py BTC ETH SOL --years 4      # full audit, 10-40 min
 & $py pipeline.py run BTC                 # live signal — COSTS 1 ADANOS REQUEST
@@ -31,7 +31,7 @@ Four core files plus the audit, and two directories that support research:
   classification, backtests, position sizing, robustness validation.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 440 tests covering all decision logic.
+- `test_signals.py` — 457 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
 - `data/` — the frozen offline dataset: ~5y of Binance.US 4h bars plus the
   incumbent's daily frame per ticker (BTC/ETH/SOL), with `MANIFEST.json`
@@ -185,6 +185,15 @@ Research is kept separate from the live system, and stays separate.
   rescaled construction registered as robustness on one ticker, and #170 a
   bar-equivalent one running on a 4x shorter timescale. Both are different
   strategies. See the close-out in `docs/cleanroom.md`.
+- **Git object write failures on this machine (intermittent).** `git add`
+  has failed with `unable to write file .git/objects/...: Permission denied`
+  mid-session, leaving the index partially written. A plain retry has always
+  succeeded. Almost certainly antivirus or an editor holding a lock on the
+  object file. It is benign locally — but if it ever happens on a runner it
+  surfaces as a failed commit step with the run otherwise green, so a
+  signal-check run could complete its work and silently not push it. If
+  `Signal check:` commits stop appearing while runs stay successful, look
+  here first.
 - **Adanos tier — RESOLVED by gating, no upgrade needed.** Hourly checks
   used to need ~720 requests/month per ticker against a 200/month free
   tier. Two changes fixed it: the call is skipped below the derived cutoff

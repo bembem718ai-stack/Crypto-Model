@@ -1,0 +1,109 @@
+name: Weekly Audit
+
+# Runs the OFFLINE structural audit once a week and opens a GitHub issue if
+# anything FAILs. Zero Adanos requests, no network beyond the git fetch the
+# freshness check does.
+#
+# WHY AN ISSUE AND NOT A RED RUN: a red workflow is noise that gets muted.
+# An issue is a thing with a title, an assignee and a close button, and it
+# survives until someone acts on it. The audit's own design rule is that a
+# FAIL is a DECISION to make, not a bug to silence -- so it gets a decision
+# artefact.
+#
+# INDEPENDENT of signal-check.yml and derivs-collect.yml: its own
+# concurrency group, its own schedule, and it commits nothing.
+on:
+  schedule:
+    - cron: '40 6 * * 1'      # Mondays 06:40 UTC, off both other slots
+  workflow_dispatch: {}
+
+concurrency:
+  group: audit-weekly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      BINANCE_REGION: US
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # freshness check compares against origin/main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # audit.py exits 1 when any check FAILs. Capture that without failing
+      # the step, so the issue-opening step below still runs.
+      - name: Run offline audit
+        id: audit
+        run: |
+          set +e
+          python audit.py --offline | tee audit_output.txt
+          echo "exit_code=${PIPESTATUS[0]}" >> $GITHUB_OUTPUT
+          set -e
+
+      - name: Summarise on the run page
+        run: |
+          {
+            echo "### Weekly offline audit"
+            echo ""
+            echo "Exit code: \`${{ steps.audit.outputs.exit_code }}\`"
+            echo ""
+            grep -E '^\| ' audit_output.txt || echo "(no table rows parsed)"
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Open an issue on FAIL
+        if: steps.audit.outputs.exit_code != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const out = fs.readFileSync('audit_output.txt', 'utf8');
+            const fails = out.split('\n').filter(l => l.includes('**FAIL**'));
+            const today = new Date().toISOString().slice(0, 10);
+            const body = [
+              `The weekly offline audit reported ${fails.length} FAIL(s) on ${today}.`,
+              '',
+              '**A FAIL here is a decision to make, not necessarily a bug.**',
+              'See CLAUDE.md, "How decisions get made here": a sign-flipping edge is',
+              'information about the market. Do not loosen a threshold to make this pass.',
+              '',
+              '### Failing checks', '',
+              ...(fails.length ? fails.map(f => `- ${f.trim()}`) : ['(none parsed — see the run log)']),
+              '',
+              `[Full run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+            ].join('\n');
+            const title = `Weekly audit: ${fails.length} FAIL(s) — ${today}`;
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'audit',
+            });
+            // Reuse the open audit issue rather than opening one a week
+            // forever; a stack of near-identical issues is how they stop
+            // being read.
+            if (existing.data.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['audit'],
+              });
+            }

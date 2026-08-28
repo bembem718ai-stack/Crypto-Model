@@ -3081,9 +3081,13 @@ def cached_sentiment_check(ticker: str, ttl_hours: float = None,
     gate = dict(gate)
     gate.update({"cache_hit": False, "cache_age_hours": 0.0, "stale_fallback": False})
     if ttl > 0 and _is_real_reading(gate):
+        # `mentions` is vestigial: the live path reads sentiment_mentions.
+        # Two names for one concept is how a silent None gets served on a
+        # later cache hit, so only the canonical name is persisted.
         cache[key] = {"fetched_at": now.isoformat(),
                       "gate": {k: v for k, v in gate.items()
                                if k not in ("cache_hit", "cache_age_hours",
+                                            "mentions",
                                             "stale_fallback")}}
         _save_sentiment_cache(cache, cache_path)
     # Remember for the rest of THIS process only. Reached only on a

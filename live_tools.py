@@ -241,6 +241,16 @@ def run_single_check(tickers: list, log_file: str = "signal_log.csv",
             ml_conf = result["combined"].get("ml_confidence")
             ml_str = f", ML={ml_conf:.0f}%" if ml_conf is not None else ""
 
+            # PUBLICATION GUARDS, before anything is logged or published.
+            # Tradability is a property of the instrument (#167); the cost
+            # floor is a property of this individual signal. A refusal
+            # still logs, with its decision code and inapplicable exit
+            # levels, so the record keeps it and extract_episodes ignores it.
+            trad = tradability_check(ticker)
+            result = apply_publication_guards(result, trad)
+            direction = result["combined"]["direction"]
+            decision = result["combined"]["decision"]
+
             # Persistence check runs BEFORE logging, so today's own entry
             # can't be mistaken for yesterday's confirmation.
             persist = check_persistence(log_file, ticker, direction, confirm_days)
@@ -278,6 +288,141 @@ def run_single_check(tickers: list, log_file: str = "signal_log.csv",
               "use --log-all to log every check regardless)")
 
     return logged
+
+
+# ======================================================================
+# PUBLICATION GUARDS — tradability (#167) and the cost floor
+# ======================================================================
+# Both refuse PUBLICATION. Neither touches the backtest path, so no
+# research number moves and no historical result is restated.
+#
+# A refused signal is still LOGGED, with its decision code and with the
+# exit levels marked inapplicable. That keeps the record complete while
+# guaranteeing the row never becomes a tradeable event: extract_episodes
+# skips any row without a logged target and stop.
+#
+# EVIDENTIARY BASIS
+#   Tradability -- hypothesis #167. A ticker whose 4h bars are largely flat
+#   has an ATR that is a rounding error, so an ATR-derived stop is not a
+#   risk unit. Measured across the 82-ticker basket: pairs failing this
+#   filter turned a pooled +0.815R into -2.016R on the same window, the
+#   difference being entirely cost_r on stops a fraction of a percent wide.
+#   Cost floor -- the same finding, applied per signal rather than per
+#   instrument. A ticker can pass the filter on its median and still throw
+#   an individual signal whose stop is too tight to be worth trading.
+
+MAX_FLAT_BAR_SHARE = 0.10        # #167: flat 4h bars (High == Low)
+MIN_STOP_PCT_OF_ENTRY = 0.5      # #167: median 1.5 x ATR stop, % of entry
+TRADABILITY_LOOKBACK_BARS = 2190  # ~1 year of 4h bars (365 * 6)
+
+# The cost floor is expressed as a RELATIONSHIP, not a percentage: cost may
+# not exceed this fraction of one R. The stop threshold is DERIVED, so if
+# the fee assumption ever changes the floor moves with it instead of
+# silently decoupling.
+MAX_COST_FRACTION_OF_R = 0.10
+
+
+def min_stop_fraction(fee_bps: float = 2.0, slippage_bps: float = 2.0,
+                      max_cost_fraction: float = None) -> float:
+    """Stop fraction below which round-trip cost exceeds its share of 1R.
+
+    cost_r = round_trip / stop_fraction, so the floor is
+    round_trip / max_cost_fraction. At 2+2bps per side and a 10% ceiling
+    that is 0.0008 / 0.10 = 0.008, i.e. 0.80% of entry -- NOT 0.08%, which
+    is the cost itself and would put cost_r at a full 1.0R.
+    """
+    mcf = MAX_COST_FRACTION_OF_R if max_cost_fraction is None else max_cost_fraction
+    round_trip = 2.0 * (fee_bps + slippage_bps) / 1e4
+    return round_trip / mcf if mcf > 0 else 0.0
+
+
+def below_cost_floor(entry, stop, fee_bps: float = 2.0,
+                     slippage_bps: float = 2.0) -> bool:
+    """True when this signal's stop is too tight to be worth the fees."""
+    if entry is None or stop is None or not entry:
+        return False                      # nothing to publish anyway
+    try:
+        frac = abs(float(entry) - float(stop)) / abs(float(entry))
+    except (TypeError, ValueError, ZeroDivisionError):
+        return False
+    if frac <= 0:
+        return False
+    floor = min_stop_fraction(fee_bps, slippage_bps)
+    # Relative tolerance so a stop sitting EXACTLY on the floor passes.
+    # 100.0 - 99.2 is 0.7999999999999972 in binary floating point, which
+    # would otherwise refuse a signal that is precisely at the boundary --
+    # a guard must not fire on representation error.
+    return frac < floor * (1.0 - 1e-9)
+
+
+def tradability_check(ticker: str, bars_4h=None,
+                      lookback_bars: int = TRADABILITY_LOOKBACK_BARS) -> dict:
+    """#167 criteria on the trailing year of 4h bars, at signal time.
+
+    FAILS CLOSED. Unknown tradability refuses publication -- the opposite
+    of the trigger guard, because publishing a signal on an instrument we
+    could not assess is the harmful direction, while skipping one check is
+    not.
+    """
+    try:
+        if bars_4h is None:
+            bars_4h = cf.fetch_klines_paginated(cf.to_binance_symbol(ticker),
+                                                interval="4h",
+                                                target_bars=lookback_bars)
+    except Exception as e:  # noqa: BLE001
+        return {"tradable": False, "flat_share": None, "med_stop_pct": None,
+                "reason": "could not fetch bars (%s) — refusing to publish "
+                          "an unassessed instrument" % type(e).__name__}
+    if bars_4h is None or len(bars_4h) < 200:
+        return {"tradable": False, "flat_share": None, "med_stop_pct": None,
+                "reason": "only %d bars available, need 200+ to assess"
+                          % (0 if bars_4h is None else len(bars_4h))}
+
+    b = bars_4h.tail(lookback_bars)
+    flat = float((b["High"] == b["Low"]).mean())
+    atr = pl.build_4h_atr(b)
+    stop_pct = float((1.5 * atr / b["Close"]).dropna().median() * 100)
+
+    fails = []
+    if flat > MAX_FLAT_BAR_SHARE:
+        fails.append("flat-bar share %.1f%% > %.0f%%" % (100 * flat, 100 * MAX_FLAT_BAR_SHARE))
+    if not (stop_pct >= MIN_STOP_PCT_OF_ENTRY):
+        fails.append("median stop %.3f%% < %.1f%% of entry" % (stop_pct, MIN_STOP_PCT_OF_ENTRY))
+    return {"tradable": not fails, "flat_share": flat, "med_stop_pct": stop_pct,
+            "reason": "; ".join(fails) if fails else "passes #167 criteria"}
+
+
+def apply_publication_guards(result: dict, trad: dict,
+                             fee_bps: float = 2.0, slippage_bps: float = 2.0) -> dict:
+    """Refuse publication where required. Returns the (mutated) result.
+
+    Order matters: tradability is a property of the INSTRUMENT and is
+    checked first, so an untradable ticker reports that rather than a
+    downstream symptom of it.
+    """
+    combined = result.get("combined", {})
+    exits = combined.get("exit_levels") or {}
+    if not exits.get("applicable"):
+        return result                      # WATCH row: nothing to refuse
+
+    def _refuse(code, why):
+        combined["decision"] = code
+        combined["exit_levels"] = dict(exits, applicable=False,
+                                       refused_reason=why)
+        print("  [guard] %s %s: %s — not published" %
+              (result.get("ticker"), code, why))
+        return result
+
+    if not trad.get("tradable", False):
+        return _refuse("REFUSED_UNTRADABLE", trad.get("reason", "fails #167"))
+    if below_cost_floor(exits.get("entry"), exits.get("stop"), fee_bps, slippage_bps):
+        frac = abs(exits["entry"] - exits["stop"]) / abs(exits["entry"])
+        return _refuse("SKIPPED_COST_FLOOR",
+                       "stop %.4f%% of entry < %.2f%% floor (cost would be "
+                       "%.2fR of 1R)" % (100 * frac, 100 * min_stop_fraction(
+                           fee_bps, slippage_bps),
+                           (2.0 * (fee_bps + slippage_bps) / 1e4) / frac))
+    return result
 
 
 def monitor(tickers: list, interval_seconds: int, alert_every_time: bool,

@@ -3727,3 +3727,156 @@ class TestPaginationCeiling:
         with pytest.raises(ValueError) as e:
             epm.assert_not_truncated("ETHUSDT", requested=60000, returned=1000)
         assert "ETHUSDT" in str(e.value)
+
+
+# ======================================================================
+# LIVE PUBLICATION GUARDS — tradability (#167) and cost floor
+# ======================================================================
+# Both refuse PUBLICATION only. Neither touches the backtest path, so no
+# research number moves. A refused row is still LOGGED, with its decision
+# code and with target/stop nulled, so the record keeps it while
+# extract_episodes (which skips rows lacking exit levels) never treats it
+# as a tradeable event.
+class TestTradabilityGuard:
+
+    def _bars(self, n=2200, price=100.0, atr_frac=0.02, flat_frac=0.0):
+        idx = pd.date_range("2024-01-01", periods=n, freq="4h")
+        rng = np.random.default_rng(7)
+        close = np.full(n, price)
+        span = price * atr_frac
+        high = close + span / 2
+        low = close - span / 2
+        n_flat = int(n * flat_frac)
+        if n_flat:
+            high[:n_flat] = close[:n_flat]
+            low[:n_flat] = close[:n_flat]
+        return pd.DataFrame({"Open": close, "High": high, "Low": low,
+                             "Close": close, "Volume": 1.0}, index=idx)
+
+    def test_liquid_series_is_tradable(self):
+        r = lt.tradability_check("BTC", self._bars())
+        assert r["tradable"] is True, r
+        assert r["flat_share"] <= 0.10 and r["med_stop_pct"] >= 0.5
+
+    def test_flat_bar_heavy_series_is_refused(self):
+        r = lt.tradability_check("DEAD", self._bars(flat_frac=0.40))
+        assert r["tradable"] is False
+        assert "flat" in r["reason"].lower()
+
+    def test_tight_stop_series_is_refused(self):
+        # ATR so small that 1.5*ATR is under 0.5% of price.
+        r = lt.tradability_check("TIGHT", self._bars(atr_frac=0.0005))
+        assert r["tradable"] is False
+        assert "stop" in r["reason"].lower()
+
+    def test_thresholds_match_hypothesis_167(self):
+        assert lt.MAX_FLAT_BAR_SHARE == 0.10
+        assert lt.MIN_STOP_PCT_OF_ENTRY == 0.5
+
+    def test_empty_bars_fail_open_to_refusal(self):
+        # Unknown tradability must NOT publish. This guard fails CLOSED --
+        # the opposite of the trigger guard, because publishing a signal on
+        # an instrument we cannot assess is the harmful direction.
+        r = lt.tradability_check("X", pd.DataFrame())
+        assert r["tradable"] is False
+
+
+class TestCostFloor:
+
+    def test_threshold_is_derived_from_the_relationship(self):
+        # Encoded as "cost may not exceed 10% of 1R", with the stop
+        # fraction DERIVED -- not a hardcoded percentage that silently
+        # decouples if the fee assumption changes.
+        assert lt.MAX_COST_FRACTION_OF_R == 0.10
+        got = lt.min_stop_fraction(fee_bps=2.0, slippage_bps=2.0)
+        assert got == pytest.approx(0.008), got          # 0.80%, not 0.08%
+        assert lt.min_stop_fraction(fee_bps=4.0, slippage_bps=4.0) == pytest.approx(0.016)
+
+    def test_cost_at_the_threshold_is_exactly_ten_percent_of_R(self):
+        frac = lt.min_stop_fraction()
+        cost_r = (2 * (2.0 + 2.0) / 1e4) / frac
+        assert cost_r == pytest.approx(0.10)
+
+    def test_stop_below_the_floor_is_skipped(self):
+        assert lt.below_cost_floor(entry=100.0, stop=99.95) is True     # 0.05%
+    def test_stop_above_the_floor_passes(self):
+        assert lt.below_cost_floor(entry=100.0, stop=98.0) is False     # 2.0%
+    def test_stop_exactly_at_the_floor_passes(self):
+        assert lt.below_cost_floor(entry=100.0, stop=99.2) is False     # 0.80%
+    def test_missing_levels_do_not_trigger_the_floor(self):
+        # No exit levels means nothing to publish anyway; the floor must
+        # not manufacture a skip reason for a WATCH row.
+        assert lt.below_cost_floor(entry=100.0, stop=None) is False
+
+
+class TestPublicationRefusalPath:
+
+    def _result(self, direction="BUY", entry=78000.0, stop=76000.0):
+        return {"ticker": "BTC",
+                "step1_initial_scoring": {"close": entry, "initial_score": 70.0,
+                                          "atr": 1000.0},
+                "step2_reddit_data": {"gated_score": 70.0, "gate_decision": "PROCEED",
+                                      "gate_multiplier": 1.0},
+                "step3_indicators": {"indicator_final_score": 65.0, "vix_level": 18.0},
+                "combined": {"final_score": 68.0, "direction": direction,
+                             "decision": "ENTER",
+                             "exit_levels": {"applicable": True, "entry": entry,
+                                             "target": entry * 1.05, "stop": stop,
+                                             "atr": 1000.0, "risk_reward": 2.0}}}
+
+    def test_tradable_ticker_publishes_unchanged(self):
+        row = lt.apply_publication_guards(self._result(), {"tradable": True})
+        assert row["combined"]["decision"] == "ENTER"
+        assert row["combined"]["exit_levels"]["applicable"] is True
+
+    def test_untradable_ticker_is_refused_and_levels_nulled(self):
+        row = lt.apply_publication_guards(
+            self._result(), {"tradable": False, "reason": "flat-bar share 41.0%"})
+        assert row["combined"]["decision"] == "REFUSED_UNTRADABLE"
+        assert row["combined"]["exit_levels"]["applicable"] is False
+
+    def test_cost_floor_breach_is_skipped_and_levels_nulled(self):
+        # stop 0.05% from entry -> cost_r = 1.6R
+        row = lt.apply_publication_guards(
+            self._result(stop=78000.0 * (1 - 0.0005)), {"tradable": True})
+        assert row["combined"]["decision"] == "SKIPPED_COST_FLOOR"
+        assert row["combined"]["exit_levels"]["applicable"] is False
+
+    def test_refused_row_yields_no_tradeable_episode(self):
+        # The point of nulling the levels: extract_episodes skips rows with
+        # no target/stop, so a refused row never becomes a live episode.
+        row = lt.apply_publication_guards(
+            self._result(), {"tradable": False, "reason": "x"})
+        logged = lt.append_ping_to_log(row, log_path=self._p)
+        df = pd.DataFrame([logged])
+        assert not lt.extract_episodes(df)
+
+    def test_watch_row_is_untouched_by_either_guard(self):
+        r = self._result(direction="WATCH")
+        r["combined"]["exit_levels"] = {"applicable": False}
+        row = lt.apply_publication_guards(r, {"tradable": True})
+        assert row["combined"]["decision"] == "ENTER"
+
+    @pytest.fixture(autouse=True)
+    def _tmp(self, tmp_path):
+        self._p = str(tmp_path / "log.csv")
+
+
+class TestSentimentCacheHygiene:
+
+    def test_no_vestigial_mentions_key(self, tmp_path):
+        epm.reset_run_cache()
+
+        def fetcher(t, **kw):
+            return {"decision": "PROCEED", "gate_multiplier": 1.0, "reason": "ok",
+                    "sentiment_score": 0.2, "sentiment_mentions": 4200}
+
+        cp = str(tmp_path / "c.json")
+        epm.cached_sentiment_check("BTC", cache_path=cp, fetcher=fetcher, ttl_hours=4)
+        import json
+        gate = json.load(open(cp))["BTC"]["gate"]
+        assert "mentions" not in gate, (
+            "vestigial 'mentions' key: two names for one concept is how a "
+            "silent None gets served later")
+        assert gate["sentiment_mentions"] == 4200
+
