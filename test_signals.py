@@ -3662,3 +3662,68 @@ class TestDerivativesMerge:
                          ("PF_XBTUSD", "2026-08-01T02:00:00Z", 3.0)])
         res = cd.write_merged(p, full)
         assert res["rows"] == 3 and res["added"] == 2
+
+
+# ======================================================================
+# PAGINATION CEILING + TRUNCATION ASSERTION
+# ======================================================================
+# fetch_klines_paginated defaulted to max_requests=20, and Binance.US
+# returns 1000 bars per call -- a hard 20,000-bar ceiling. The 1h program
+# needs ~60,730 bars per ticker, i.e. >= 61 pages. Without the raise the
+# export would silently write a ~2.3-year file and every 1h number would be
+# computed on a third of the available history with nothing saying so.
+#
+# Raising the ceiling alone fixes today and leaves the failure mode intact,
+# so the export also asserts that what came back is at least 95% of what was
+# asked for. The tolerance exists because a legitimately short symbol (SOL
+# lists later than BTC) returns fewer bars than requested; that case is
+# distinguished by the paginator reaching a true empty page, not by count.
+class TestPaginationCeiling:
+
+    def test_default_max_requests_covers_61_pages(self):
+        import inspect
+        sig = inspect.signature(epm.fetch_klines_paginated)
+        assert sig.parameters["max_requests"].default >= 61, (
+            "1h needs >= 61 pages of 1000 bars; default is "
+            f"{sig.parameters['max_requests'].default}")
+
+    def test_paginator_can_exceed_the_old_20k_ceiling(self, monkeypatch):
+        # 25 pages x 1000 = 25,000 bars: impossible under the old default.
+        pages = {"n": 0}
+
+        def fake(symbol, interval="4h", limit=1000, end_time_ms=None):
+            pages["n"] += 1
+            if pages["n"] > 25:
+                return pd.DataFrame()
+            end = 1_700_000_000_000 - (pages["n"] - 1) * 1000 * 3_600_000
+            idx = pd.to_datetime(
+                [end - i * 3_600_000 for i in range(1000)][::-1], unit="ms")
+            return pd.DataFrame({"Open": 1.0, "High": 1.0, "Low": 1.0,
+                                 "Close": 1.0, "Volume": 1.0}, index=idx)
+
+        monkeypatch.setattr(epm, "fetch_klines", fake)
+        out = epm.fetch_klines_paginated("BTCUSDT", interval="1h",
+                                         target_bars=25000)
+        assert len(out) > 20000, f"still capped at {len(out)} bars"
+
+    def test_truncation_assertion_fires_on_a_short_return(self):
+        with pytest.raises(ValueError) as e:
+            epm.assert_not_truncated("BTCUSDT", requested=60000, returned=20000)
+        assert "20000" in str(e.value) and "60000" in str(e.value)
+
+    def test_truncation_assertion_passes_at_95_percent(self):
+        epm.assert_not_truncated("BTCUSDT", requested=60000, returned=57000)
+
+    def test_truncation_assertion_passes_when_exact(self):
+        epm.assert_not_truncated("BTCUSDT", requested=1000, returned=1000)
+
+    def test_truncation_assertion_allows_a_genuinely_short_symbol(self):
+        # A symbol that reached the true start of its history is not
+        # truncated, however far short of the request it lands.
+        epm.assert_not_truncated("SOLUSDT", requested=60000, returned=52000,
+                                 reached_start=True)
+
+    def test_truncation_message_names_the_symbol(self):
+        with pytest.raises(ValueError) as e:
+            epm.assert_not_truncated("ETHUSDT", requested=60000, returned=1000)
+        assert "ETHUSDT" in str(e.value)

@@ -9,7 +9,7 @@ Repo is PUBLIC: `bembem718ai-stack/Crypto-Model`.
 $py = "C:\Users\gubby\AppData\Local\Programs\Python\Python312\python.exe"
 $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 
-& $py -m pytest test_signals.py -q        # 433 passed + 1 skipped, must stay green
+& $py -m pytest test_signals.py -q        # 440 passed + 1 skipped, must stay green
 & $py audit.py --offline                  # structural health, seconds, no network
 & $py audit.py BTC ETH SOL --years 4      # full audit, 10-40 min
 & $py pipeline.py run BTC                 # live signal — COSTS 1 ADANOS REQUEST
@@ -31,7 +31,7 @@ Four core files plus the audit, and two directories that support research:
   classification, backtests, position sizing, robustness validation.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 433 tests covering all decision logic.
+- `test_signals.py` — 440 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
 - `data/` — the frozen offline dataset: ~5y of Binance.US 4h bars plus the
   incumbent's daily frame per ticker (BTC/ETH/SOL), with `MANIFEST.json`

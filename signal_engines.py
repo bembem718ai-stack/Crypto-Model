@@ -173,27 +173,69 @@ def fetch_klines(symbol: str, interval: str = "4h", limit: int = 1000,
     return df[["Open", "High", "Low", "Close", "Volume"]].sort_index()
 
 
+TRUNCATION_TOLERANCE = 0.95
+
+
+def assert_not_truncated(symbol: str, requested: int, returned: int,
+                         reached_start: bool = False,
+                         tolerance: float = TRUNCATION_TOLERANCE) -> None:
+    """Fail loudly when a paginated fetch came back materially short.
+
+    WHY THIS EXISTS: fetch_klines_paginated used to default to
+    max_requests=20 and Binance.US returns 1000 bars per call, a hard
+    20,000-bar ceiling. A 1h export asking for ~60,730 bars would have
+    written a ~2.3-year file to data/ with NOTHING saying so, and every
+    number computed from it would have silently rested on a third of the
+    available history. Raising the ceiling fixes today; this assertion fixes
+    the failure mode.
+
+    `reached_start=True` means the paginator saw an empty page, i.e. it
+    genuinely exhausted the symbol's history. A symbol that simply lists
+    later than BTC (SOL) is short for a real reason and is not truncated.
+    """
+    if reached_start or requested <= 0:
+        return
+    if returned < tolerance * requested:
+        raise ValueError(
+            f"{symbol}: paginated fetch returned {returned} bars of "
+            f"{requested} requested ({100.0 * returned / requested:.1f}%, "
+            f"below the {100 * tolerance:.0f}% floor) WITHOUT reaching the "
+            f"start of history. This is truncation, not a short symbol -- "
+            f"refusing to write a silently shortened history. Raise "
+            f"max_requests or lower target_bars deliberately.")
+
+
 def fetch_klines_paginated(symbol: str, interval: str = "4h", target_bars: int = 1000,
-                            max_requests: int = 20, page_limit: int = 1500) -> pd.DataFrame:
+                            max_requests: int = 70, page_limit: int = 1500) -> pd.DataFrame:
     """
     Walks backward in time to pull more klines than a single call allows
     (Binance caps a single /fapi/v1/klines call at 1500 bars). Stops at
     `target_bars` or when an empty page signals the true start of
     available history for this symbol.
+
+    max_requests defaults to 70, not 20. Binance.US returns 1000 bars per
+    call regardless of page_limit, so the old default was a hard 20,000-bar
+    ceiling -- fine for 4h (15,177 bars) and silently fatal for 1h, which
+    needs ~60,730 bars, i.e. >= 61 pages. Callers that care should pair this
+    with assert_not_truncated(), which turns a short return into a failure
+    instead of a quietly shortened history.
     """
     pages = []
     end_time_ms = None
     seen_earliest = None
+    reached_start = False
 
     for i in range(max_requests):
         page = fetch_klines(symbol, interval=interval, limit=page_limit, end_time_ms=end_time_ms)
         if page.empty:
             print(f"  [klines] page {i + 1}: empty — reached the start of available history.")
+            reached_start = True
             break
 
         pages.append(page)
         earliest = page.index.min()
         if seen_earliest is not None and earliest >= seen_earliest:
+            reached_start = True      # no older data on offer
             break
         seen_earliest = earliest
 
@@ -207,7 +249,12 @@ def fetch_klines_paginated(symbol: str, interval: str = "4h", target_bars: int =
     if not pages:
         return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
     combined = pd.concat(pages).sort_index()
-    return combined[~combined.index.duplicated(keep="first")]
+    out = combined[~combined.index.duplicated(keep="first")]
+    # Carried on the frame so callers can tell "this symbol has no more
+    # history" apart from "the paginator gave up early".
+    out.attrs["reached_start"] = bool(reached_start)
+    out.attrs["requested_bars"] = int(target_bars)
+    return out
 
 
 def fetch_funding_rate(symbol: str, limit: int = 1000, end_time_ms: int = None) -> pd.Series:

@@ -31,7 +31,17 @@ tls.enable(verbose=True)
 import pipeline as p          # noqa: E402
 import signal_engines as cf   # noqa: E402
 
-N = 20000                     # paginator ceiling: 20 requests x 1000 bars
+import argparse                                       # noqa: E402
+
+_ap = argparse.ArgumentParser(description="Freeze the offline dataset")
+_ap.add_argument("--interval", default="4h", choices=("4h", "1h"),
+                 help="kline interval to export (default 4h)")
+_args, _ = _ap.parse_known_args()
+
+INTERVAL = _args.interval
+# 1h needs ~60,730 bars for BTC/ETH; 4h needs ~15,177. max_requests now
+# defaults to 70 (see fetch_klines_paginated), so both are reachable.
+N = 70000 if INTERVAL == "1h" else 20000
 PERIOD = "max"
 TICKERS = ["BTC", "ETH", "SOL"]
 
@@ -42,23 +52,33 @@ man = {
         "binance_region": os.environ.get("BINANCE_REGION", "GLOBAL"),
         "rest_base": cf.BINANCE_REST_BASE,
         "klines_path": cf.BINANCE_KLINES_PATH,
-        "target_4h_bars": N,
+        "interval": INTERVAL,
+        "target_bars": N,
         "daily_period": PERIOD,
     }
 }
 
 for t in TICKERS:
     print("=== " + t)
-    bars = cf.fetch_klines_paginated(cf.to_binance_symbol(t), interval="4h", target_bars=N)
-    bars.to_csv("data/" + t + "_4h.csv")
-    print("  bars %d  %s -> %s" % (len(bars), bars.index.min(), bars.index.max()))
+    bars = cf.fetch_klines_paginated(cf.to_binance_symbol(t), interval=INTERVAL,
+                                     target_bars=N)
+    # LOUD ON TRUNCATION. A short return that did NOT reach the start of
+    # history means the paginator gave up early; writing it would put a
+    # silently shortened history into data/ and every number derived from it
+    # would rest on a fraction of the available bars. Fail instead.
+    cf.assert_not_truncated(cf.to_binance_symbol(t), requested=N,
+                            returned=len(bars),
+                            reached_start=bars.attrs.get("reached_start", False))
+    bars.to_csv("data/" + t + "_" + INTERVAL + ".csv")
+    print("  bars %d (%s)  %s -> %s" % (len(bars), INTERVAL, bars.index.min(), bars.index.max()))
 
     merged = p.run_backtest(t, period=PERIOD, squeeze_bars=N)
     merged.to_csv("data/" + t + "_merged.csv")
     print("  daily %d  %s -> %s" % (len(merged), merged.index.min(), merged.index.max()))
 
     man[t] = {
-        "bars_4h": len(bars),
+        "bars": len(bars),
+        "interval": INTERVAL,
         "bars_first": str(bars.index.min()),
         "bars_last": str(bars.index.max()),
         "bars_years": round((bars.index.max() - bars.index.min()).days / 365.25, 2),
