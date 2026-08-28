@@ -1592,3 +1592,99 @@ never read (rule 2). Research never edits `signal_engines.py`, `pipeline.py`,
 `live_tools.py` or the workflows (rule 1) — the `max_requests` and `--interval`
 changes above are core-file work, and are a SEPARATE decision and commit, not
 part of this program.
+
+## Result of ARM A (#168) — recorded 2026-08-28
+
+Time-equivalent 1h. SEALED span **2019-09-23 08:00 -> 2026-02-28 04:00**;
+lockbox 2026-02-28 -> 2026-08-28 never read, 1h feed sealed at the boundary.
+Trades resolved by `research/fast_resolver.py`, which passed the registered
+equivalence gate against `pipeline.resolve_on_4h` on 6,611 trades first.
+Step 3 applied with the registered one-day lag.
+
+| ticker | row | n | eps | win% | net_all | ex_best | folds+/cnt | med stop | med cost_r | totR |
+|---|---|---|---|---|---|---|---|---|---|---|
+| BTC | STRONG_BUY | 45 | 4 | 33.3 | +0.114 | — | 1/1 | 0.796% | 0.101 | +5.1 |
+| BTC | ALWAYS_LONG | 55775 | 1 | 34.1 | -0.056 | -0.084 | 1/4 | 1.069% | 0.075 | -3118.9 |
+| ETH | STRONG_BUY | 60 | 4 | 71.7 | +1.513 | — | 2/2 | 0.698% | 0.115 | +90.8 |
+| ETH | ALWAYS_LONG | 55779 | 1 | 34.2 | -0.037 | -0.084 | 1/4 | 1.375% | 0.058 | -2086.9 |
+| SOL | STRONG_BUY | **0** | — | — | — | — | — | — | — | — |
+| SOL | ALWAYS_LONG | 47136 | 1 | 33.4 | -0.040 | -0.059 | 1/4 | 1.943% | 0.041 | -1878.9 |
+
+- **BTC** episode-matched placebo (300 seeds, 300 valid): mean -0.041, p95 +1.221. Indicator staleness 0-23h (median 12h).
+- **ETH** episode-matched placebo (300 seeds, 300 valid): mean -0.020, p95 +1.148. Indicator staleness 0-23h (median 12h).
+- **SOL** episode-matched placebo (300 seeds, 0 valid): mean —, p95 —. Indicator staleness 0-23h (median 12h).
+
+### VERDICT: **FAIL** — 1 of 3 registered conditions met
+
+| condition | measured | result |
+|---|---|---|
+| (a) excess over 1h ALWAYS_LONG > 0, net of costs | +0.114 − (-0.056) = **+0.170** | **PASS** |
+| (b) target rate >= +15pp over the 1h base rate | 33.3% − 34.1% = **-0.7pp** | **FAIL** |
+| (c) net_all above episode-matched placebo p95 | +0.114 vs **+1.221** | **FAIL** |
+
+**The mechanism does not survive the port, and that is the finding.**
+Condition (b) is the one that matters: at 4h the STRONG_BUY tier hit target
+**78%** against a ~35% base rate, and that hit-rate lift is what
+distinguished the phenomenon from geometry (recorded in Attribution). At 1h
+the same construction hits **33.3%** against a 34.1% base — **0.7pp BELOW**
+chance, not 15pp above. The excess in (a) is +0.170R and is real, but with
+no hit-rate edge behind it, on 45 trades from **4 episodes**, it is not
+distinguishable from the placebo: (c) misses by a wide margin, +0.114 against
+a p95 of +1.221.
+
+**`ex_best` is STILL undefined.** BTC reaches **1** counted fold of 4 (45
+trades, but clustered into 4 episodes so they land in one fold); ETH reaches
+2. Neither makes the 3 required. ARM A does not answer the measurability
+question — that is ARM B's job — but it is worth recording that raising
+resolution alone did not fix it here either.
+
+**SOL produced ZERO STRONG_BUY trades** across 6.4 years of 1h bars. The 48-bar
+confirm requires 48 consecutive hourly STRONG_BUY labels, which SOL never
+achieved. Its placebo therefore has no observed run-length distribution to
+match and is undefined; no number was invented for it.
+
+### The two registered handicaps, measured
+
+Both were stated before the run and both are confirmed. Neither is offered
+as an excuse — they are recorded because a FAIL under a harder test says
+less than a FAIL under an equal one, and the reader is entitled to know
+which this was.
+
+**1. Cost roughly doubled, as predicted.** Median `cost_r`, 4h -> 1h:
+
+| ticker | 4h med stop | 1h med stop | ratio | 4h `cost_r` | 1h `cost_r` | ratio |
+|---|---|---|---|---|---|---|
+| BTC | 1.776% | 1.069% | 0.60x | 0.045 | 0.075 | **1.66x** |
+| ETH | 2.003% | 1.375% | 0.69x | 0.040 | 0.058 | **1.45x** |
+| SOL | 2.116% | 1.943% | 0.92x | 0.038 | 0.041 | **1.08x** |
+
+The stop fraction fell to 0.60-0.92x and `cost_r` rose 1.08-1.66x. The
+registration said "roughly half" and "roughly doubles"; the measured
+direction is right and the magnitude is somewhat milder than predicted,
+least so on SOL. On the STRONG_BUY rows specifically the stops are tighter
+still (BTC 0.796%, ETH 0.698%) and `cost_r` reaches 0.101-0.115.
+
+**2. Indicator staleness 0-23h, median 12h**, on every ticker — against ~0h
+at the daily incumbent's decision moment. 40% of each 1h score was up to a
+day old by construction.
+
+**Neither handicap explains condition (b).** A stale indicator and a doubled
+cost move `net_all`; they do not move the TARGET RATE, which is a property
+of where the exit levels sat relative to subsequent price. 33.3% against a
+34.1% base is a statement about the signal, not about costs.
+
+### What ARM A does and does not establish
+
+- It does **not** establish that the 4h phenomenon is fake. The 4h figure it
+  was compared against (+1.819R excess, 78% target) is itself an n=18
+  quantity this record classifies as unmeasurable.
+- It **does** establish that the construction, ported to 1h under
+  time-equivalent parameters, produces no hit-rate advantage on BTC and
+  nothing separable from an episode-matched placebo.
+- **ETH is the tempting row and carries no pass condition.** 60 trades,
+  71.7% target, +1.513R — but 4 episodes, `ex_best` undefined (2 counted
+  folds), and ARM A registered BTC as the test. Reporting ETH as a result
+  would be selecting the ticker after seeing the numbers. It is recorded,
+  not claimed.
+- Per the registration, ARM A was **never** a replication test. A pass would
+  have been robustness-on-one-ticker; a fail is the same scope.

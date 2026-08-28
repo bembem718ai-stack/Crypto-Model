@@ -1,0 +1,111 @@
+{
+  "BTC": {
+    "ticker": "BTC",
+    "strong_buy": {
+      "n": 45,
+      "episodes": 4,
+      "win_pct": 33.33333333333333,
+      "net_all": 0.11380301001215884,
+      "total_R": 5.121135450547148,
+      "med_stop_pct": 0.7960176487161994,
+      "med_cost_r": 0.1005002842952318,
+      "maxDD_R": 19.928130008483837,
+      "folds_counted": 1,
+      "folds_pos": 1,
+      "ex_best": NaN
+    },
+    "always_long": {
+      "n": 55775,
+      "episodes": 1,
+      "win_pct": 34.07440609592111,
+      "net_all": -0.055920021520092004,
+      "total_R": -3118.9392002831314,
+      "med_stop_pct": 1.0694242098036322,
+      "med_cost_r": 0.0748066101988561,
+      "maxDD_R": 3777.210457922576,
+      "folds_counted": 4,
+      "folds_pos": 1,
+      "ex_best": -0.08445032553589546
+    },
+    "placebo": {
+      "seeds": 300,
+      "valid": 300,
+      "mean": -0.04069807893632305,
+      "p95": 1.2211011992037115
+    },
+    "ind_age_h": {
+      "min": 0.0,
+      "median": 12.0,
+      "max": 23.0
+    }
+  },
+  "ETH": {
+    "ticker": "ETH",
+    "strong_buy": {
+      "n": 60,
+      "episodes": 4,
+      "win_pct": 71.66666666666667,
+      "net_all": 1.5129505478623997,
+      "total_R": 90.77703287174398,
+      "med_stop_pct": 0.6978707140163265,
+      "med_cost_r": 0.11463453217962846,
+      "maxDD_R": 5.115492527976649,
+      "folds_counted": 2,
+      "folds_pos": 2,
+      "ex_best": NaN
+    },
+    "always_long": {
+      "n": 55779,
+      "episodes": 1,
+      "win_pct": 34.19028666702523,
+      "net_all": -0.037413977068773564,
+      "total_R": -2086.9142269191207,
+      "med_stop_pct": 1.3752787438578955,
+      "med_cost_r": 0.05817002579097974,
+      "maxDD_R": 3836.972989774177,
+      "folds_counted": 4,
+      "folds_pos": 1,
+      "ex_best": -0.08352004971298417
+    },
+    "placebo": {
+      "seeds": 300,
+      "valid": 300,
+      "mean": -0.020342302332575658,
+      "p95": 1.148440199520876
+    },
+    "ind_age_h": {
+      "min": 0.0,
+      "median": 12.0,
+      "max": 23.0
+    }
+  },
+  "SOL": {
+    "ticker": "SOL",
+    "strong_buy": {
+      "n": 0
+    },
+    "always_long": {
+      "n": 47136,
+      "episodes": 1,
+      "win_pct": 33.44153088934148,
+      "net_all": -0.03986048430609208,
+      "total_R": -1878.8637882519563,
+      "med_stop_pct": 1.9434394276046305,
+      "med_cost_r": 0.041164133595729964,
+      "maxDD_R": 2697.854609518226,
+      "folds_counted": 4,
+      "folds_pos": 1,
+      "ex_best": -0.058562446119162205
+    },
+    "placebo": {
+      "p95": NaN,
+      "mean": NaN,
+      "valid": 0
+    },
+    "ind_age_h": {
+      "min": 0.0,
+      "median": 12.0,
+      "max": 23.0
+    }
+  }
+}
