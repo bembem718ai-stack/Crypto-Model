@@ -604,6 +604,44 @@ def check_sentiment_gate_errors(path="signal_log.csv"):
                   f"{streak} consecutive ERROR run(s) [{source}]", ev)
 
 
+DERIVS_STALE_DAYS = 3
+
+
+def check_derivatives_collector(path="data/derivatives/kraken_funding.csv"):
+    """Has the derivatives collector run recently enough?
+
+    THIS ONE IS DIFFERENT FROM EVERY OTHER STALENESS CHECK HERE. A stale
+    signal log is recoverable -- the next run writes a fresh row and nothing
+    is lost. A stale derivatives collector is NOT: Kraken serves a 1-year
+    ROLLING window, so a day not collected falls off the venue permanently
+    and is gone from the FUNDING program's eventual test sample forever.
+    There is no backfill. Hence 3 days, not a week.
+    """
+    if not os.path.exists(path):
+        return record("C. Deployment", "Derivatives collector is current", SKIP,
+                      f"{path} not found (collector may not have run yet)")
+    try:
+        df = pd.read_csv(path)
+        last = pd.to_datetime(df["timestamp"], errors="coerce", utc=True).max()
+    except Exception as e:
+        return record("C. Deployment", "Derivatives collector is current", SKIP,
+                      f"unreadable: {type(e).__name__}")
+    if pd.isna(last):
+        return record("C. Deployment", "Derivatives collector is current",
+                      INSUFFICIENT, "no parseable timestamps")
+    age_d = (pd.Timestamp.now(tz="UTC") - last).total_seconds() / 86400.0
+    ev = {"newest_row": str(last), "age_days": round(age_d, 2),
+          "threshold_days": DERIVS_STALE_DAYS}
+    if age_d <= DERIVS_STALE_DAYS:
+        return record("C. Deployment", "Derivatives collector is current", PASS,
+                      f"newest row {age_d:.1f}d old", ev)
+    return record("C. Deployment", "Derivatives collector is current", FAIL,
+                  f"newest row {age_d:.1f}d old (> {DERIVS_STALE_DAYS}d) — every "
+                  f"missed day is test data that CANNOT be re-fetched: Kraken "
+                  f"serves a 1-year rolling window and drops what we did not "
+                  f"collect", ev)
+
+
 def check_adanos_accounting():
     """The binding constraint is the ~200 req/month Adanos free tier.
     Backtests use the NEUTRAL-sentiment assumption, so this whole audit
@@ -865,6 +903,7 @@ def main():
 
     check_log_freshness()
     check_sentiment_gate_errors()
+    check_derivatives_collector()
     check_adanos_accounting()
     check_outcomes_tracking()
     check_sentiment_measurable()

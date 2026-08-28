@@ -3880,3 +3880,52 @@ class TestSentimentCacheHygiene:
             "silent None gets served later")
         assert gate["sentiment_mentions"] == 4200
 
+
+# ======================================================================
+# DERIVATIVES COLLECTOR STALENESS
+# ======================================================================
+# A silent collector failure now costs TEST DATA THAT CANNOT BE REFETCHED:
+# Kraken serves a 1-year rolling window, so a day not collected is gone from
+# the venue forever and falls permanently outside the FUNDING program's
+# eventual sample. This is the one staleness check in the project whose
+# subject is unrecoverable, which is why the threshold is 3 days and not a
+# week.
+class TestCollectorStaleness:
+
+    def _audit(self):
+        import importlib
+        return importlib.import_module("audit")
+
+    def _write(self, tmp_path, days_old):
+        p = tmp_path / "kraken_funding.csv"
+        ts = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=days_old)
+        pd.DataFrame({"symbol": ["PF_XBTUSD"],
+                      "timestamp": [ts.strftime("%Y-%m-%dT%H:%M:%SZ")],
+                      "funding_rate": [1.0],
+                      "relative_funding_rate": [1e-5]}).to_csv(p, index=False)
+        return str(p)
+
+    def test_fresh_collector_passes(self, tmp_path):
+        a = self._audit(); a._results.clear()
+        a.check_derivatives_collector(self._write(tmp_path, 0.5))
+        assert a._results[-1]["status"] == a.PASS
+
+    def test_two_days_stale_still_passes(self, tmp_path):
+        a = self._audit(); a._results.clear()
+        a.check_derivatives_collector(self._write(tmp_path, 2))
+        assert a._results[-1]["status"] == a.PASS
+
+    def test_over_three_days_fails(self, tmp_path):
+        a = self._audit(); a._results.clear()
+        a.check_derivatives_collector(self._write(tmp_path, 4))
+        assert a._results[-1]["status"] == a.FAIL
+        assert "cannot be re-fetched" in a._results[-1]["detail"].lower()
+
+    def test_missing_file_is_skip_not_pass(self, tmp_path):
+        # Never a silent PASS: the audit's own design rule.
+        a = self._audit(); a._results.clear()
+        a.check_derivatives_collector(str(tmp_path / "nope.csv"))
+        assert a._results[-1]["status"] == a.SKIP
+
+    def test_threshold_is_three_days(self):
+        assert self._audit().DERIVS_STALE_DAYS == 3

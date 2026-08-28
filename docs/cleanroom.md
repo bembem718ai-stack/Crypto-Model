@@ -2101,3 +2101,336 @@ process, or measured absence of edge.
 A secondary point for that revision: CONFIRMATION is the only window where
 `ex_best` is positive (+0.097 on 108 trades / 23 episodes), and it still
 fails the placebo bar. The tier is not rescued by the other window.
+
+---
+
+# PRE-REGISTRATION — FUNDING PROGRAM (#172–#186)
+
+> **STATUS: REGISTERED, DORMANT. Nothing runs until the data-depth trigger
+> fires. On the trigger date a future session executes this document
+> verbatim — every parameter, threshold, window rule and pass condition is
+> fixed below and NONE may be chosen, edited or reinterpreted then.**
+
+## The central property: this is registered before its test data exists
+
+**This is the only program in the project registered before the data it will
+be tested on exists.** That is not incidental — it is the design.
+
+Kraken Futures serves a **rolling one-year window** of funding history. Our
+archive is a merge-dedupe accumulation of that window (`derivs-collect.yml`,
+running daily since 2026-08-28), so it retains what the venue discards. On
+the trigger date the archive will span 22 months while Kraken itself serves
+only the most recent 12. **Everything visible to us today — the whole
+2025-08-27 → 2026-08-28 backfill — will by then exist ONLY in our archive
+and nowhere on the venue.**
+
+The consequence is the point:
+
+- **Tuning to the test set is impossible by construction.** The usable
+  window at trigger time is data that does not yet exist as of this
+  registration. No one can look at it, because there is nothing to look at.
+- **The rules below were chosen from published funding literature and from
+  the four the maintainer specified, not from inspection of returns.** No
+  funding series has been plotted, scored, backtested or correlated with
+  price by this project. Not once.
+- **The archive is append-only and idempotent.** Existing rows win on a
+  collision, so a venue revising history cannot retroactively move the test
+  set (see the derivatives provenance note).
+
+Every other program in this record had to be defended against hindsight.
+This one is defended by the calendar.
+
+## TRIGGER
+
+**Runnable when `data/derivatives/kraken_funding.csv` spans >= 22 months for
+ALL THREE symbols** (PF_XBTUSD, PF_ETHUSD, PF_SOLUSD), measured as
+`max(timestamp) - min(timestamp)` per symbol.
+
+22 months decomposes as: **6 months lockbox + 4 months burn-in + 12 months
+usable.**
+
+| quantity | value |
+|---|---|
+| archive earliest (all three symbols) | **2025-08-27** |
+| **expected trigger date** | **2027-06-27** |
+| second checkpoint (34 months, 24 usable) | **2028-06-27** |
+
+The trigger is ~2 months earlier than a naive estimate because Kraken's
+first collector run backfilled a free year on 2026-08-28; the archive began
+at 12 months, not zero. **The trigger is on measured span, not on the
+calendar date** — if the collector misses days, the date slips and the span
+condition still governs. The dates above are expectations, not conditions.
+
+**Nothing in this program runs before the span condition is met.** A partial
+run on shallower data is a peek, and the burn-in exists precisely so that
+percentile lookbacks are warm before the usable window opens.
+
+## DATA
+
+**Primary: Kraken Futures funding, hourly**, `PF_XBTUSD` / `PF_ETHUSD` /
+`PF_SOLUSD`, from `data/derivatives/kraken_funding.csv`.
+
+The field used is **`relative_funding_rate`** — the dimensionless per-interval
+rate. `funding_rate` (absolute, quote-currency) is NOT used: it is not
+comparable across symbols or price levels.
+
+**OKX funding is a CROSS-VENUE CONSISTENCY CHECK ONLY and is NEVER a signal
+input.** At trigger time, report the Pearson correlation between the two
+venues' daily mean rates per symbol over the overlapping span. If any symbol
+correlates below **0.80**, every result for that symbol is reported with a
+venue-disagreement flag attached. The check cannot change a pass or a fail;
+it exists so that a result built on one venue's quirk is visible as such.
+OKX's own window is ~3 months, so the overlap will be partial by
+construction, and that is expected.
+
+### Alignment — the no-lookahead rule, identical to the Step 3 port
+
+**Funding known as of hour H applies to bars H+1 onward.** Concretely:
+
+1. All funding features for UTC day **D** are computed from hourly rows with
+   `timestamp <= D 23:00`.
+2. Those features are known at **D 24:00 = D+1 00:00**, which is exactly the
+   daily close of day D.
+3. A rule firing on day D is a daily BUY event on day D, which
+   `research/harness.py` labels on D and D+1, confirms at D+1 under
+   `confirm_days=2`, and enters at the close of D+1.
+
+This is the same construction registered for the Step 3 lagged broadcast
+(#168–#170) and carries the same guarantee: no value from after a decision
+point enters that decision.
+
+**The lockbox applies at ANALYSIS time, not collection time.** The last 6
+months of whatever the archive holds when the program runs are sealed. A row
+collected in 2026 is inside the lockbox if it falls in the final 6 months as
+measured on the trigger date.
+
+## HYPOTHESES — #172–#186
+
+Eight rules. **Seven are tested in BOTH modes; F4 is overlay-only.** That is
+**15 registered tests** and 15 hypothesis numbers.
+
+- **STANDALONE** — the rule produces a daily boolean BUY event series, scored
+  through `research/harness.py` into `pipeline.evaluate_geometry_folds` with
+  `LIVE_GEOMETRY` and 2bps fee + 2bps slippage per side, exactly as
+  #42–#161 were.
+- **OVERLAY** — the rule filters the incumbent's own BUY/STRONG_BUY days:
+  the event fires only where the incumbent already signalled AND the funding
+  condition holds. Scored identically.
+
+All parameters are conventional and are fixed here. None may be changed.
+
+| # | rule | mode | definition (one sentence, all numbers final) |
+|---|------|------|---------------------------------------------|
+| **#172** | F1 | standalone | BUY when the trailing **30-day percentile rank** of daily-mean funding is **<= 10** (crowded shorts, contrarian long). |
+| **#173** | F1 | overlay | The incumbent's BUY day is kept only when F1's condition holds. |
+| **#174** | F2 | standalone | BUY on the first day whose daily-mean funding is **> 0** after **>= 72 consecutive hours** of funding **< 0**. |
+| **#175** | F2 | overlay | The incumbent's BUY day is kept only when F2's condition holds. |
+| **#176** | F3 | standalone | BUY when the **8-hour-equivalent** funding rate is **<= -0.01%** (absolute extreme; normalization below). |
+| **#177** | F3 | overlay | The incumbent's BUY day is kept only when F3's condition holds. |
+| **#178** | F4 | **overlay only** | **SUPPRESS** an incumbent BUY when the trailing 30-day percentile rank of daily-mean funding is **>= 90** AND the close is a **20-day high** (euphoria fade). |
+| **#179** | F5 | standalone | BUY when **cumulative funding over the trailing 7 days is <= 0** (shorts paid longs, net, across the week). |
+| **#180** | F5 | overlay | The incumbent's BUY day is kept only when F5's condition holds. |
+| **#181** | F6 | standalone | BUY when the **30-day z-score** of daily-mean funding is **<= -2.0**. |
+| **#182** | F6 | overlay | The incumbent's BUY day is kept only when F6's condition holds. |
+| **#183** | F7 | standalone | BUY when the close is a **20-day high** AND the **7-day mean funding is <= 0** (rally not driven by leveraged longs). |
+| **#184** | F7 | overlay | The incumbent's BUY day is kept only when F7's condition holds. |
+| **#185** | F8 | standalone | BUY when funding has been **< 0 for >= 168 consecutive hours** (7 days of sustained short-paying). |
+| **#186** | F8 | overlay | The incumbent's BUY day is kept only when F8's condition holds. |
+
+### Fixed definitions — no interpretation left
+
+- **daily-mean funding** for day D = arithmetic mean of `relative_funding_rate`
+  over all hourly rows with `timestamp` in `[D 00:00, D 23:59]`. Days with
+  fewer than **20 of 24** hourly rows are **excluded** from every rule and
+  from every lookback (recorded, not silently dropped).
+- **30-day percentile rank** = rank of today's daily-mean funding within the
+  trailing 30 daily-mean values INCLUDING today, expressed 0–100
+  (`Series.rolling(30).rank(pct=True) * 100`). Same construction as
+  `BBW_PCTL` in #42–#161.
+- **30-day z-score** = `(x - rolling_30_mean) / rolling_30_std(ddof=0)`,
+  computed on daily-mean funding including today. Undefined (NaN) days do
+  not fire.
+- **8-hour-equivalent rate (F3)** = the **sum of the trailing 8 hourly
+  `relative_funding_rate` values**, i.e. `rolling(8).sum()` on the hourly
+  series, evaluated at the last hour of day D. Summed rather than
+  `hourly x 8` because the sum is the actual cost of holding those 8 hours
+  and is less sensitive to a single outlying hour. Threshold: **<= -0.0001**
+  (−0.01%). This is the venue normalization: Kraken settles hourly and OKX
+  8-hourly, so all absolute thresholds in this program are stated in
+  8h-equivalent units and computed from Kraken hourly sums.
+- **cumulative 7-day funding (F5)** = sum of `relative_funding_rate` over all
+  hourly rows in the trailing 168 hours.
+- **20-day high** = close >= the maximum close of the trailing 20 daily
+  closes including today, on the incumbent's daily merged frame.
+- **consecutive-hour counts (F2, F8)** are counted on the hourly series with
+  no gap tolerance: a missing hour **breaks** the run. This is deliberate and
+  conservative — an inferred run across a data gap is not an observed run.
+- **Long side only**, matching live: shorts are suppressed in production and
+  no rule here produces a SELL.
+
+## EVALUATION — the standard ladder, and the depth constraint
+
+### Folds on a ~12-month usable window
+
+The usable window at trigger time is **~52 weeks**. Folds are **4 equal-
+duration time splits** of that window — `pd.date_range(start, end,
+periods=5)`, the same construction `pipeline.walkforward_folds` uses —
+giving **~13 weeks per fold**.
+
+`ex_best` requires **>= 3 folds each carrying >= 10 trades**. On a 4-fold,
+13-week structure that means a rule must sustain roughly **one event per 9
+days** across at least three quarters of the window.
+
+**This is the hard constraint of the program.** A rule that fires less often
+than that produces `ex_best = undefined`, and:
+
+> **An undefined `ex_best` is reported as UNMEASURABLE and CANNOT PASS.** It
+> is not a fail and must never be written up as one; it is the absence of a
+> result. This is the distinction #163, #165 and #168 all turned on.
+
+### Placebo
+
+**Episode-matched**, exactly as #167: per ticker, take the observed
+run-lengths of consecutive event days, draw the same NUMBER of runs with the
+same LENGTHS at random non-overlapping start positions in the same window,
+and apply the same confirm rule. Independent-day placebos are forbidden
+here — funding regimes are persistent by nature, so a scattered placebo
+would be structurally lower-variance than what it benchmarks.
+
+**Seeds: 3,000.** Not 300. The Bonferroni-adjusted threshold below sits at
+the 99.67th percentile, and a 99.67th percentile estimated from 300 draws is
+the single largest draw — an unusable statistic. 3,000 seeds put ~10 draws
+above the threshold. The p95 is reported alongside for comparability with
+earlier programs, computed from the same 3,000 draws.
+
+### Pass conditions
+
+A rule passes only if, on the single confirmation run:
+
+1. **`ex_best` > 0 on ALL THREE tickers** (and defined on all three — see
+   the unmeasurable rule above), AND
+2. **pooled `net_all` above the Bonferroni-adjusted placebo percentile.**
+
+**Bonferroni:** 15 registered tests, so alpha = 0.05 / 15 = 0.00333 and the
+required percentile is **99.67**, not 95. Every test in this program is an
+independent opportunity for a false positive and the correction counts
+tests, not rules — #172 and #173 are two chances at the same idea and both
+are counted.
+
+**Single confirmation.** One run, one verdict, no re-runs, no second look at
+a looser bar, no partial credit. "Almost" is a failure, as it was for
+`rsi7_cross50+none` and for `INC_BUY_ALL` at 0.001R.
+
+### Power — stated now so neither checkpoint is a peek
+
+**At 12 usable months this program has limited power, and that is known
+before it runs.** A 13-week fold holds ~91 days; a rule firing weekly places
+~13 trades in it, barely over the 10-trade bar. Small samples, wide placebo
+distributions, and a 99.67th-percentile threshold together mean a real but
+modest edge will likely read as unmeasurable or fail.
+
+**Both checkpoints are registered NOW:**
+
+| checkpoint | span | usable | expected date | status |
+|---|---|---|---|---|
+| **C1** | 22 months | 12 months | 2027-06-27 | registered |
+| **C2** | 34 months | 24 months | 2028-06-27 | registered |
+
+C2 doubles the usable window and re-runs **this identical rule list with
+these identical parameters** — nothing may be added, dropped or altered
+between the two. Because both are registered here, **running C2 after a
+failed C1 is not a peek and not a second bite**: it is a pre-declared
+increase in sample size on a fixed hypothesis set. Any rule that changes
+between C1 and C2 voids C2 entirely.
+
+C1 results are reported in full regardless of outcome and are not
+provisional. C2 supersedes nothing; both stand.
+
+## BUDGET AND CLOSURE
+
+**This list is the whole program.** Eight rules, fifteen tests, two
+checkpoints.
+
+- **No rule may be added, edited, or re-run after the trigger fires.**
+- **No parameter may be tuned** — every number is in this document.
+- **No new funding hypothesis may be registered** as a variation of a failed
+  one. A genuinely new idea requires a new program with its own
+  justification, and inherits the record of this one.
+- **If all fifteen tests fail or report unmeasurable at C2, the
+  funding-as-signal question is CLOSED at this depth**, and that closure is
+  written up with the same detail as a pass would have been.
+
+The point of fixing this now is that in June 2027 there will be a strong
+temptation to adjust a threshold that "just missed". This paragraph exists
+to make that visibly a violation rather than a judgement call.
+
+## EXECUTION CHECKLIST for the future session
+
+1. Verify the trigger: span >= 22 months for all three symbols. If not, stop.
+2. Verify the collector's continuity: report any gap > 3 days in the archive
+   and its effect on consecutive-hour rules (F2, F8).
+3. Run the OKX cross-venue correlation; flag any symbol below 0.80.
+4. Build daily-mean funding, excluding days with < 20 of 24 hourly rows;
+   report how many days were excluded per symbol.
+5. Apply the lockbox (last 6 months) and the 4-month burn-in; report the
+   resulting usable window and its exact dates.
+6. Score all 15 tests. Report `n`, **episodes**, win%, `net_all`, `ex_best`,
+   folds counted, and the placebo p95 and p99.67 for each.
+7. Apply the pass conditions. Report every result, pass, fail or
+   unmeasurable, with episode counts beside trade counts.
+8. Do not proceed to C2 before its own span condition is met.
+
+## DATA COMPLETENESS — audited 2026-08-28, timestamps only
+
+Run by `research/audit_funding_gaps.py`, which reads the `symbol` and
+`timestamp` columns and **nothing else** — not `funding_rate`, not
+`relative_funding_rate`, and no join against price. `usecols` enforces it:
+the value columns are never loaded. This program's central property is that
+it was registered before anyone saw the series it will be tested on, and
+counting timestamps is feed behaviour where reading values would be a peek.
+
+| symbol | rows | span (days) | complete% | missing hours | gaps | longest gap | gaps > 8h |
+|---|---|---|---|---|---|---|---|
+| `PF_ETHUSD` | 8772 | 365.8 | **99.898%** | 9 | 8 | **3.0h** | 0 |
+| `PF_SOLUSD` | 8773 | 365.8 | **99.909%** | 8 | 7 | **3.0h** | 0 |
+| `PF_XBTUSD` | 8772 | 365.8 | **99.898%** | 9 | 8 | **3.0h** | 0 |
+
+### Why this is registered beside the no-gap-tolerance rule
+
+F2 (72h negative run) and F8 (168h negative run) count consecutive hours with
+**no gap tolerance** — a missing hour breaks the run. That rule is only
+defensible if the feed's gap behaviour is known in advance, so it is recorded
+here rather than discovered at trigger time.
+
+The archived year is **99.90% complete**: 8–9 missing hours per symbol across
+7–8 gaps, longest **3.0 hours**, and **zero gaps longer than 8 hours**.
+
+Expected incidence of a gap falling inside a qualifying run, at this rate
+(8 gaps in 8,772 hours, treating gaps as uniformly distributed):
+
+- **F2, 72h window:** 1 − (1 − 72/8772)^8 ≈ **6.4%** of candidate runs broken.
+- **F8, 168h window:** 1 − (1 − 168/8772)^8 ≈ **14.3%** of candidate runs broken.
+
+**This is accepted, not corrected for.** Breaking a run on a real data gap is
+the conservative direction: it under-counts events rather than inferring a
+continuity that was never observed. But it is now a KNOWN cost of roughly one
+in seven F8 candidates, registered before the fact, so a thin F8 event count
+at trigger time is not a surprise and is not grounds for relaxing the rule.
+
+**Re-run this audit at trigger time and report it again.** If completeness has
+fallen materially below 99.9%, or any gap exceeds 8 hours, say so beside the
+results — the collector staleness check (below) exists to make that unlikely,
+not impossible.
+
+## COLLECTOR MONITORING — the archive is the only copy
+
+`audit.py`'s `check_derivatives_collector` FAILs when the newest row in
+`data/derivatives/kraken_funding.csv` is more than **3 days** old, and the
+weekly audit workflow opens an issue on it.
+
+Three days, where the signal log's threshold is six hours and every other
+staleness check here is recoverable. This one is not: **Kraken serves a
+one-year rolling window, so a day not collected is dropped by the venue and
+is gone from this program's test sample permanently.** There is no backfill.
+A silent collector failure today costs test data in 2027 that cannot be
+bought back at any price.
