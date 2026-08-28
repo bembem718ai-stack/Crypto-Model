@@ -72,6 +72,18 @@ for t in TICKERS:
     bars.to_csv("data/" + t + "_" + INTERVAL + ".csv")
     print("  bars %d (%s)  %s -> %s" % (len(bars), INTERVAL, bars.index.min(), bars.index.max()))
 
+    if INTERVAL != "4h":
+        # A 1h export writes 1h BARS ONLY. The daily merged frame is derived
+        # from the 4h feed and is interval-independent, so re-running it here
+        # would rewrite a FROZEN artifact for no reason -- and it does change:
+        # yfinance's most recent row recomputes slightly between pulls, which
+        # would silently move the dataset every prior result was computed on.
+        man[t] = {"bars": len(bars), "interval": INTERVAL,
+                  "bars_first": str(bars.index.min()),
+                  "bars_last": str(bars.index.max()),
+                  "bars_years": round((bars.index.max() - bars.index.min()).days / 365.25, 2)}
+        continue
+
     merged = p.run_backtest(t, period=PERIOD, squeeze_bars=N)
     merged.to_csv("data/" + t + "_merged.csv")
     print("  daily %d  %s -> %s" % (len(merged), merged.index.min(), merged.index.max()))
@@ -89,6 +101,7 @@ for t in TICKERS:
         "directions": {k: int(v) for k, v in merged["direction"].value_counts().to_dict().items()},
     }
 
-with open("data/MANIFEST.json", "w", encoding="utf-8") as f:
+MANIFEST_NAME = "MANIFEST.json" if INTERVAL == "4h" else "MANIFEST_%s.json" % INTERVAL
+with open("data/" + MANIFEST_NAME, "w", encoding="utf-8") as f:
     json.dump(man, f, indent=2)
-print("done")
+print("done -> data/" + MANIFEST_NAME)

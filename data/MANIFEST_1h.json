@@ -1,0 +1,32 @@
+{
+  "_meta": {
+    "written_utc": "2026-08-28 04:42:01",
+    "binance_region": "US",
+    "rest_base": "https://api.binance.us",
+    "klines_path": "/api/v3/klines",
+    "interval": "1h",
+    "target_bars": 70000,
+    "daily_period": "max"
+  },
+  "BTC": {
+    "bars": 60696,
+    "interval": "1h",
+    "bars_first": "2019-09-23 08:00:00",
+    "bars_last": "2026-08-28 04:00:00",
+    "bars_years": 6.93
+  },
+  "ETH": {
+    "bars": 60696,
+    "interval": "1h",
+    "bars_first": "2019-09-23 08:00:00",
+    "bars_last": "2026-08-28 04:00:00",
+    "bars_years": 6.93
+  },
+  "SOL": {
+    "bars": 52055,
+    "interval": "1h",
+    "bars_first": "2020-09-18 13:00:00",
+    "bars_last": "2026-08-28 04:00:00",
+    "bars_years": 5.94
+  }
+}
