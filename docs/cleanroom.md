@@ -1339,6 +1339,51 @@ Expected shape (exact dates computed at export time, never hardcoded):
 
 ---
 
+## Specification completion — Step 3 on 1h bars (recorded before any result)
+
+The 10-site map covers the squeeze and geometry parameters. It does NOT cover
+**Step 3**, the daily technical/macro indicator score, which is 40% of
+`final_score` (`0.6 x gated + 0.4 x indicators`) and has no 1h analogue. This
+completes the specification. It is recorded as a **completion, not a choice**:
+there is exactly one non-lookahead option.
+
+**The lagged broadcast.** Day D's indicator score exists only at **D's close**.
+Its first non-lookahead application is therefore **D+1 00:00 onward**. Every 1h
+bar on day D+1 carries day D's Step 3 value; `vix_level` is carried with the
+same lag, since `classify_direction` reads it from the same daily row.
+
+Using day D's score on day D's own earlier bars would be lookahead and would
+inflate every ARM A and ARM B number. The 4h/daily incumbent has no equivalent
+problem: it decides once per day AT D's close and enters at D+1's close, so
+both inputs are as-of the same instant.
+
+**Squeeze-only was rejected.** Running ARM A on the Step 1 score alone would
+answer a different question than #168 registers. The incumbent IS the 0.6/0.4
+blend, so the blend is what ports.
+
+**The same lag rule applies to ARM B, unchanged.**
+
+### REGISTERED DISCLOSURE — indicator staleness
+
+ARM A's report **must state indicator staleness explicitly**: each 1h bar's
+Step 3 component is **0-24h old**, against **~0h** at the daily incumbent's
+decision moment. A bar at 23:00 on day D+1 is acting on an indicator reading
+computed 23 hours earlier.
+
+This is a **structural handicap of the port**, and it is stated here BEFORE any
+result exists. Together with the cost caveat it gives **two registered reasons
+ARM A is a HARDER test than the 4h original**:
+
+1. **Doubled `cost_r`** — 1h ATR is roughly half of 4h ATR, so the stop
+   fraction halves and cost per unit risk roughly doubles.
+2. **Indicator staleness 0-24h** — 40% of the score is up to a day old, where
+   at 4h it was fresh at the decision instant.
+
+Neither may be used after the fact to explain away a failure: they are recorded
+now precisely so that a failure cannot later be attributed to them
+retrospectively, and so that a PASS is understood to have cleared a bar the 4h
+original never had to.
+
 ## Placebo — episode-matched, as registered in #167
 
 Unchanged from #167 and for the same reason: the incumbent's signals arrive in
