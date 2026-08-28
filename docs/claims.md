@@ -1,0 +1,362 @@
+# Claims — what this project can and cannot say
+
+Every statement below is traceable to `docs/cleanroom.md`, `signal_outcomes.csv`,
+`signal_log.csv`, or a named commit. Nothing here is an estimate, a projection
+of future performance, or a rounded-up version of a real number.
+
+Written 2026-08-28. Sources: cleanroom #42–#167, `signal_outcomes.csv`
+(19 closed episodes), `signal_log.csv` (1,771 rows, 2026-07-22 → 2026-08-28),
+`CLAUDE.md` Known open issues.
+
+**The one-line summary: this is a research project with a documented record of
+mostly negative findings and a small, currently losing live record. It is not a
+product with a win rate.**
+
+---
+
+## 1. SUPPORTED
+
+Statements the record backs, with the numbers and where they come from.
+
+### Production engineering
+
+**Exit levels are computed correctly at every price scale.** As of commit
+`385f1c4`. Before it, `compute_exit_levels` rounded entry/target/stop to a
+fixed 2 decimals, so any asset whose `1.5 × ATR` distance fell under half a
+cent had all three levels collapse onto the same number — producing a zero stop
+distance, NaN P&L, and a manufactured 100% win rate on the first bar. Measured
+contamination: **185 of 645 STRONG_BUY trades (28.7%) across 35 of 82 tickers**.
+After the fix: **0 NaN trades of 645**, 0 rows above the 2.667R theoretical
+maximum, and BTC/ETH bit-identical before and after (19 trades / 73.7% /
++1.653R and 9 / 44.4% / +0.587R unchanged). 8 new tests, 6 of which failed
+against the old code.
+*Source: cleanroom "Exit-level rounding defect — FIXED".*
+
+**BTC, ETH and SOL were never affected by that defect.** Their levels are
+hundreds of dollars apart. Every number previously reported for those three
+stands.
+*Source: same section — "tickers unchanged: 8, including BTC and ETH bit-identical".*
+
+**The sentiment gate is live again.** Run
+[33140451699](https://github.com/bembem718ai-stack/Crypto-Model/actions/runs/33140451699),
+2026-08-28 03:59 UTC: `mentions=12675 sentiment_score=-0.006 bullish_pct=20
+bearish_pct=21 buzz_score=79.8`, first attempt, no retries. It had returned
+`gate_decision=ERROR` for **1,351 consecutive log rows over 24.4 days**
+(last good reading 2026-08-03 19:01 UTC). The first ~1.2 days were HTTP 429
+quota exhaustion; the remaining ~23 days were an `InvalidHeader` raised
+client-side because the API key carried a trailing newline — the request never
+reached the API, which is why there was no HTTP status to diagnose. Fixed by
+`.strip()` in `get_api_key_from_env()` (`71927d2`).
+*Source: `signal_log.csv`, run logs, cleanroom is silent on this (production, not research).*
+
+**Every workflow run reported success throughout that outage.** The gate
+errors, falls back to a neutral 1.0 multiplier, and the pipeline continues by
+design — a dead sentiment provider must not take the signal service down. The
+consequence is that **Step 2 contributed nothing to any score between
+2026-08-03 and 2026-08-28**, and `gated_score == initial_score` on all 1,351
+of those rows.
+*Source: `signal_log.csv`.*
+
+**Signal checks run under two independent triggers with a de-duplication
+guard.** GitHub native cron plus cron-job.org `workflow_dispatch` (`803f457`).
+Before the guard, both fired: measured over 100 runs on 2026-08-27, **52
+`schedule` + 48 `workflow_dispatch`**, median gap 0.50h instead of the intended
+1h. The guard reads the newest `signal_log.csv` timestamp and stands down under
+50 minutes; verified live in run 33140451699 — `[guard]
+trigger=workflow_dispatch should_run=true: newest entry is 273.7 min old
+(>= 50) — proceeding`. It fails open (missing/empty/unparseable log all
+proceed) and always exits 0.
+
+**Adanos quota is inside the free tier.** The call is skipped below the derived
+cutoff of 33.3 (below it the dampen-only gate provably cannot change the label)
+and a 12h per-symbol TTL bounds the rest. Replayed against the real 1,769-row
+log normalised to hourly cadence: **~31 requests/month per ticker, ~92 for
+three**, against a 200/month tier. Ceiling if every hour qualified: 62 and 186.
+*Source: replay in `71927d2`'s commit message; `CLAUDE.md` Known open issues.*
+
+**`audit.py --offline` currently reports 0 checks FAILED.** Both deployment
+checks that were failing now pass: log freshness (measured against
+`origin/main`, not the local clone) and "Sentiment gate not erroring".
+
+### Research findings
+
+**The trade geometry is not free money.** On DISCOVERY, buying every single day
+and applying the production geometry loses money on all three tickers:
+**BTC −0.148R, ETH −0.159R, SOL −0.078R** per trade. Over the longer
+DISCOVERY+CONFIRMATION span it is marginally positive (+0.016 / +0.031 /
++0.024) on a ~35% target rate. Either way, the 2:1 payoff structure by itself
+does not produce an edge — any claimed edge has to beat that baseline.
+*Source: cleanroom corrected DISCOVERY table; Attribution "The headline".*
+
+**Liquidity, not signal, dominates the wide-universe result.** The #167
+tradability filter (flat 4h bars ≤ 10% AND median 1.5×ATR stop ≥ 0.5% of
+entry — both defined on prices alone, neither looking at any outcome) passes
+**26 of 82** tickers. All 56 exclusions fail on the flat-bar criterion. Same
+window, same tier, same machinery: **+0.815R on the tradable 26 vs −2.016R on
+all 82**, the difference being 431 extra trades on pairs whose ATR-derived stop
+is a fraction of a percent, where `cost_r = 8bps / stop_fraction` dominates.
+Across the 79 tickers that traded, median flat-bar share is 28.5% (worst
+79.1%); 20 tickers exceed 50%.
+*Source: cleanroom #167 and H-basket-B results.*
+
+**A large pre-registered search found nothing that replicates across tickers.**
+**126 numbered hypotheses (#42–#167)**, of which #42–#161 are 120 individual
+rules each scored on 3 tickers — **360 rule×ticker scorings** — every one
+registered in writing before it ran, every result recorded pass or fail.
+Survivors that replicate across tickers: **zero**. The closest was
+`rsi7_cross50+none`, which cleared both CONFIRMATION conditions on BTC (net
++0.598 vs p95 +0.540) and SOL (+0.539 vs +0.394) and failed ETH outright
+(net −0.021, `ex_best` −0.193, 20th percentile). Under the pre-registered rule
+that is a failure, and it was recorded as one.
+*Source: cleanroom #42–#161 registration table, #162 verdicts, #163–#167 results.*
+
+**The rules that were tested are genuinely new signals, not relabelled
+incumbent days.** Jaccard similarity of signal days against the incumbent's
+BUY/STRONG_BUY days is **0.007–0.074** across the top three rules and all three
+tickers. The search explored new territory; it just found nothing there.
+*Source: cleanroom Attribution "Overlap with the incumbent".*
+
+**The incumbent's all-BUY tier is positive on BTC and only BTC.** `INC_BUY_ALL`
+on DISCOVERY, each row against its own count-matched placebo (300 seeds):
+**BTC +0.237R at the 100.0th percentile** (p95 +0.013), **ETH −0.175R at the
+47.7th**, **SOL −0.201R at the 21.0th**. These percentiles are real ones — 58
+trades across 13 episodes and 47 distinct exit bars on BTC, so they are not
+distorted by clustering the way the STRONG_BUY rows are. One ticker of three is
+not replication.
+*Source: cleanroom corrected DISCOVERY table and clustering caveat.*
+
+**Negative findings are recorded with the same detail as positive ones.** Every
+failure above is written into `docs/cleanroom.md` with its numbers, including
+the near-misses that were most tempting to keep (`rsi7_cross50+none` at 2 of 3
+tickers; `INC_BUY_ALL` on CONFIRMATION missing the placebo p95 by 0.001R).
+
+---
+
+## 2. NOT SUPPORTED
+
+Claims the project has been tempted to make that the record does not back. For
+each: why not, and exactly what would have to become true.
+
+### "72–74% win rate"
+
+**Why not.** The number is real but it describes 19 BTC trades, and BTC's
+STRONG_BUY row reads 73.7% because 14 of 19 hit target. Those 19 trades are
+**2 independent episodes** resolving on **4 distinct exit bars** — consecutive
+signal days riding the same price move, several exiting on the same 4h bar. On
+the other two tickers the same tier gives **44.4% on 9 trades (ETH)** and
+**100% on 1 trade (SOL)**. `ex_best` — the project's own concentration test —
+is **undefined on all three**, because no ticker reaches 3 folds carrying 10
+trades. A win rate computed over 2 independent events is not a win rate.
+
+**What would move it.** `ex_best` defined and positive for the STRONG_BUY tier
+on **≥3 tickers**, which requires **≥30 trades per ticker spread so that ≥3 of
+4 folds each carry ≥10** — against the current 19/9/1. At the observed rate of
+~4 STRONG_BUY trades per ticker per year, that is roughly **7–8 more years per
+ticker**, or a design change that fires the tier more often. The win rate quoted
+would then have to be the pooled figure across those tickers, not BTC's.
+
+### "STRONG_BUY is a validated edge"
+
+**Why not.** It is genuinely *not* explained away by drift or geometry — the
+excess over an always-long baseline is **+1.819R (BTC), +0.781R (ETH),
++2.675R (SOL)**, and it hits target 78% of the time on BTC against a ~35% base
+rate. That is the strongest-looking signal in the whole record. But n = **18,
+8 and 1** over five and a half years; ETH takes **92% of its R from one fold**;
+SOL's entire history is a single trade. It also failed its own pre-registered
+CONFIRMATION test (#162): 0 counted folds on all three tickers, and **0 trades
+on SOL in 2.4 years** because two consecutive STRONG_BUY days never occurred.
+Widening to 82 tickers did not help — **0 of 82 reach a defined `ex_best`**.
+The honest verdict recorded in the cleanroom is *"too rare to attribute"*,
+which is neither a pass nor a fail.
+
+**Live evidence points the other way.** Exactly **one** live episode has ever
+reached STRONG_BUY at its peak (2026-08-06, BTC, entry score 62.99). It
+**stopped out at −1.0R**.
+
+**What would move it.** `ex_best > 0` on **≥3 tickers** with **≥30 trades
+each**, AND pooled `net_all` above the episode-matched placebo p95 on **both**
+DISCOVERY and CONFIRMATION. The pooled tradable-26 run cleared exactly that bar
+on CONFIRMATION (+0.815R vs p95 +0.332, `ex_best` +0.424, 4/4 folds) and failed
+DISCOVERY (`ex_best` undefined, +0.239 vs p95 +0.570) — so **one window of two
+is already there; the other is not.**
+
+### "The score measures conviction"
+
+**Why not.** If the score were a conviction ladder, expectancy would rise with
+it. It does not. On DISCOVERY, tradable subset, geometry held constant:
+
+| score ≥ | n | win% | net_all | ex_best |
+|---|---|---|---|---|
+| 75 | 46 | 34.8 | +0.239 | undefined |
+| 70 | 256 | 29.3 | **+0.044** | **−0.060** |
+| 65 | 908 | 30.0 | +0.070 | +0.016 |
+| 60 | 1,782 | 29.7 | +0.068 | +0.029 |
+
+**≥70 is the worst row of the four.** The top tier has the best net but only 46
+trades and no computable `ex_best`. Loosening from 65 to 60 doubles the trade
+count and moves expectancy by 0.002R. This curve is registered as **descriptive
+only (#166)** and no threshold may be selected from it.
+
+**What would move it.** A monotonic relationship between score band and
+`ex_best` — each band's `ex_best` defined (≥30 trades, ≥3 counted folds) and
+strictly increasing with the band — demonstrated on data this curve did not
+touch, registered as a new numbered hypothesis before it runs.
+
+### Anything implying ETH or SOL replication
+
+**Why not.** Every cross-ticker test to date has failed on ETH or SOL:
+
+- `INC_BUY_ALL`: BTC 100.0th percentile, **ETH 47.7th, SOL 21.0th**.
+- `rsi7_cross50+none` (#162): passed BTC and SOL, **failed ETH** at the 20th
+  percentile with `ex_best` −0.193.
+- `INC_STRONG_BUY` (#162): **SOL produced 0 trades** over 2.4 years.
+- H-basket-C (#165): **Q3 negative (−0.250R)**, and `ex_best` undefined in 3 of
+  4 quartiles. 3 of 4 is not 4 of 4.
+- Attribution: the three best rules disagree on regime across tickers —
+  `donchian10+none` is best in low vol on BTC/ETH and best in high vol on SOL.
+
+**What would move it.** The same statistic, same sign, with `ex_best > 0` and
+**n ≥ 30 per ticker**, on **BTC and ETH and SOL** simultaneously, pre-registered.
+No result to date has achieved this on two tickers, let alone three.
+
+### Also not supported
+
+- **"Backtested and profitable."** The pre-registered searches failed. The only
+  positive pooled result (tradable-26 STRONG_BUY on CONFIRMATION) failed its own
+  two-window test.
+- **"The sentiment gate improves signals."** It has never once changed a score.
+  `gate_multiplier` is 1.0 on every row of the log, and the gate was returning
+  ERROR for 1,351 consecutive rows. It is instrumented, not validated.
+- **"The ML model adds accuracy."** Display-only by decision; failed
+  cross-ticker replication at BTC AUC ~0.596 / ETH ~0.514. `ml_weight` is 0.
+- **"Short signals work."** Suppressed in live mode. The live record below
+  shows why: **0 wins in 11 short episodes.**
+
+---
+
+## 3. LIVE RECORD
+
+From `signal_outcomes.csv`, resolved against 4h bars with the same rules as the
+backtest. **19 episodes, all closed, none open.** Entries span
+2026-07-23 → 2026-08-18.
+
+### Everything logged
+
+| | value |
+|---|---|
+| closed episodes | **19** |
+| wins (target) / losses (stop) | **3 / 16** |
+| win rate | **15.8%** |
+| net R | **−10.00R** (mean −0.526R per episode) |
+| longest losing streak | **8** |
+| BTC | **18 of 19** (1 ETH) |
+
+### Split by side — this matters
+
+11 of the 19 are SHORT episodes. The live path runs `--long-only`, so those were
+**logged but never published as signals**. Both numbers are given because only
+one of them describes what a follower would have traded.
+
+| | n | wins | losses | win% | net R | worst streak |
+|---|---|---|---|---|---|---|
+| **LONG (published)** | **8** | 3 | 5 | **37.5%** | **+1.00R** | 3 |
+| SHORT (logged, not published) | 11 | 0 | 11 | 0.0% | −11.00R | 11 |
+| ALL | 19 | 3 | 16 | 15.8% | −10.00R | 8 |
+
+**The published long record is 8 episodes and +1.00R.** Three winners at +2.0R
+each, five losers at −1.0R each. Entry scores ranged 60.11–62.99 — all just
+above the 60 bar. One episode peaked at STRONG_BUY and stopped out.
+
+**This sample is far too small to mean anything.** Eight episodes over four
+weeks, on essentially one ticker, is not evidence of an edge in either
+direction. The short record (0 for 11) is the more striking number and is
+consistent with the short-side suppression already in force.
+
+**Cross-check:** of 1,771 log rows, direction was WATCH 1,173 times, BUY 491,
+SELL 99, STRONG_BUY 8. The last 200 rows are all WATCH, with final scores
+31.1–49.5 — the system has been quiet, not signalling.
+
+---
+
+## 4. WORDING
+
+Draft text using only SUPPORTED statements.
+
+### (a) Discord service description
+
+> **Crypto-Model — a public research log, not a signal service**
+>
+> This is an open research project on whether a Bollinger-squeeze + technical
+> indicator model can find a tradeable edge in crypto. Everything it has tested
+> is written down before it runs and reported afterwards whether it worked or
+> not. The repo is public.
+>
+> **What has actually been found so far: nothing that replicates.** 126
+> pre-registered hypotheses, 360 rule-by-ticker scorings across BTC, ETH and
+> SOL. Zero survivors that hold up on more than one ticker. The closest
+> candidate passed on BTC and SOL and failed on ETH, and was recorded as a
+> failure because that is what the pre-registered rule says.
+>
+> **The live record is 8 published long episodes: 3 winners, 5 losers, +1.00R
+> net.** That is four weeks of data on one ticker and it proves nothing yet. A
+> further 11 short episodes were logged and not published; they went 0 for 11,
+> which is why shorts are switched off.
+>
+> **What you get here:** every signal the model publishes, the exit levels it
+> computed, and the resolved outcome of each one added to a public tally that
+> includes the losses. Plus the research log, including the failures.
+>
+> **What this is not:** a win rate, a profit claim, or financial advice. If a
+> number in this project ever looks impressive, check how many independent
+> trades it came from — usually the answer is "not enough".
+
+### (b) Signal post template — BUY
+
+```
+BTC — BUY
+Score 61.3 / 100   (bar is 60)
+Entry 78,420   Target 80,910   Stop 77,175
+Risk:reward 2.0 : 1   |   ATR-derived, 15-day max hold
+
+This is a research signal, published as-is and tracked publicly.
+Live record to date: 8 closed long episodes, 3 target / 5 stop, +1.00R net.
+That is not enough trades to establish an edge, in either direction.
+No claim is made that this trade will work.
+Outcome will be added to the public tally either way.
+```
+
+### (c) Signal post template — STRONG_BUY
+
+```
+BTC — STRONG_BUY
+Score 63.0 / 100   (bar is 60)
+Entry 78,420   Target 81,740   Stop 77,175
+Risk:reward 2.667 : 1   |   wider target, same stop, 15-day max hold
+
+STRONG_BUY is the model's rarest tier and it is NOT a validated edge.
+Read this before treating it as a stronger signal:
+  - It has fired 8 times in the entire live log.
+  - Exactly one live episode has ever peaked at STRONG_BUY. It stopped out
+    at -1.0R.
+  - In backtest it looks strong (78% target rate on BTC against a ~35%
+    baseline) but that is 18 trades from 2 independent episodes, and the
+    project's own concentration test cannot be computed on it at all.
+  - Across 82 tickers, zero reach enough trades to measure this tier.
+
+The wider target is a geometry choice, not a confidence measurement.
+Outcome will be added to the public tally either way.
+```
+
+---
+
+## Standing rule for anything published
+
+Before any number goes out, it must answer three questions:
+
+1. **How many trades, and how many *independent* episodes?** 19 trades from 2
+   episodes is 2 observations.
+2. **Is `ex_best` defined, and is it positive?** If it cannot be computed, the
+   honest word is "unmeasured", not "strong".
+3. **Does it hold on BTC *and* ETH *and* SOL?** One ticker is a hypothesis.
+
+If any answer is missing, the claim does not ship.
