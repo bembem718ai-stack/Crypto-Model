@@ -1,0 +1,78 @@
+name: Derivatives Collect
+
+# DATA COLLECTION ONLY. No hypothesis, no number, no registered direction.
+# Nothing this workflow writes is scored by anything.
+#
+# WHY DAILY IS ENOUGH: every source is a rolling window, and the collector
+# re-fetches the WHOLE window each run and merges on (symbol, timestamp).
+# Kraken funding is ~1 year rolling, OKX funding ~3 months, OKX open
+# interest 180 daily rows. So a missed day is not a hole -- the next run
+# still contains it. Running more often would only re-download the same
+# window.
+#
+# COMPLETELY INDEPENDENT OF signal-check.yml. Different concurrency group,
+# different schedule, and it only ever `git add`s data/derivatives/. It must
+# never queue behind the signal check, block it, or touch its files. It
+# spends ZERO Adanos requests -- these are public endpoints with no keys.
+on:
+  schedule:
+    - cron: '20 5 * * *'      # daily, offset off the hour so it never
+                              # lands on signal-check's :00 slot
+  workflow_dispatch: {}
+
+# NOT the signal-check group. Sharing one would let this job delay the
+# signal check, which is the thing it is forbidden to do.
+concurrency:
+  group: derivs-collect
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # A venue that is down emits a ::warning and the others still
+      # collect; the collector exits 0 either way. A failed pull leaves
+      # that venue's existing file untouched rather than truncating an
+      # archive it could not read.
+      - name: Collect derivatives data
+        run: python research/collect_derivs.py
+
+      - name: Commit merged data
+        run: |
+          git config user.name "signal-bot"
+          git config user.email "actions@users.noreply.github.com"
+          if [ -d data/derivatives ]; then
+            git add data/derivatives
+          else
+            echo "nothing collected yet"
+          fi
+          if git diff --cached --quiet; then
+            echo "No new rows to commit."
+          else
+            git commit -m "Derivatives collect: $(date -u +'%Y-%m-%d %H:%M UTC') [skip ci]"
+            for i in 1 2 3; do
+              if git pull --rebase origin main && git push; then
+                echo "Pushed successfully."
+                break
+              fi
+              echo "Push attempt $i failed, retrying in 5s..."
+              sleep 5
+            done
+          fi

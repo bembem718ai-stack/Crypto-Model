@@ -1099,3 +1099,52 @@ Every registered hypothesis in the EVENT RATE program has now failed:
 selects nothing. #167 did what it was for — it made the difference
 between +0.815 and -2.016 on the same window visible — but a filter is
 not a result.
+
+
+---
+
+## Provenance — derivatives data collection (NOT a hypothesis)
+
+`research/collect_derivs.py`, workflow `derivs-collect.yml`, writing to
+`data/derivatives/`. **This has no number, no registered direction and no
+pass condition, because it is not a test.** It is data collection, recorded
+here so that its existence and its limits are on the record before anyone
+looks at it.
+
+**The free history is capped, and that is the whole problem.**
+
+| source | window available | granularity |
+|--------|------------------|-------------|
+| Kraken Futures funding | ~1 year, rolling | hourly |
+| OKX funding | ~3 months | 8h settlements |
+| OKX open interest | 180 rows (~6 months) | daily |
+
+Binance's futures API, which does hold full history, returns HTTP 451 from
+here and from Azure-hosted GitHub runners; Bybit returns 403. Neither is
+reachable.
+
+**So this data supports NO testable hypothesis today.** A pre-lockbox window
+worth anything needs roughly a year of accumulation from now: the standard
+lockbox rule seals the last 6 months at analysis time, so a year collected
+leaves ~6 months usable, which is the bare minimum before a fold structure
+means anything. Until then there is nothing here to register a hypothesis
+against, and none should be registered.
+
+**When it IS eventually tested, the ordinary rules apply unchanged.** The
+lockbox is applied at ANALYSIS time, not at collection time -- the last 6
+months of whatever exists then are sealed, exactly as for price data
+(research rule 2). Collecting a row does not exempt it; a row collected
+today will be inside the lockbox when it is finally analysed if it falls in
+the last 6 months at that point.
+
+**Why start now anyway.** This series cannot be bought back later. Every day
+not collected is a day permanently outside the eventual sample, because the
+venues discard it. Starting the clock is the entire point of the exercise.
+
+**Merge, not append.** Each run pulls the FULL available window and merges
+on `(symbol, timestamp)`, so the operation is idempotent, a missed run
+self-heals as long as the gap is shorter than the venue's window, and the
+first run backfills a free year of Kraken funding. On a collision the value
+already on disk wins and the collision is counted and printed -- a venue
+revising its own history is something to find out about, not to adopt
+silently.

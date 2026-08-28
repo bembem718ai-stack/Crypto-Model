@@ -3119,7 +3119,7 @@ class TestSentimentGateDiagnostics:
         epm.gh_annotate("warning", "T", "line one\nline two\r\nthree")
         assert capsys.readouterr().out.count("\n") == 1
 
-    def test_gate_error_reports_http_status_and_body(self, capsys):
+    def test_gate_error_reports_http_status_and_body(self, capsys, tmp_path):
         # The whole point: an ERROR must carry the CAUSE.
         err = ConnectionError("boom")
         err.http_status = 429
@@ -3129,20 +3129,22 @@ class TestSentimentGateDiagnostics:
             raise err
 
         gate = epm.cached_sentiment_check(
-            "BTC", fetcher=boom, api_key="k", cache_path="", ttl_hours=0)
+            "BTC", fetcher=boom, api_key="k",
+            cache_path=str(tmp_path / "none.json"), ttl_hours=0)
         out = capsys.readouterr().out
         assert gate["decision"] == "ERROR"
         assert gate["gate_multiplier"] == 1.0      # fallback UNCHANGED
         assert "429" in out and "quota exceeded" in out
         assert "429" in gate["reason"]
 
-    def test_gate_error_still_returns_neutral_fallback(self):
+    def test_gate_error_still_returns_neutral_fallback(self, tmp_path):
         # Guard the thing that must NOT change.
         def boom(*a, **kw):
             raise ConnectionError("no status attached")
 
         gate = epm.cached_sentiment_check(
-            "BTC", fetcher=boom, api_key="k", cache_path="", ttl_hours=0)
+            "BTC", fetcher=boom, api_key="k",
+            cache_path=str(tmp_path / "none.json"), ttl_hours=0)
         assert gate["decision"] == "ERROR"
         assert gate["gate_multiplier"] == 1.0
         assert gate["sentiment_score"] is None
@@ -3558,3 +3560,105 @@ class TestSentimentTTL:
         finally:
             monkeypatch.delenv("SENTIMENT_TTL_HOURS", raising=False)
             importlib.reload(se)
+
+
+# ======================================================================
+# DERIVATIVES COLLECTOR — the merge must be idempotent
+# ======================================================================
+# Every free derivatives source serves a ROLLING window, not an archive:
+# Kraken funding ~1y hourly, OKX funding ~3 months, OKX OI 180 daily rows.
+# So the collector re-fetches the FULL window every run and merges on
+# (symbol, timestamp). That makes re-running harmless, makes a missed run
+# self-healing as long as the gap is shorter than the venue's window, and
+# gets a year of Kraken history free on the first run.
+#
+# This is DATA COLLECTION, not a hypothesis. Nothing here is scored.
+class TestDerivativesMerge:
+
+    def _cd(self):
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        return importlib.import_module("collect_derivs")
+
+    def _df(self, rows):
+        return pd.DataFrame(rows, columns=["symbol", "timestamp", "funding_rate"])
+
+    def test_overlapping_fetches_do_not_duplicate(self):
+        cd = self._cd()
+        a = self._df([("PF_XBTUSD", "2026-08-01T00:00:00Z", 1.0),
+                      ("PF_XBTUSD", "2026-08-01T01:00:00Z", 2.0)])
+        b = self._df([("PF_XBTUSD", "2026-08-01T01:00:00Z", 2.0),   # overlap
+                      ("PF_XBTUSD", "2026-08-01T02:00:00Z", 3.0)])  # new
+        merged, added, coll = cd.merge_rows(a, b)
+        assert len(merged) == 3 and added == 1 and coll == 0
+
+    def test_merge_is_idempotent(self):
+        cd = self._cd()
+        a = self._df([("PF_XBTUSD", "2026-08-01T00:00:00Z", 1.0)])
+        once, _, _ = cd.merge_rows(a, a)
+        twice, added, _ = cd.merge_rows(once, a)
+        assert len(once) == 1 and len(twice) == 1 and added == 0
+
+    def test_out_of_order_input_is_sorted(self):
+        cd = self._cd()
+        a = self._df([("PF_XBTUSD", "2026-08-01T05:00:00Z", 5.0)])
+        b = self._df([("PF_XBTUSD", "2026-08-01T01:00:00Z", 1.0),
+                      ("PF_XBTUSD", "2026-08-01T03:00:00Z", 3.0)])
+        merged, _, _ = cd.merge_rows(a, b)
+        assert list(merged.timestamp) == sorted(merged.timestamp)
+
+    def test_symbols_do_not_collide_on_the_same_timestamp(self):
+        cd = self._cd()
+        a = self._df([("PF_XBTUSD", "2026-08-01T00:00:00Z", 1.0)])
+        b = self._df([("PF_ETHUSD", "2026-08-01T00:00:00Z", 9.0)])
+        merged, added, _ = cd.merge_rows(a, b)
+        assert len(merged) == 2 and added == 1
+
+    def test_existing_value_wins_and_revision_is_counted(self):
+        # A venue quietly revising its own history must be visible, not
+        # silently adopted into an archive older results may depend on.
+        cd = self._cd()
+        a = self._df([("PF_XBTUSD", "2026-08-01T00:00:00Z", 1.0)])
+        b = self._df([("PF_XBTUSD", "2026-08-01T00:00:00Z", 99.0)])
+        merged, added, coll = cd.merge_rows(a, b)
+        assert added == 0 and coll == 1
+        assert float(merged.iloc[0].funding_rate) == 1.0
+
+    def test_empty_incoming_leaves_file_untouched(self, tmp_path):
+        cd = self._cd()
+        p = str(tmp_path / "kraken_funding.csv")
+        self._df([("PF_XBTUSD", "2026-08-01T00:00:00Z", 1.0)]).to_csv(p, index=False)
+        before = open(p, encoding="utf-8").read()
+        res = cd.write_merged(p, pd.DataFrame())
+        assert res["skipped"] is True and res["added"] == 0
+        assert open(p, encoding="utf-8").read() == before
+
+    def test_none_incoming_leaves_file_untouched(self, tmp_path):
+        # This is the failed-venue path: a venue we could not READ must
+        # never truncate the archive we already have.
+        cd = self._cd()
+        p = str(tmp_path / "okx_funding.csv")
+        self._df([("BTC-USDT-SWAP", "2026-08-01T00:00:00Z", 1.0)]).to_csv(p, index=False)
+        before = open(p, encoding="utf-8").read()
+        res = cd.write_merged(p, None)
+        assert res["skipped"] is True and res["rows"] == 1
+        assert open(p, encoding="utf-8").read() == before
+
+    def test_first_write_creates_the_file(self, tmp_path):
+        cd = self._cd()
+        p = str(tmp_path / "new" / "okx_oi.csv")
+        res = cd.write_merged(p, self._df([("BTC", "2026-08-01T00:00:00Z", 1.0)]))
+        assert os.path.exists(p) and res["rows"] == 1 and res["added"] == 1
+
+    def test_a_gap_shorter_than_the_window_self_heals(self, tmp_path):
+        # Miss a run: the next full-window fetch backfills the hole.
+        cd = self._cd()
+        p = str(tmp_path / "kraken_funding.csv")
+        cd.write_merged(p, self._df([("PF_XBTUSD", "2026-08-01T00:00:00Z", 1.0)]))
+        full = self._df([("PF_XBTUSD", "2026-08-01T00:00:00Z", 1.0),
+                         ("PF_XBTUSD", "2026-08-01T01:00:00Z", 2.0),   # missed
+                         ("PF_XBTUSD", "2026-08-01T02:00:00Z", 3.0)])
+        res = cd.write_merged(p, full)
+        assert res["rows"] == 3 and res["added"] == 2
