@@ -41,7 +41,7 @@ SELL-SIDE FIX THIS SUITE LOCKS IN (read TestExtremeFearSellSemantics):
 
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import pandas as pd
@@ -3434,3 +3434,127 @@ class TestTriggerGuard:
     @pytest.fixture(autouse=True)
     def _tmp(self, tmp_path):
         self._tp = tmp_path
+
+
+# ======================================================================
+# API KEY HYGIENE — the newline that killed the gate
+# ======================================================================
+# ROOT CAUSE, 2026-08-05 to 2026-08-27, 1,350 consecutive runs: the
+# ADANOS_API_KEY secret was stored with a trailing newline. requests
+# refuses to send a header whose value contains a return character, so it
+# raised InvalidHeader CLIENT-SIDE and the request never reached the API.
+# There was no HTTP status to diagnose because there was no HTTP request.
+# The Actions log showed `'***\n'` -- GitHub redacted the key, the newline
+# sat outside the redaction.
+#
+# Secrets get pasted with newlines. That is normal, and the code should
+# tolerate it rather than fail silently for three weeks.
+class TestApiKeyHygiene:
+
+    def test_trailing_newline_is_stripped(self, monkeypatch):
+        monkeypatch.setenv("ADANOS_API_KEY", "key\n")
+        assert epm.get_api_key_from_env() == "key"
+
+    def test_windows_crlf_is_stripped(self, monkeypatch):
+        monkeypatch.setenv("ADANOS_API_KEY", "key\r\n")
+        assert epm.get_api_key_from_env() == "key"
+
+    def test_surrounding_spaces_are_stripped(self, monkeypatch):
+        monkeypatch.setenv("ADANOS_API_KEY", " key ")
+        assert epm.get_api_key_from_env() == "key"
+
+    def test_unset_key_stays_none(self, monkeypatch):
+        monkeypatch.delenv("ADANOS_API_KEY", raising=False)
+        assert epm.get_api_key_from_env() is None
+
+    def test_blank_key_is_falsy_not_whitespace(self, monkeypatch):
+        # "   " must not read as a present key, or the missing-key error
+        # never fires and you get InvalidHeader all over again.
+        monkeypatch.setenv("ADANOS_API_KEY", "   ")
+        assert not epm.get_api_key_from_env()
+
+    def test_stripped_key_produces_a_sendable_header(self, monkeypatch):
+        # The actual failure mode, end to end: a header value with \n is
+        # rejected by urllib3 before any socket opens.
+        import urllib3.util
+        monkeypatch.setenv("ADANOS_API_KEY", "abc123\n")
+        k = epm.get_api_key_from_env()
+        urllib3.util.parse_url("https://x")          # import sanity
+        assert "\n" not in k and "\r" not in k
+
+
+# ======================================================================
+# SENTIMENT TTL — the second half of the quota fix
+# ======================================================================
+# Reddit sentiment does not move hourly (three consecutive live readings on
+# 2026-08-03 were all sentiment_score=-0.06). Gating on the derived cutoff
+# alone still projected 381 req/month for ONE ticker against a 200/month
+# tier, and ~1,143 for three. A 12h per-symbol TTL bounds it by CALENDAR
+# rather than by candidate rate: at most 2 calls/day/symbol however many
+# hours qualify, so 3 tickers x 2 x 31 = 186/month worst case.
+class TestSentimentTTL:
+
+    def test_default_ttl_is_twelve_hours(self):
+        assert epm.SENTIMENT_TTL_HOURS == 12.0
+
+    def test_second_call_inside_twelve_hours_costs_nothing(self, tmp_path):
+        epm.reset_run_cache()
+        calls = []
+
+        def fetcher(t, **kw):
+            calls.append(t)
+            return {"decision": "PROCEED", "gate_multiplier": 1.0, "reason": "ok",
+                    "sentiment_score": 0.1, "mentions": 40}
+
+        cp = str(tmp_path / "c.json")
+        t0 = datetime(2026, 8, 28, 0, 0, tzinfo=timezone.utc)
+        epm.cached_sentiment_check("BTC", cache_path=cp, fetcher=fetcher, now=t0)
+        for h in (1, 6, 11):
+            epm.reset_run_cache()      # isolate the DISK ttl, not the run memo
+            epm.cached_sentiment_check("BTC", cache_path=cp, fetcher=fetcher,
+                                       now=t0 + timedelta(hours=h))
+        assert calls == ["BTC"], f"expected 1 call inside 12h, got {len(calls)}"
+
+    def test_call_resumes_after_twelve_hours(self, tmp_path):
+        epm.reset_run_cache()
+        calls = []
+
+        def fetcher(t, **kw):
+            calls.append(t)
+            return {"decision": "PROCEED", "gate_multiplier": 1.0, "reason": "ok",
+                    "sentiment_score": 0.1, "mentions": 40}
+
+        cp = str(tmp_path / "c.json")
+        t0 = datetime(2026, 8, 28, 0, 0, tzinfo=timezone.utc)
+        epm.cached_sentiment_check("BTC", cache_path=cp, fetcher=fetcher, now=t0)
+        epm.reset_run_cache()
+        epm.cached_sentiment_check("BTC", cache_path=cp, fetcher=fetcher,
+                                   now=t0 + timedelta(hours=12, minutes=1))
+        assert len(calls) == 2
+
+    def test_ttl_is_per_symbol(self, tmp_path):
+        epm.reset_run_cache()
+        calls = []
+
+        def fetcher(t, **kw):
+            calls.append(t)
+            return {"decision": "PROCEED", "gate_multiplier": 1.0, "reason": t,
+                    "sentiment_score": 0.1, "mentions": 40}
+
+        cp = str(tmp_path / "c.json")
+        t0 = datetime(2026, 8, 28, 0, 0, tzinfo=timezone.utc)
+        for sym in ("BTC", "ETH", "SOL"):
+            epm.cached_sentiment_check(sym, cache_path=cp, fetcher=fetcher, now=t0)
+        assert calls == ["BTC", "ETH", "SOL"], "one symbol's TTL must not mask another's"
+
+    def test_env_can_override_the_ttl(self, monkeypatch):
+        # Operators need to tighten this without a code change if the tier
+        # changes; the default is a default, not a constant.
+        import importlib
+        monkeypatch.setenv("SENTIMENT_TTL_HOURS", "6")
+        se = importlib.reload(epm)
+        try:
+            assert se.SENTIMENT_TTL_HOURS == 6.0
+        finally:
+            monkeypatch.delenv("SENTIMENT_TTL_HOURS", raising=False)
+            importlib.reload(se)

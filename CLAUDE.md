@@ -9,7 +9,7 @@ Repo is PUBLIC: `bembem718ai-stack/Crypto-Model`.
 $py = "C:\Users\gubby\AppData\Local\Programs\Python\Python312\python.exe"
 $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 
-& $py -m pytest test_signals.py -q        # 413 passed + 1 skipped, must stay green
+& $py -m pytest test_signals.py -q        # 424 passed + 1 skipped, must stay green
 & $py audit.py --offline                  # structural health, seconds, no network
 & $py audit.py BTC ETH SOL --years 4      # full audit, 10-40 min
 & $py pipeline.py run BTC                 # live signal — COSTS 1 ADANOS REQUEST
@@ -31,7 +31,7 @@ Four core files plus the audit, and two directories that support research:
   classification, backtests, position sizing, robustness validation.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 413 tests covering all decision logic.
+- `test_signals.py` — 424 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
 - `data/` — the frozen offline dataset: ~5y of Binance.US 4h bars plus the
   incumbent's daily frame per ticker (BTC/ETH/SOL), with `MANIFEST.json`
@@ -162,8 +162,14 @@ Research is kept separate from the live system, and stays separate.
 - **Short side viability (open).** Shorts use a 50-day SMA trend filter.
   Whether they hold up across halves and tickers is what
   `short_side_verdict` decides.
-- **Adanos tier.** Hourly checks on one ticker need ~720 requests/month
-  against a 200/month free tier. Upgrade pending.
+- **Adanos tier — RESOLVED by gating, no upgrade needed.** Hourly checks
+  used to need ~720 requests/month per ticker against a 200/month free
+  tier. Two changes fixed it: the call is skipped below the derived cutoff
+  (33.3 — below it the dampen-only gate provably cannot change the label),
+  and a 12h per-symbol TTL bounds spend by the calendar rather than by the
+  candidate rate. Replayed against the real log: **~31 requests/month per
+  ticker, ~92 for three**, ceiling 62/186. Comfortably inside the free
+  tier. `SENTIMENT_TTL_HOURS` overrides the TTL if the tier changes.
 
 ## Deployment
 

@@ -2720,7 +2720,19 @@ API_BASE = "https://api.adanos.org/reddit/crypto"
 
 
 def get_api_key_from_env() -> str:
-    return os.environ.get("ADANOS_API_KEY")
+    """The key, with surrounding whitespace removed.
+
+    WHY .strip() IS LOAD-BEARING: secrets get pasted with a trailing
+    newline, and `requests` refuses to send a header value containing a
+    return character -- it raises InvalidHeader CLIENT-SIDE, so the request
+    never reaches the API and there is no HTTP status to diagnose. That
+    exact fault silenced the sentiment gate for 1,350 consecutive runs
+    (2026-08-05 to 2026-08-27) while every workflow run reported success.
+    Returns None when unset, and empty (falsy) for an all-whitespace value
+    so the missing-key error still fires instead of a mystery header
+    rejection."""
+    raw = os.environ.get("ADANOS_API_KEY")
+    return raw if raw is None else raw.strip()
 
 
 def redact_secret(text, api_key: str = None) -> str:
@@ -2842,7 +2854,15 @@ def fetch_token_sentiment(ticker: str, api_key: str = None, max_retries: int = 3
 # would silently disable the gate for hours.
 
 SENTIMENT_CACHE_PATH = os.environ.get("SENTIMENT_CACHE_PATH", "sentiment_cache.json")
-SENTIMENT_TTL_HOURS = float(os.environ.get("SENTIMENT_TTL_HOURS", "4"))
+# 12 HOURS, NOT 4. Reddit sentiment does not move hourly -- three
+# consecutive live readings on 2026-08-03 were all sentiment_score=-0.06
+# while mentions crept 20290 -> 20716. Gating on the derived cutoff alone
+# still projected 381 requests/month for ONE ticker against a 200/month
+# tier (~1,143 for three). A 12h per-symbol TTL bounds spend by the
+# CALENDAR instead of by the candidate rate: at most 2 calls/day/symbol
+# however many hours qualify, so 3 tickers x 2 x 31 = 186/month worst case.
+# Override with SENTIMENT_TTL_HOURS if the tier changes.
+SENTIMENT_TTL_HOURS = float(os.environ.get("SENTIMENT_TTL_HOURS", "12"))
 
 
 def _load_sentiment_cache(path: str = None) -> dict:

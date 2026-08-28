@@ -18,11 +18,11 @@ name: Signal Check
 # this window, so redundancy costs coverage, not quota.
 #
 # !!! QUOTA !!!
-#   One executed run = 1 ticker (BTC) = at most 1 Adanos request, and only
-#   when Step 1 clears the derived cutoff (see live_tools.run_single_check).
-#   Measured: ~381 requests/month at hourly cadence, vs 720 ungated. Still
-#   above a 200/month free tier — set the cron-job.org interval to match the
-#   tier you are actually on.
+#   An executed run costs at most 1 Adanos request, and only when Step 1
+#   clears the derived cutoff AND the cached reading for that symbol is
+#   older than 12h. Replayed against the real log: ~31 requests/month per
+#   ticker (~92 for three), against a 200/month free tier. Ceiling is
+#   2/day/symbol = 62/month/ticker however many hours qualify.
 on:
   schedule:
     - cron: '0 * * * *'
