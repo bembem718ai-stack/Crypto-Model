@@ -1728,3 +1728,59 @@ reported alongside.
   not claimed.
 - Per the registration, ARM A was **never** a replication test. A pass would
   have been robustness-on-one-ticker; a fail is the same scope.
+
+## Result of #169 (ARM B event-count estimate) — recorded 2026-08-28
+
+ARM B parameters (bb 20, lookback 120, ATR 14, hold 90 bars, confirm 2
+bars), **DISCOVERY ONLY** (2019-09-23 08:00 -> 2023-04-07 17:15). This is a
+reported measurement with no pass/fail of its own; its gate governs #170.
+
+| ticker | 1h bars | STRONG_BUY labelled bars | confirmed | trades | **episodes** | med stop | med cost_r |
+|---|---|---|---|---|---|---|---|
+| BTC | 30409 | 285 | 253 | **253** | **25** | 0.810% | 0.099 |
+| ETH | 30409 | 227 | 184 | **184** | **25** | 1.045% | 0.077 |
+| SOL | 21769 | 137 | 109 | **109** | **21** | 1.674% | 0.048 |
+
+### GATE: **PASS** — all three tickers clear 30 trades on DISCOVERY
+
+| ticker | trades | gate (>= 30) |
+|---|---|---|
+| BTC | 253 | **PASS** |
+| ETH | 184 | **PASS** |
+| SOL | 109 | **PASS** |
+
+### `ex_best` IS DEFINABLE — the first time in this project
+
+| ticker | folds counted | `ex_best` (DISCOVERY) |
+|---|---|---|
+| BTC | 4 of 4 | -0.228 |
+| ETH | 4 of 4 | -0.282 |
+| SOL | 3 of 4 | -0.270 |
+
+**This answers #169's actual question.** `ex_best` has never once been
+computable for the STRONG_BUY tier: not on 3 tickers (#42-#162), not on 82
+(#163: 0 of 82), not pooled into quartiles (#165: undefined in 3 of 4), and
+not in ARM A (#168: BTC 1 counted fold, ETH 2). Under ARM B it is defined on
+**all three**, with BTC and ETH reaching 4 counted folds of 4 and SOL 3 of 4.
+The 2-bar confirm is what did it, exactly as the structural note predicted:
+it multiplies occasions instead of subdividing them.
+
+### The caveat that goes with it, stated now
+
+**Trades are not observations.** BTC's 253 trades come from **25 episodes** —
+about 10 overlapping entries per occasion inside a 90-bar (3.75-day) hold.
+ETH is 184 from 25, SOL 109 from 21. So `ex_best` is now computable because
+the TRADE count crossed its threshold, while the independent-occasion count
+is 21-25 per ticker. That is more than the 4h tier ever had (BTC 8, ETH 6,
+SOL 1) and it is still small.
+
+**The DISCOVERY `ex_best` values are visible above and they are negative on
+all three** (-0.228, -0.282, -0.270). They became visible as a by-product of
+counting folds, which #169 requires. They are recorded rather than withheld,
+because concealing a number already computed is worse than reporting it.
+They are DISCOVERY-only: #170 additionally requires CONFIRMATION, which has
+NOT been computed, and its pass rule needs `ex_best` > 0 on >= 2 of 3 tickers
+plus `net_all` above the episode-matched placebo p95 on BOTH windows.
+
+**#170 has not been run.** The gate is passed and the decision to proceed is
+the maintainer's.
