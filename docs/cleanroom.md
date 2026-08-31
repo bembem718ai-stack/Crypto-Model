@@ -3681,3 +3681,436 @@ The direction of the whole table is also worth noting only as context: most
 cells are negative at every horizon for all three tickers, because the
 pre-lockbox half of this archive was a falling market. A quintile table over
 a downtrend measures the downtrend first.
+
+---
+
+# PRE-REGISTRATION — EQUITIES PROGRAM (#204–#216)
+
+> **LOCKED 2026-08-31**, approved with three rulings, all incorporated:
+> numbering as drafted; the 12-month TS block with its derivation stated;
+> and the TS-MOM caveat retained with an expiry clause. A third
+> placebo-fidelity axis (cash-eligible-month count) was added on approval.
+> Research rule 4 now applies to every constant below: no parameter,
+> threshold, control or pass condition may change on the basis of a result.
+>
+> The data freeze predates this lock and contains no scored hypothesis.
+
+## Why this program exists
+
+**203 registered hypothesis numbers, 15 of them dormant, zero surviving edge
+claims.** `docs/claims.md` holds no supported edge claim of any kind. The
+architectural search (#187–#203) closed with six axes searched and no
+survivors.
+
+That result has two readings and the project cannot currently tell them
+apart:
+
+1. **The crypto price data contains no edge the ladder was aimed at.**
+2. **The ladder cannot detect an edge that is there.**
+
+Every registered bar, every placebo, every two-window confirmation is an
+*instrument*, and an instrument that has only ever returned zero has not been
+calibrated. **This program points it at a positive control.**
+
+Cross-sectional and time-series momentum in equities are among the most
+documented anomalies in the finance literature, replicated across decades,
+markets and asset classes. They are the closest thing available to a known
+signal.
+
+- **If the ladder detects them here, the crypto zeros become informative** —
+  the instrument works, and its silence on crypto is evidence about crypto.
+- **If the ladder cannot detect them here, that is a finding about the
+  ladder**, and every prior zero in this project is weakened accordingly.
+
+Either outcome is worth more than another crypto rule. **This is not a search
+for something to trade.**
+
+**Isolation.** This program touches nothing in the crypto model: not
+`pipeline.py`, `signal_engines.py`, `live_tools.py`, the workflows, the live
+path, or any file under `data/` other than the new `data/equities/`. Results
+go under `research/`. The crypto lockbox is unrelated to and unaffected by
+this program's lockbox.
+
+---
+
+## DATA
+
+### Adjusted close, and what that is worth — measured, not asserted
+
+Export uses `yfinance` with **`auto_adjust=True`** (splits **and**
+dividends). Raw close is **disqualifying** for an equities momentum study:
+dividends are a material fraction of equity total return, so ranking on raw
+close systematically penalises high-yield holdings for paying out — an
+artefact with nothing to do with momentum.
+
+Measured at export across the 21 ETFs' full histories:
+
+| | adjusted TR | raw TR | difference |
+|---|---|---|---|
+| **TLT** | +132.2% | **+1.7%** | **+130.5 pp** |
+| **IEF** | +130.5% | +13.6% | +116.9 pp |
+| **SPY** | +3090.6% | +1651.0% | +1439.6 pp |
+| **XLU** | +637.3% | +186.5% | +450.8 pp |
+| **EWU** | +514.3% | +96.2% | +418.1 pp |
+| **GLD** | +821.3% | +821.3% | **+0.0 pp** |
+| **median across 21** | | | **+331.7 pp** |
+
+TLT is the argument in one line: on raw close a 24-year Treasury ETF returned
+**+1.7%**, because essentially its entire return is coupons. Ranking it
+against equities on raw close would place it permanently last for reasons
+that are pure accounting. GLD's exact **0.0 pp** confirms the adjustment is
+not a blanket transform — it moves only what actually distributes.
+
+### ETFs only — and the reason is uncorrectable bias, not convenience
+
+Single stocks via free data carry **survivorship bias that inflates
+momentum**: Yahoo serves the tickers that still exist, so companies that
+delisted are simply absent. A momentum rule scored on survivors measures
+"past winners kept winning" on a sample **selected for not having failed** —
+precisely the direction that manufactures a positive momentum result.
+
+**This cannot be repaired after the fact.** It needs a point-in-time
+constituent database, which this project does not have. ETFs persist and are
+used instead. They carry a smaller version of the same bias (funds do close,
+and all 21 here survive to the freeze); that residual is disclosed rather
+than eliminated, and the alternative is not a cleaner sample but an
+uncorrectable one.
+
+### Universe — 21 ETFs, fixed, no additions
+
+Inception dates are **from the actual downloaded data**, not from memory.
+Freeze date **2026-08-28**.
+
+**9 sector SPDRs** (all inception 1998-12-22, 6,963 rows, 27.68y):
+XLB, XLE, XLF, XLI, XLK, XLP, XLU, XLV, XLY
+
+**12 broad / regional / asset-class:**
+
+| ETF | first bar | rows | years |
+|---|---|---|---|
+| SPY | 1993-01-29 | 8,453 | 33.58 |
+| EWJ | 1996-03-18 | 7,662 | 30.44 |
+| EWG | 1996-03-18 | 7,662 | 30.44 |
+| EWU | 1996-03-18 | 7,662 | 30.44 |
+| QQQ | 1999-03-10 | 6,911 | 27.47 |
+| IWM | 2000-05-26 | 6,603 | 26.26 |
+| EFA | 2001-08-27 | 6,288 | 25.00 |
+| TLT | 2002-07-30 | 6,060 | 24.08 |
+| IEF | 2002-07-30 | 6,060 | 24.08 |
+| EEM | 2003-04-14 | 5,882 | 23.37 |
+| GLD | 2004-11-18 | 5,478 | 21.77 |
+| DBC | 2006-02-06 | 5,173 | 20.56 |
+
+All 21 requested, all 21 exported, none failed. Frozen to
+`data/equities/{TICKER}.csv.gz` with `data/equities/MANIFEST_equities.json`
+carrying per-ETF first/last date, row count, sha256, and both total-return
+figures.
+
+### Eligibility — pinned NOW, before any rule runs
+
+**This is the ROTATION lesson applied in advance.** ROTATION discovered
+mid-program that only 6 of 26 crypto assets existed at its window's start and
+had to pin an eligibility rule as a disclosed specification completion. Here
+it is fixed first:
+
+> **An ETF enters the cross-section the month AFTER its first full month of
+> data.** A rule runs at a rebalance only when **≥ 12 ETFs are eligible**;
+> below that the rule holds cash and the rebalance is recorded as skipped.
+> Executed and skipped counts are reported.
+
+Resulting eligibility:
+
+| eligible from | ETFs | count |
+|---|---|---|
+| 1993-03-01 | SPY | 1 |
+| 1996-05-01 | EWJ, EWG, EWU | 4 |
+| **1999-02-01** | **the 9 sector SPDRs** | **13** ← program starts |
+| 1999-05-01 | QQQ | 14 |
+| 2000-07-01 | IWM | 15 |
+| 2001-10-01 | EFA | 16 |
+| 2002-09-01 | TLT, IEF | 18 |
+| 2003-06-01 | EEM | 19 |
+| 2005-01-01 | GLD | 20 |
+| 2006-04-01 | DBC | 21 |
+
+Date-eligibility alone first reaches 12 in **1999-02**. That is not the
+program start, because **an ETF that is date-eligible may still have no
+signal**: a 12-1 momentum figure needs 13 months of month-end history, so the
+sector SPDRs cannot be ranked until 2000-01 even though they are eligible
+from 1999-02.
+
+> **Effective eligibility at a rebalance = past `eligible_from` AND having a
+> defined signal for the rule being scored.** The ≥12 count is taken over
+> that set.
+
+Measured on the freeze: ≥12 ETFs carry a defined **6-1** signal from
+**1999-07**, and a defined **12-1** signal from **2000-01** (n = 13).
+
+> **Program start = 2000-01, governed by the LONGEST formation horizon in the
+> program (12-1), applied to all six rules.** The 6-1 rules could start six
+> months earlier and deliberately do not. Rules scored on different spans are
+> not comparable to each other or to shared controls, and #210/#215 have to
+> be one benchmark for all of them. Six months of extra history is worth less
+> than a clean comparison.
+
+A top-5 rule choosing from 13 candidates is making a real selection; that is
+the property the threshold is for.
+
+### Windows — anchored on the freeze
+
+Lockbox is the last 6 months of the freeze; the remainder splits at the
+project's standard `DISCOVERY_FRAC = 0.55`.
+
+| window | span | length | monthly rebalances |
+|---|---|---|---|
+| **DISCOVERY** | 2000-01-01 → 2014-05-22 | 14.39y | 173 |
+| **CONFIRMATION** | 2014-05-22 → 2026-02-28 | 11.77y | 142 |
+| **LOCKBOX** | 2026-02-28 → 2026-08-28 | 0.50y | **SEALED — never read** |
+
+**26 years, 315 rebalances, two windows that each contain multiple full
+market cycles.** DISCOVERY spans the dot-com bust and the GFC; CONFIRMATION
+spans 2014–2026. This is far deeper than anything the crypto programs had
+(6.4 years, 30 episodes at best), which is exactly why it can calibrate the
+instrument.
+
+---
+
+## STRUCTURE
+
+| element | value |
+|---|---|
+| rebalance | **monthly**, first trading day of each month |
+| weighting | equal-weight within the selection |
+| costs | **5 bps per side** on traded notional |
+| scoring | `research/portfolio_harness.py` (equivalence-gated to machine precision) |
+| folds | 4 equal-duration splits per window |
+| seeds | **1,200** |
+| k (Bonferroni) | **6** — the six hypotheses; controls are not counted |
+
+**Monthly, not weekly, and the reason is stated so it cannot be revisited
+later.** Monthly rebalancing with monthly-horizon signals is the convention
+the entire momentum literature is written in. Weekly rebalancing is a habit
+imported from this project's crypto work, where it was chosen for crypto's
+24/7 microstructure. Carrying it over would test a construction the
+literature never validated and would make a failure uninterpretable — it
+could mean "the anomaly is absent" or "you rebalanced four times too often
+and paid for it." A positive control must be run in its documented form.
+
+### Signal construction — the canonical skip-a-month form
+
+At the rebalance on the first trading day of month **M**:
+
+- **12-1 momentum** = total return from the close of month **M−13** to the
+  close of month **M−2** (11 months, skipping month M−1 entirely).
+- **6-1 momentum** = total return from the close of month **M−7** to the
+  close of month **M−2** (5 months, skipping month M−1).
+
+Skipping the most recent month is the canonical construction: it avoids the
+well-documented short-horizon reversal that otherwise contaminates the
+signal. It is **not** a lookahead guard — no lookahead exists either way,
+since every price used precedes the holding period — it is the literature's
+definition, adopted so the test is of the published anomaly.
+
+---
+
+## THE SIX HYPOTHESES
+
+### Cross-sectional momentum — 4 rules
+
+| # | rule |
+|---|---|
+| **#204** | rank eligible by **12-1**, hold **top-3** equal-weight |
+| **#205** | rank eligible by **12-1**, hold **top-5** equal-weight |
+| **#206** | rank eligible by **6-1**, hold **top-3** equal-weight |
+| **#207** | rank eligible by **6-1**, hold **top-5** equal-weight |
+
+### Time-series momentum — 2 rules
+
+| # | rule |
+|---|---|
+| **#208** | each eligible ETF held long if its **12-1 > 0**, else **that slot sits in cash at zero return**; equal-weight 1/n_eligible across the eligible set, so gross exposure floats between 0 and 1 |
+| **#209** | **SPY-only absolute momentum**: long SPY if its 12-1 > 0, else cash |
+
+#208 does **not** redistribute the cash of a negative-momentum slot to the
+positive ones. That is the standard TS-MOM construction and is what makes it
+a *timing* rule rather than a disguised cross-sectional one.
+
+---
+
+## CONTROLS — all of them, reported beside the rules
+
+| # | control | purpose |
+|---|---|---|
+| **#210** | equal-weight the eligible universe, monthly | did selection do anything at all |
+| **#211** | **bottom-3** by 12-1 | momentum's mirror |
+| **#212** | **bottom-5** by 12-1 | " |
+| **#213** | **bottom-3** by 6-1 | " |
+| **#214** | **bottom-5** by 6-1 | " |
+| **#215** | **random-N distribution**, N ∈ {3,5}, drawn uniformly from the eligible set at each rebalance, **1,200 draws**, reported as a distribution | matched null for a selection rule |
+| **#216** | **inverted TS**: long when 12-1 **< 0** | if TS momentum works, its inverse should not |
+
+**Controls are not hypotheses and are not counted in k**, which stays at
+**6**. They cannot pass or fail. #215 is drawn from the **same eligible set**
+the rule it nulls uses, per the ROTATION lesson on matched controls.
+
+If a bottom-N control wins while its top-N rule also wins, the result is
+market exposure rather than selection, and both are reported as such.
+
+---
+
+## PLACEBO FIDELITY — the two-axis check, before any draw is scored
+
+The standing rule from the architectural close-out applies in full. Two
+placebo defects were found in two programs, both of the family *a null that
+differs from the strategy in more than the one thing it claims to isolate*,
+and both would have made a bar easier — i.e. both pushed toward a **false
+positive**.
+
+**Generators:**
+
+- **Cross-sectional rules (#204–#207)** → `rank_permutation_fixed_placebo`
+  (one fixed relabelling of the universe for the whole window). Destroys
+  *which ETF*, preserves the weight path exactly.
+- **Time-series rules (#208, #209)** → **block-shuffle of the SIGNAL path**,
+  re-applied to the time-correct cross-section — never a shuffle of the whole
+  weight matrix. Destroys *when* exposure was on.
+
+**Block = 12 months, and the derivation is fixed here.** The block must be
+**long relative to the 12-1 formation horizon**, so that shuffling breaks
+**timing** without destroying **texture**. A momentum signal built from an
+11-month formation window is autocorrelated over roughly that horizon; a
+block materially shorter than it would chop through the middle of the
+signal's own persistence, producing a null whose exposure path is choppier
+than any real rule could generate — the ALLOCATION seam problem, in a form
+that would attack the very property TS-MOM claims. At 12 months each block
+carries at least one full formation horizon intact, so within a block the
+signal keeps its shape and only the block's *placement in history* is
+destroyed. That is exactly the claim under test: not "does exposure ramp
+smoothly" but "did it ramp at the right time."
+
+**All three axes must pass, before a single draw is scored, and the measured
+figures are reported in the results:**
+
+1. **Turnover fidelity** — the null's average turnover as a **ratio** to the
+   real rule's, **and converted to annualised return drag in percentage
+   points** (`extra_daily_turnover × cost_per_side × 252` trading days).
+   **The ratio alone is the wrong unit** — ALLOCATION's 1.42× cost 0.23 pp/yr
+   while ROTATION's 13.6× cost ~42 pp/yr. Materiality is judged in pp/yr.
+2. **Universe / eligibility fidelity** — the fraction of gross weight the
+   null places on ETFs that were **not yet eligible** on that date, reported
+   beside the real rule's figure. Missing prices become zero returns
+   silently, so this defect is invisible in returns, turnover and exposure
+   alike and must be measured directly.
+3. **Cash-eligible-month fidelity — TS shuffle only (#208, #209, #216).** A
+   time-series rule's defining behaviour is *how often it is out of the
+   market*. A null that is in cash a different amount of the time is not
+   testing timing, it is testing a different exposure budget. So the null's
+   count of **cash asset-months** — asset-months in which the rule holds
+   nothing — must match the real rule's within a **relative tolerance of
+   ±2%**, reported as a measured figure beside the other two axes.
+
+   Block shuffling permutes whole blocks of the signal path, so this count is
+   preserved *exactly* except where the series length is not a whole multiple
+   of the block and the final partial block is truncated. ±2% is set to
+   absorb that truncation and nothing else; a larger deviation means the
+   generator is doing something it was not asked to do, and it is repaired
+   before any draw.
+
+If either check fails materially, the generator is **repaired before any
+draw**, on the same principle both previous repairs used — *the null pays
+what the strategy pays and is constrained the way the strategy is
+constrained* — and the repair is documented in the results with its measured
+before/after. Any residual is quantified with a statement of which side it
+favours.
+
+---
+
+## PASS RULES
+
+Per rule, on **BOTH** windows, all required:
+
+1. **Net annualised return > 0**, AND
+2. **Above the rank-permutation / block-shuffle placebo's
+   Bonferroni-adjusted percentile**: α = 0.05/6 = 0.008333, the **99.1667th
+   percentile**, from 1,200 seeds (p95 reported alongside from the same
+   draws), AND
+3. **Above #210 (equal-weight eligible universe)** on net annualised return,
+   AND
+4. **Cross-sectional rules (#204–#207) only: above #215 random-N's p95**, for
+   the matching N, on both windows.
+
+**No partial credit. Single confirmation. No re-runs.**
+
+**One thing recorded now so it cannot be introduced afterwards:** TS-MOM's
+claim in the literature is primarily about **drawdown and risk-adjusted
+return**, not raw return, so clause 3 is a demanding bar for #208/#209 in a
+26-year period containing two large bull markets. This is stated in advance
+so that a clause-3 failure for the TS rules is read for what it is — a
+statement about *return* — and it **does not soften the verdict, which is
+FAIL, and may not be used to promote anything.** Sharpe and max drawdown are
+reported for every rule as description.
+
+**The caveat expires, and the expiry is fixed now.** If #208/#209 fail **all
+clauses**, including the descriptive risk-adjusted read — i.e. they also fail
+to beat #210's Sharpe and fail to improve max drawdown — then the caveat
+**expires and may not be cited**, in this program or any later one. A note
+that exists to prevent a narrow failure being over-read has no standing once
+the failure is broad. It cannot become a permanent excuse attached to
+time-series momentum.
+
+---
+
+## INTERPRETATION MATRIX — worded now, so no result can bend it
+
+| DISCOVERY | CONFIRMATION | reading |
+|---|---|---|
+| **PASS** | **PASS** | **Instrument validated.** The ladder detects a known anomaly at this granularity and under these costs. The crypto zeros become **informative**: the instrument works, and its silence on crypto is evidence about crypto rather than about the method. |
+| **PASS** | **FAIL** | **Edge verdict: FAIL.** No partial credit — the rule does not pass. See the pre-worded descriptive note below, which is a reading about the *instrument* and never a claim about an edge. |
+| **FAIL** | **PASS** | **Edge verdict: FAIL.** Recorded as-is. A signal absent in the earlier era and present in the later one is not the published anomaly's shape and gets no special narrative. |
+| **FAIL** | **FAIL** | **Two readings, both stated, neither chosen.** (a) The effect is too weak at **ETF granularity** and **these costs** to clear a Bonferroni-adjusted two-window bar. (b) **The ladder is insensitive** — the bars are set where a real, documented anomaly cannot pass them. This program does not adjudicate between them, and no later program may quietly assume either. |
+
+### Pre-worded descriptive note for a DISCOVERY-only pass
+
+*Written now, before any result exists, so it cannot be composed to fit one.*
+
+> Detection in the early era only is **consistent with the published decay of
+> ETF-level momentum since the 2000s** — the anomaly's dilution after
+> widespread publication and the growth of systematic products is documented
+> in the literature. DISCOVERY here ends 2013-12-22, which straddles that
+> transition.
+>
+> **This is a reading about the instrument, not a claim about an edge.** It
+> says the ladder demonstrably *can* detect the anomaly where the anomaly was
+> strongest, which is exactly the calibration this program was built to
+> obtain. It says nothing tradeable, it does not soften the FAIL verdict, and
+> it may not be cited as partial support for anything. A decayed anomaly and
+> an over-fitted window produce the same table; this note does not
+> distinguish them and does not pretend to.
+
+---
+
+## BUDGET AND CLOSURE
+
+- **This list is the whole program.** Six hypotheses, seven controls, two
+  lookbacks, two selection sizes, one rebalance frequency, one cost
+  assumption.
+- **No additions after results exist.** Not a third lookback, not top-10, not
+  a different skip, not weekly rebalancing, not a volatility overlay, not
+  single stocks. Any of those is a new registration with a new number and its
+  own correction.
+- **Failure closes equity momentum at this granularity for this project.**
+  Not "try again with different parameters" — closed, with the two readings
+  above recorded and neither chosen.
+- **Nothing here is ever promoted to the live path.** There is no equities
+  live path, none is proposed, and a pass would change the *interpretation of
+  the crypto record*, not the traded system.
+
+**Reported whatever the outcome:** for every rule and control on both
+windows — net annualised return, Sharpe, max drawdown, average turnover,
+average gross exposure, executed/skipped rebalances, placebo p95 and adjusted
+percentile, the observed percentile within the placebo distribution, both
+fidelity ratios, and a **50-start window-stability profile for every rule**
+(not only those passing something — selecting which results get an error bar
+on the basis of their result is the move this project forbids).
+
+Negatives are reported with the same detail as positives (research rule 5).
