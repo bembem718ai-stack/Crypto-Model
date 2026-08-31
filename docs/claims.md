@@ -323,6 +323,53 @@ result carries the freeze it was computed on.
 
 *Source: cleanroom #171.*
 
+### "The extreme-fear (VIX) regime protects the long side"
+
+**Why not.** Not because it was tested and failed. Because on the long side
+it has never been exercised, and #201 measured that as an exact zero.
+
+Removing the regime entirely — `extreme_fear_mode` disabled, bars held at
+60/40 — changed BTC INC_BUY_ALL's expectancy by **+0.000R on both windows**,
+identically zero at all 50 rolling window starts in each. That is not a
+small effect. It is the absence of any effect at all, across 6.42 years.
+
+**The component is not dormant, which is what makes this worth stating.**
+
+| | DISCOVERY (3.53y) | CONFIRMATION (2.89y) |
+|---|---|---|
+| days with VIX ≥ 35 | 80 (6.3%) | 10 (0.9%) |
+| labels the raised bars changed | 29 | 6 |
+| **BUY-tier membership changed** | **1** | **0** |
+| trades that produced | **0** (unconfirmed) | 0 |
+| median composite score on those days | 36.9 | 22.5 |
+| days in [60, 70) — the only band the raised buy bar can bind in | **1** | **0** |
+
+The regime fires often and rewrites 35 labels. Every one of them except a
+single day is on the SELL side, which INC_BUY_ALL never trades. The one
+exception — 2020-06-21, composite 62.2, VIX 35.1 — is unconfirmed under
+`confirm_days=2` and produced no trade.
+
+**The mechanism is structural, not a small sample.** The extreme-fear rule
+raises the buy bar from 60 to 70, so it can only change a long decision on a
+day whose composite score lands in [60, 70). But the composite score is *low*
+precisely when equity volatility is extreme — median 36.9 and 22.5 against a
+bar of 70. The band the rule acts in and the scores the model produces in a
+panic barely overlap. One day in seven years.
+
+**So the honest status is UNMEASURED, not validated and not refuted.** No
+claim may be made in either direction: not "it protects the long side" (never
+demonstrated) and not "it does nothing" (never given the chance). The
+`classify_direction` docstring's reasoning — that a panic should demand more
+conviction to buy — remains a design argument, and it has never been put to a
+test this data could answer.
+
+**What would make it measurable.** A regime where BTC scores above 60 while
+equity volatility is extreme. That combination has not occurred in this
+dataset. Until it does, any statement about the buy-side extreme-fear bars is
+an argument about design, and must be worded as one.
+
+*Source: cleanroom #201 (ABLATION), 2026-08-30.*
+
 ### Also not supported
 
 - **"Backtested and profitable."** The pre-registered searches failed. The only
