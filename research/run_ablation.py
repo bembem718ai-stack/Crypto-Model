@@ -119,7 +119,10 @@ def score_rung(mwin, bars, direction=None, confirm_days=None,
             "net_all": pooled.get("expectancy_r_net", float("nan")),
             "ex_best": ex_best,
             "folds_pos": folds_pos, "folds_counted": n_counted,
-            "signal_days": int(f["direction"].isin(TIER).sum())}
+            "signal_days": int(f["direction"].isin(TIER).sum()),
+            # Returned so a caller can verify a placebo lookup trade-for-trade
+            # against the real construction. Additive: changes no number above.
+            "_trades": tr}
 
 
 # ----------------------------------------------------------------------

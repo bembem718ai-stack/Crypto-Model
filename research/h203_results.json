@@ -1,0 +1,73 @@
+{
+  "DISCOVERY": {
+    "n": 101,
+    "episodes": 33,
+    "win_pct": 33.663366336633665,
+    "net_all": 0.018148514851485182,
+    "ex_best": -0.21696969696969698,
+    "folds_pos": 1,
+    "folds_counted": 4,
+    "signal_days": 272,
+    "placebo": {
+      "seeds": 1200,
+      "valid": 1200,
+      "mean": -0.0528161093131481,
+      "p50": -0.049208029197080255,
+      "p95": 0.19128175182481752,
+      "pctile": 68.33333333333333
+    }
+  },
+  "CONFIRMATION": {
+    "n": 84,
+    "episodes": 24,
+    "win_pct": 41.66666666666667,
+    "net_all": 0.31363095238095245,
+    "ex_best": 0.23372131147540987,
+    "folds_pos": 4,
+    "folds_counted": 4,
+    "signal_days": 223,
+    "placebo": {
+      "seeds": 1200,
+      "valid": 1200,
+      "mean": 0.07222333206453226,
+      "p50": 0.07110330578512397,
+      "p95": 0.3695979338842972,
+      "pctile": 91.5
+    }
+  },
+  "_stability": {
+    "DISCOVERY": {
+      "n_starts": 50,
+      "n_defined": 50,
+      "n_undefined": 0,
+      "positive": 50,
+      "negative": 0,
+      "zero": 0,
+      "sign_stability": 1.0,
+      "modal_sign": "positive",
+      "mean": 0.07492822135661145,
+      "median": 0.061415730337078686,
+      "min": 0.010729166666666698,
+      "max": 0.21516666666666667,
+      "first_value": 0.018148514851485182,
+      "last_value": 0.21516666666666667
+    },
+    "CONFIRMATION": {
+      "n_starts": 50,
+      "n_defined": 50,
+      "n_undefined": 0,
+      "positive": 50,
+      "negative": 0,
+      "zero": 0,
+      "sign_stability": 1.0,
+      "modal_sign": "positive",
+      "mean": 0.2765027555376073,
+      "median": 0.24457405586152642,
+      "min": 0.16554838709677425,
+      "max": 0.41227272727272735,
+      "first_value": 0.16554838709677425,
+      "last_value": 0.41227272727272735
+    }
+  },
+  "_verdict": "FAIL"
+}

@@ -3046,3 +3046,95 @@ record of a construction the frozen data rejected is worth having — it is the
 only way this project ever learns that a rejection was the window's fault
 rather than the model's.
 
+
+## #203 RESULT — FAIL, run 2026-08-31
+
+`research/run_203.py`, raw in `research/h203_results.json`.
+
+Reconstruction gate passed first: production weights reproduce the stored
+`direction` with **0 mismatches in 2,325 days**, `combined_final_score` max
+abs err 1.42e-14. The placebo lookup was then verified trade-for-trade
+against the scored construction on each window — **101 and 84 trades MATCH**
+— before a single draw was taken.
+
+| window | n | episodes | win% | net_all | ex_best | folds+ | placebo p95 | pctile |
+|---|---|---|---|---|---|---|---|---|
+| DISCOVERY | 101 | 33 | 33.7 | +0.018 | −0.217 | 1/4 | +0.191 | 68.3 |
+| CONFIRMATION | 84 | 24 | 41.7 | **+0.314** | **+0.234** | **4/4** | +0.370 | 91.5 |
+
+**Window-stability of `net_all`** (50 starts, end pinned), attached as
+registered:
+
+| window | defined | sign-stability | range | median |
+|---|---|---|---|---|
+| DISCOVERY | 50/50 | **100% positive** | +0.011 … +0.215 | +0.061 |
+| CONFIRMATION | 50/50 | **100% positive** | +0.166 … +0.412 | +0.245 |
+
+### Registered conditions
+
+| window | `ex_best` > 0 | `net_all` > placebo p95 |
+|---|---|---|
+| DISCOVERY | −0.217 → **FAIL** | +0.018 vs +0.191 → **FAIL** |
+| CONFIRMATION | +0.234 → PASS | +0.314 vs +0.370 → **FAIL** |
+
+**VERDICT: FAIL.** Three of four clauses fail. No promotion.
+
+### What actually happened, and it is not what #198 suggested
+
+Everything #198 said is confirmed here. Squeeze-only beats the incumbent on
+both windows; it is positive on both; its DISCOVERY `ex_best` improves from
+−0.466 to −0.217 and its CONFIRMATION `ex_best` of **+0.234 on 4 of 4
+positive folds is the strongest this project has ever measured.** It is also
+the most sign-stable construction in the record: positive at **100 of 100**
+window starts across both windows, where the incumbent was 88% *negative* on
+DISCOVERY.
+
+And it fails, because none of that was the test.
+
+**The placebo is what it fails against, and the placebo is high for a
+reason.** Episode-matched draws — same run-length distribution, same
+conviction mix, same 15-day holds, entering at random — reach a p95 of
+**+0.191** on DISCOVERY and **+0.370** on CONFIRMATION. Random clustered
+long exposure on BTC over these windows makes money. So does squeeze-only.
+Squeeze-only does not make *more* than the top of that range: it sits at the
+68th percentile on DISCOVERY and the 91st on CONFIRMATION.
+
+**The distinction that matters: exposure versus selection.** Squeeze-only's
+positive expectancy is real and stable. What #203 tested is whether the rule
+picks better days than chance picks, holding the shape of the exposure
+fixed. It does not. The stability profile measures the same thing the point
+estimate does — how reliably this construction is long a rising asset — and
+100% sign-stability on an exposure statistic is not evidence of selection
+skill. Two instruments agreeing does not make them two pieces of evidence.
+
+**#198 and #203 are both correct and they answer different questions.**
+"Better than the incumbent" and "better than chance" are not the same bar,
+and on a negative baseline the first is nearly free. This is exactly why
+ABLATION was written as descriptive with no promotion path, and why the
+registration said in advance that #203 was not independent evidence of #198.
+
+CONFIRMATION at the 91.5th percentile is the closest any construction has
+come. It is still a fail, and it is a fail on 24 episodes.
+
+### Consequences, as registered
+
+- **No promotion.** The in-sample half of the conjunction is not satisfied,
+  so the promotion question is closed regardless of what the shadow record
+  does. It cannot be reopened by shadow agreement alone — that was fixed
+  before either half was known.
+- **`claims.md` is unchanged.** Nothing here becomes SUPPORTED. It still
+  holds zero supported edge claims.
+- **The shadow arm keeps logging**, exactly as the registration said it
+  would on a failure. A forward record of a construction the frozen data
+  rejected is the only way this project ever learns that a rejection was the
+  window's fault rather than the model's, and it costs nothing.
+- **No re-test at a looser bar.** Not at p90, not on CONFIRMATION alone, not
+  with the placebo re-specified. The bar was set before the run.
+
+### What would legitimately move this
+
+A construction that beats the episode-matched placebo needs to differ from
+chance in *which days it picks*, not in how much it is exposed. Nothing in
+#197–#203 has done that on BTC. Any future attempt is a new registration,
+and it starts by explaining what it selects on — because "positive and
+stable" has now been demonstrated to be reachable by random entry.
