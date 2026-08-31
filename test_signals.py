@@ -4125,3 +4125,233 @@ class TestWindowStabilityDegenerate:
         r = ws.profile(stat, "2020-01-01", "2024-01-01", n_starts=10)
         assert r["zero"] == 9 and r["negative"] == 1
         assert r["modal_sign"] == "negative"
+
+
+# ======================================================================
+# SHADOW ARM — SQUEEZE_ONLY logged beside the incumbent (#203)
+# ======================================================================
+# ABLATION #198 found the indicator block subtracts on both frozen windows.
+# #203 asks the promotion question, and promotion requires BOTH an in-sample
+# pass AND shadow agreement at the 30-episode checkpoint. That second half
+# only exists if the shadow log carries the squeeze-only labels from the
+# first row onward -- so this arm goes in BEFORE any row is written.
+#
+# The second label is a RE-BLEND of scores already computed. It must cost
+# zero extra Adanos AND zero extra price/indicator fetches, or the shadow
+# basket's whole economy changes.
+class TestShadowSqueezeArm:
+
+    def _sb(self):
+        import importlib
+        return importlib.import_module("shadow_basket")
+
+    def _fake_scores(self, monkeypatch, initial=80.0, indicator=20.0):
+        """Pin Step 1 and Step 3 so both blends are arithmetic, not network."""
+        sb = self._sb()
+        calls = {"step1": 0, "step3": 0}
+
+        def fake_step1(ticker, **kw):
+            calls["step1"] += 1
+            return {"step": 1, "initial_score": initial, "close": 100.0,
+                    "atr": 5.0, "ticker": ticker}
+
+        def fake_step3(ticker, prev, **kw):
+            calls["step3"] += 1
+            return {"step": 3, "indicator_final_score": indicator,
+                    "final_score": indicator, "vix_level": 18.0}
+
+        monkeypatch.setattr(sb.pl, "compute_initial_score", fake_step1)
+        monkeypatch.setattr(sb.pl, "apply_indicator_step", fake_step3)
+        sb._IND_CACHE.clear()
+        return sb, calls
+
+    def test_row_carries_both_label_sets(self, monkeypatch):
+        sb, _ = self._fake_scores(monkeypatch)
+        row = sb.score_shadow("BTC")
+        for col in ("decision", "direction", "final_score",
+                    "sq_decision", "sq_direction", "sq_final_score"):
+            assert col in row, f"shadow row is missing {col}"
+
+    def test_squeeze_arm_drops_the_indicator_block_entirely(self, monkeypatch):
+        # 1.0 pattern / 0.0 indicators means the blend IS the gated score.
+        sb, _ = self._fake_scores(monkeypatch, initial=80.0, indicator=20.0)
+        row = sb.score_shadow("BTC")
+        assert row["sq_final_score"] == pytest.approx(80.0)
+        # and the incumbent blend is the 0.6/0.4 mix, unchanged
+        assert row["final_score"] == pytest.approx(0.6 * 80.0 + 0.4 * 20.0)
+
+    def test_the_two_arms_can_disagree(self, monkeypatch):
+        # The whole point. 80/20 puts the incumbent at 56 (WATCH) and
+        # squeeze-only at 80 (STRONG_BUY): same day, different label.
+        sb, _ = self._fake_scores(monkeypatch, initial=80.0, indicator=20.0)
+        row = sb.score_shadow("BTC")
+        assert row["direction"] != row["sq_direction"]
+
+    def test_second_arm_costs_no_extra_fetches(self, monkeypatch):
+        sb, calls = self._fake_scores(monkeypatch)
+        sb.score_shadow("BTC")
+        assert calls["step1"] == 1, "squeeze arm re-fetched price data"
+        assert calls["step3"] == 1, "squeeze arm re-fetched indicators"
+
+    def test_second_arm_spends_zero_adanos(self, monkeypatch):
+        # Both arms take the UNGATED path, so the superset note covers both.
+        sb, _ = self._fake_scores(monkeypatch)
+        row = sb.score_shadow("BTC")
+        assert row["gate_decision"] == "UNGATED_SHADOW"
+
+    def test_squeeze_arm_logs_its_own_exit_levels(self, monkeypatch):
+        # A label with no target/stop cannot be resolved into an episode,
+        # so the arm would accrue nothing toward the 30-episode checkpoint.
+        sb, _ = self._fake_scores(monkeypatch, initial=80.0, indicator=20.0)
+        row = sb.score_shadow("BTC")
+        assert row["sq_target_price"] is not None
+        assert row["sq_stop_price"] is not None
+        assert row["sq_target_price"] > 100.0 > row["sq_stop_price"]
+
+    def test_both_arms_are_in_the_schema(self):
+        sb = self._sb()
+        for col in ("sq_final_score", "sq_decision", "sq_direction",
+                    "sq_target_price", "sq_stop_price", "sq_risk_reward"):
+            assert col in sb.SHADOW_COLUMNS
+
+    def test_projection_renames_the_arm_onto_the_canonical_columns(self):
+        # Resolution reuses live_tools.extract_episodes UNCHANGED, which
+        # reads `direction`/`target_price`/`stop_price` by name. The arm is
+        # resolved by projecting its columns onto those names -- never by a
+        # second copy of the episode logic.
+        sb = self._sb()
+        df = pd.DataFrame([{
+            "timestamp_utc": "2026-08-30T00:00:00", "ticker": "BTC",
+            "direction": "WATCH", "target_price": None, "stop_price": None,
+            "risk_reward": None, "final_score": 56.0,
+            "sq_direction": "STRONG_BUY", "sq_target_price": 120.0,
+            "sq_stop_price": 92.5, "sq_risk_reward": 2.67, "sq_final_score": 80.0,
+        }])
+        out = sb.project_arm(df, "squeeze")
+        assert out.loc[0, "direction"] == "STRONG_BUY"
+        assert out.loc[0, "target_price"] == 120.0
+        assert out.loc[0, "stop_price"] == 92.5
+        assert out.loc[0, "final_score"] == 80.0
+
+    def test_projection_of_the_incumbent_arm_is_the_identity(self):
+        sb = self._sb()
+        df = pd.DataFrame([{
+            "timestamp_utc": "2026-08-30T00:00:00", "ticker": "BTC",
+            "direction": "BUY", "target_price": 115.0, "stop_price": 92.5,
+            "sq_direction": "WATCH", "sq_target_price": None,
+            "sq_stop_price": None,
+        }])
+        out = sb.project_arm(df, "incumbent")
+        assert out.loc[0, "direction"] == "BUY"
+        assert out.loc[0, "target_price"] == 115.0
+
+    def test_unknown_arm_is_refused(self):
+        sb = self._sb()
+        with pytest.raises(ValueError):
+            sb.project_arm(pd.DataFrame({"direction": ["BUY"]}), "nonsense")
+
+    def test_append_refuses_to_misalign_a_stale_header(self, tmp_path):
+        # A log written under the OLD schema plus rows written under the new
+        # one would silently shift every column right of the insertion. That
+        # must fail loudly, not corrupt six months of forward record.
+        sb = self._sb()
+        p = tmp_path / "shadow_log.csv"
+        p.write_text("timestamp_utc,ticker,price\n2026-01-01T00:00:00,BTC,1.0\n",
+                     encoding="utf-8")
+        with pytest.raises(ValueError, match="schema"):
+            sb.append_shadow_rows([{c: None for c in sb.SHADOW_COLUMNS}], str(p))
+
+    def test_append_accepts_a_matching_header(self, tmp_path):
+        sb = self._sb()
+        p = tmp_path / "shadow_log.csv"
+        row = {c: None for c in sb.SHADOW_COLUMNS}
+        row["ticker"] = "BTC"
+        assert sb.append_shadow_rows([row], str(p)) == 1
+        assert sb.append_shadow_rows([row], str(p)) == 1
+        got = pd.read_csv(p)
+        assert len(got) == 2 and list(got.columns) == sb.SHADOW_COLUMNS
+
+
+# ======================================================================
+# SHADOW EXIT LEVELS — the defect that made the log unresolvable
+# ======================================================================
+# combine_and_decide does NOT return exit_levels; run_full_pipeline computes
+# them afterwards from step1. The first shadow_basket read
+# `combined.get("exit_levels")`, which is always empty, so every row logged
+# target_price=None -- and extract_episodes skips rows with no target+stop.
+# The basket would have accrued labels forever and zero episodes, looking
+# healthy the whole time. Caught before the first row was written.
+class TestShadowExitLevelsAreReal:
+
+    def _sb(self):
+        import importlib
+        return importlib.import_module("shadow_basket")
+
+    def _pin(self, monkeypatch, initial, indicator, close=100.0, atr=5.0):
+        sb = self._sb()
+        monkeypatch.setattr(sb.pl, "compute_initial_score", lambda t, **k: {
+            "step": 1, "initial_score": initial, "close": close,
+            "atr": atr, "ticker": t})
+        monkeypatch.setattr(sb.pl, "apply_indicator_step", lambda t, p, **k: {
+            "step": 3, "indicator_final_score": indicator,
+            "final_score": indicator, "vix_level": 18.0})
+        sb._IND_CACHE.clear()
+        return sb
+
+    def test_combine_and_decide_still_does_not_supply_exit_levels(self):
+        # If pipeline ever starts returning them, this test fails and the
+        # duplicated computation in shadow_basket should be revisited.
+        out = um.combine_and_decide(
+            {"step": 2, "gated_score": 80.0, "gate_multiplier": 1.0},
+            {"step": 3, "indicator_final_score": 80.0, "final_score": 80.0,
+             "vix_level": 18.0})
+        assert "exit_levels" not in out
+
+    def test_a_buy_row_carries_resolvable_levels(self, monkeypatch):
+        sb = self._pin(monkeypatch, initial=90.0, indicator=90.0)
+        row = sb.score_shadow("BTC")
+        assert row["direction"] in ("BUY", "STRONG_BUY")
+        assert row["target_price"] is not None and row["stop_price"] is not None
+
+    def test_levels_match_the_live_computation_exactly(self, monkeypatch):
+        sb = self._pin(monkeypatch, initial=90.0, indicator=90.0)
+        row = sb.score_shadow("BTC")
+        want = ads.compute_exit_levels(entry_price=100.0,
+                                      direction=row["direction"], atr=5.0,
+                                      stop_mult=1.5, target_mult=3.0)
+        assert row["target_price"] == want["target"]
+        assert row["stop_price"] == want["stop"]
+
+    def test_a_watch_row_carries_no_levels(self, monkeypatch):
+        # WATCH is not actionable; logging levels for it would invent an
+        # episode the model never signalled.
+        sb = self._pin(monkeypatch, initial=50.0, indicator=50.0)
+        row = sb.score_shadow("BTC")
+        assert row["direction"] == "WATCH"
+        assert row["target_price"] is None and row["stop_price"] is None
+
+    def test_the_logged_row_actually_becomes_an_episode(self, monkeypatch, tmp_path):
+        # The end-to-end property the defect broke: a BUY row must survive
+        # extract_episodes. Two rows, because an episode needs a first row
+        # with levels and this proves the log format feeds the real parser.
+        sb = self._pin(monkeypatch, initial=90.0, indicator=90.0)
+        p = tmp_path / "shadow_log.csv"
+        rows = [sb.score_shadow("BTC"), sb.score_shadow("BTC")]
+        sb.append_shadow_rows(rows, str(p))
+        eps = lt.extract_episodes(pd.read_csv(p))
+        assert len(eps) == 1, "a BUY shadow row did not become an episode"
+        assert eps[0]["ticker"] == "BTC"
+
+    def test_the_squeeze_arm_also_becomes_an_episode(self, monkeypatch, tmp_path):
+        # 90/10: incumbent blends to 58 (WATCH, no levels), squeeze-only to
+        # 90 (STRONG_BUY). The incumbent arm yields no episode and the
+        # squeeze arm yields one -- from the same two logged rows.
+        sb = self._pin(monkeypatch, initial=90.0, indicator=10.0)
+        p = tmp_path / "shadow_log.csv"
+        sb.append_shadow_rows([sb.score_shadow("BTC"), sb.score_shadow("BTC")],
+                              str(p))
+        df = pd.read_csv(p)
+        assert lt.extract_episodes(sb.project_arm(df, "incumbent")) == []
+        sq = lt.extract_episodes(sb.project_arm(df, "squeeze"))
+        assert len(sq) == 1
+        assert sq[0]["entry_direction"] == "STRONG_BUY"

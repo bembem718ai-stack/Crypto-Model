@@ -2908,3 +2908,141 @@ One-at-a-time measures MAIN EFFECTS only: a component mattering solely in
 combination reads as no-detectable-contribution here, and no interaction may
 be inferred from this program. #198 in particular is a finding about the
 indicator block's weight, not a licence to ship 1.0/0.0.
+
+---
+
+# #203 — SQUEEZE-ONLY PROMOTION
+
+**REGISTERED 2026-08-30, before any leg was run.** Nothing below may change
+on the basis of a result (research rule 4).
+
+## Where this came from, and the honest caveat about that
+
+ABLATION #198 found that deleting Step 3 improves BTC INC_BUY_ALL on both
+windows (+0.175R DISCOVERY, +0.119R CONFIRMATION, positive at 100 of 100
+window starts). ABLATION is descriptive and explicitly cannot promote
+anything, so this is the registration that asks the promotion question
+properly.
+
+**#203 is NOT independent evidence of #198.** It is the same construction on
+the same frozen windows, and it will inherit whatever #198 saw. What it adds
+is a *bar*: #198 reported a delta with no null to beat, while #203 must clear
+`ex_best > 0` and an episode-matched placebo on both windows — the same bar
+#171 set and failed. A construction can improve on the incumbent and still be
+worthless, because the incumbent is negative on DISCOVERY. Beating it is not
+the test; beating chance is.
+
+The out-of-sample question is answered by the shadow arm below, not here.
+
+## The construction
+
+`SQUEEZE_ONLY` — the incumbent with `weight_pattern = 1.0`,
+`weight_indicators = 0.0`. Everything else at production values:
+
+| parameter | value |
+|---|---|
+| direction rule | `classify_direction`, bars 75/60/40/25 |
+| extreme-fear | `symmetric`, `vix_extreme` 35, `panic_shift` 10 |
+| geometry | `LIVE_GEOMETRY` — 4h ATR, stop 1.5, target 3.0, hold 15d, SMA 50 |
+| confirm_days | 2 |
+| conviction scaling | on (STRONG_BUY target ×1.333) |
+| costs | 2.0 bps fee + 2.0 bps slippage per side |
+| tier scored | BUY_ALL = {BUY, STRONG_BUY} |
+| folds | 4 |
+
+Ticker **BTC only**. Both windows of the current frozen dataset (last date
+2026-08-26): DISCOVERY 2019-09-24 → 2023-04-06, CONFIRMATION 2023-04-06 →
+2026-02-26. **LOCKBOX sealed and unread.**
+
+The direction column is rebuilt from `1.0 × gated_score + 0.0 × final_score`
+and must pass the same reconstruction gate ABLATION used — production
+weights must reproduce the stored `direction` exactly, 0 mismatches — before
+any ablated column is scored.
+
+## Pass conditions — both windows, both clauses
+
+1. **`ex_best` > 0**, on both windows.
+2. **`net_all` strictly above the episode-matched placebo p95**, on both
+   windows, **1,200 seeds**.
+
+`ex_best` requires ≥3 folds of ≥10 trades each. **Undefined `ex_best` is
+UNMEASURABLE, not a pass and not a fail**, and is reported as such — the
+project's standing convention.
+
+The placebo is **episode-matched** as registered in #167: draws reproduce the
+observed run-length distribution and conviction mix, because independent-day
+draws are lower-variance than clustered signals and would make any clustered
+signal look strong. 1,200 seeds, fixed here.
+
+**Single hypothesis, no Bonferroni correction.** #203 is one test.
+
+## Reported whatever the outcome
+
+n, **episodes**, win%, `net_all`, `ex_best`, folds counted/positive, placebo
+p95 and percentile — both windows — **plus a 50-start window-stability
+profile of `net_all`** attached to the result regardless of pass or fail.
+That profile is not a pass condition and no threshold may be read off it; it
+is attached because #171 demonstrated that a single-window number on this
+construction can reverse, and #203 must not repeat that omission.
+
+Negatives are reported with the same detail as positives (research rule 5).
+
+## The shadow arm — effective immediately
+
+`shadow_basket.py` logs **both** label sets per ticker-day, side by side:
+`decision`/`direction` for the incumbent 0.6/0.4 construction, and
+`sq_decision`/`sq_direction` for SQUEEZE_ONLY 1.0/0.0. Same bar, same price,
+same daily indicator pull, zero additional Adanos requests — the second
+label is a re-blend of scores already computed, not a second data fetch.
+
+**The superset note applies to BOTH.** Shadow scores are UNGATED, so each
+label set is a superset of what the gated pipeline would have marked BUY.
+Shadow BUY counts are an upper bound on gated BUY counts for the incumbent
+and for SQUEEZE_ONLY alike, and neither is a drop-in estimate of gated live
+behaviour.
+
+Each arm carries **its own exit levels** (`sq_target_price`, `sq_stop_price`,
+`sq_risk_reward`), because a label with no target and stop cannot become an
+episode, and an arm that accrues no episodes cannot answer this question.
+Resolution reuses `live_tools.extract_episodes` / `resolve_episode`
+**unchanged**: an arm is scored by projecting its columns onto the canonical
+names, never by a second copy of the episode logic. Outcomes land in separate
+files (`shadow_outcomes.csv`, `shadow_sq_outcomes.csv`) so the two records
+cannot be pooled by accident.
+
+**A defect found while building this, disclosed here.** The first version of
+`shadow_basket.py` read exit levels off `combine_and_decide`, which does not
+return them — `run_full_pipeline` computes them afterwards. Every row would
+have logged `target_price=None`, and `extract_episodes` skips rows without
+target+stop, so the shadow basket would have accrued labels forever and
+**zero resolvable episodes** — while looking healthy, because a log full of
+rows reads as a log that is working. It was caught before the first row was
+written, so no forward record was lost. Both arms now compute levels the way
+the live path does, covered by an end-to-end test that a logged BUY row
+actually survives `extract_episodes`.
+
+This accrues toward SHADOW-EVAL's **30 pooled closed episodes** checkpoint.
+The log is not inspected before that checkpoint, and this arm does not change
+it: the same 30-episode threshold, the same single evaluation, the same
+episode-matched placebo.
+
+## Promotion requires BOTH — neither alone
+
+Live promotion of SQUEEZE_ONLY requires:
+
+- **the in-sample pass** — #203 clearing both clauses on both windows, AND
+- **shadow agreement at the 30-episode checkpoint** — the forward record
+  agreeing with the in-sample direction.
+
+**Neither alone is sufficient, and this is fixed now, before either is
+known.** An in-sample pass on a construction discovered by ablating the same
+data is exactly the result most likely to be a window artefact — #171 is the
+worked example of what that looks like when it goes wrong. A shadow agreement
+alone would be 30 episodes with no null and no second window. The conjunction
+is the claim; either half on its own is not.
+
+If #203 fails, the shadow arm keeps logging. It costs nothing, and a forward
+record of a construction the frozen data rejected is worth having — it is the
+only way this project ever learns that a rejection was the window's fault
+rather than the model's.
+
