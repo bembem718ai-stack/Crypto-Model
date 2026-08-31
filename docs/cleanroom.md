@@ -3312,3 +3312,152 @@ support.
   placebo is `block_shuffle_placebo`, which this defect did not touch — but
   that instrument has now been put on notice: it must be checked against the
   property it claims to preserve before it is used for a verdict.
+
+---
+
+# ALLOCATION RESULT — #193–#196, run 2026-08-31
+
+`research/run_allocation.py`, `research/allocation_verdicts.py`. Raw in
+`research/allocation_results.json`, `research/allocation_verdicts.json`.
+
+**VERDICT: #193 FAIL, #194 FAIL, #196 FAIL.** #195 is the constant control
+and its clauses 2 and 3 are degenerate by construction (below). Nothing
+passes, nothing promoted.
+
+## The standing placebo check, applied first
+
+ROTATION's defect created a standing rule: **a placebo pays what the strategy
+pays and is constrained the way the strategy is constrained.**
+`block_shuffle_placebo` was checked against it before a single draw was
+scored, and it failed on a *different* axis from ROTATION's.
+
+| window | | turnover | ratio | drag pp/yr | weight on **non-existent** assets |
+|---|---|---|---|---|---|
+| DISCOVERY | real rule | 0.0188 | — | — | 0.013% |
+| | weight-matrix shuffle | 0.0333 | 1.77× | 0.423 | **15.414%** |
+| | **scale shuffle (used)** | 0.0268 | 1.42× | 0.232 | **0.023%** |
+| CONFIRMATION | real rule | 0.0186 | — | — | 0.000% |
+| | weight-matrix shuffle | 0.0291 | 1.56× | 0.306 | 0.322% |
+| | **scale shuffle (used)** | 0.0276 | 1.49× | 0.264 | **0.000%** |
+
+**Two findings, and they are not the same size.**
+
+**Material — universe fidelity.** Shuffling the whole weight matrix moves
+the *cross-section* through time, so a late 21-day block landing on an early
+date holds assets that had not listed yet. On DISCOVERY that is **15.4% of
+gross weight** parked in assets with no price, against **0.013%** for the
+real path. `portfolio_returns` fills missing returns with 0.0, so that weight
+sits in a silent zero-return bucket — a drag the strategy never pays and
+which appears nowhere in the output. **Repaired**, by the same logic as
+ROTATION: shuffle the **scale path** and re-apply it to the time-correct
+cross-section. An allocation rule's decision *is* the scale; the
+cross-section is not its claim. That destroys exactly what #193/#194 assert —
+that exposure was raised and lowered at the right moments — while leaving the
+investable universe alone. Non-existent weight drops to 0.023% / 0.000%.
+
+**Not material — turnover.** The residual inflation is 1.42–1.49×, which
+*sounds* like ROTATION's problem and is not. This is a low-turnover strategy
+(0.019/day), so the inflation costs the null **0.23–0.26 percentage points a
+year**. ROTATION's 13.6× sat on a 0.116/day strategy and cost its null ~42
+pp/yr. The ratio is the wrong unit; the drag is the right one. No further
+repair — and because the residual handicaps the null slightly, every FAIL
+below is conservative.
+
+Six tests cover the repair, including an explicit reproduction of the
+15%-of-weight defect and the property that a **constant** scale path shuffles
+to itself.
+
+## Matched-exposure benchmark — construction verified
+
+| window | # | c | \|mean gross(bench) − mean gross(rule)\| |
+|---|---|---|---|
+| DISCOVERY | #193 | 0.4159 | **0.00e+00** |
+| | #194 | 0.6830 | 1.11e-16 |
+| | #196 | 1.4793 | 4.44e-16 |
+| CONFIRMATION | #193 | 0.5114 | **0.00e+00** |
+| | #194 | 0.8294 | 0.00e+00 |
+| | #196 | 1.4491 | 4.44e-16 |
+
+Exposure is matched to machine precision. `c` is computed from the rule's own
+realised exposure; nothing was chosen by looking at returns. As a sanity
+check the benchmark Sharpes come out ≈ #195's on both windows (+1.188–1.190
+DISCOVERY, +0.419–0.421 CONFIRMATION), which is what constant rescaling
+should do.
+
+## Results — every registered clause
+
+Clauses: **1** ann > 0 · **2** ann > block-shuffle p98.75 (k=4, 1,200 seeds)
+· **3** Sharpe > matched-exposure Sharpe.
+
+| # | rule | window | ann | Sharpe | plc p_adj | plc pct | match Sh | 1 | 2 | 3 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **#193** | vol target 30% | DISCOVERY | +0.388 | +1.087 | +0.633 | 30.6% | +1.188 | PASS | **FAIL** | **FAIL** |
+| | | CONFIRMATION | +0.176 | +0.512 | +0.373 | 66.7% | +0.420 | PASS | **FAIL** | PASS |
+| **#194** | vol target 50% | DISCOVERY | +0.635 | +1.080 | +1.014 | 27.8% | +1.189 | PASS | **FAIL** | **FAIL** |
+| | | CONFIRMATION | +0.331 | +0.594 | +0.518 | 78.3% | +0.421 | PASS | **FAIL** | PASS |
+| **#196** | INVERTED 30% | DISCOVERY | +1.632 | +1.179 | +1.847 | 63.1% | +1.188 | PASS | **FAIL** | **FAIL** |
+| | | CONFIRMATION | +0.460 | +0.449 | +0.725 | 64.3% | +0.419 | PASS | **FAIL** | PASS |
+
+**#195, constant 1.0× equal-weight-26:** DISCOVERY ann +1.101, Sharpe +1.190;
+CONFIRMATION ann +0.291, Sharpe +0.421. Clause 1 PASS. **Clauses 2 and 3 are
+degenerate by construction** — block-shuffling a constant scale returns the
+same path, and its matched-exposure benchmark *is itself*. Neither is a test,
+and neither is reported as a pass or a fail.
+
+### Window-stability (50 starts, end pinned) — all four rules
+
+| # | DISCOVERY | CONFIRMATION |
+|---|---|---|
+| #193 | 94% positive, −0.194…+0.555, med +0.425 | **100% positive**, +0.013…+0.350, med +0.204 |
+| #194 | 94% positive, −0.145…+0.857, med +0.674 | **100% positive**, +0.064…+0.585, med +0.340 |
+| #196 | 88% positive, −0.286…+1.980, med +1.676 | 96% positive, −0.017…+1.154, med +0.454 |
+| #195 | 88% positive, −0.134…+1.284, med +1.142 | 98% positive, −0.022…+0.787, med +0.303 |
+
+## What the numbers say
+
+**Clause 2 fails everywhere, and on DISCOVERY it fails backwards.** The real
+vol-targeting timing sits at the **30.6th and 27.8th percentile** of its own
+shuffled exposure path — that is, roughly **70% of random reorderings of the
+same exposure profile did better than the actual timing.** CONFIRMATION
+recovers to the 66.7th and 78.3rd, still nowhere near 98.75. Whatever these
+rules are doing, choosing *when* to be exposed is not it.
+
+**Clause 3 is "the test", it splits by window, and the control kills the good
+half.** On DISCOVERY every rule loses to matched exposure (#193 +1.087 vs
++1.188). On CONFIRMATION #193 and #194 win (+0.512 vs +0.420; +0.594 vs
++0.421) — and so does **#196, the inverted rule that levers UP into high
+volatility** (+0.449 vs +0.419).
+
+The registration wrote #196's job down in advance: *"if vol-targeting works,
+its inverse should not."* Its inverse does. The margins differ — #194 +0.173,
+#193 +0.092, #196 +0.030 — so the effect is not identical in both
+directions, and #196 is the weakest of the three. But a clause that the
+opposite prescription also clears cannot be read as evidence for the
+prescription. On CONFIRMATION, *varying* exposure beat constant exposure
+regardless of which way the signal pointed.
+
+**#196 also has the highest raw return anywhere in the program: +1.632/yr on
+DISCOVERY**, from levering up into volatility during 2020–21. It fails
+clause 2 by the widest margin (+1.632 vs a placebo p_adj of +1.847). That is
+the cleanest illustration in this whole document of why clause 1 was never
+allowed to stand alone.
+
+**The stability profiles again measure exposure.** 100% positive for #193/#194
+on CONFIRMATION, and 88–98% for the constant control and the inverted control
+too. Everything long in a rising market is sign-stable. Reported because the
+registration requires it; not evidence.
+
+## Consequences
+
+- **No promotion.** Nothing from ALLOCATION becomes a claim. `claims.md`
+  unchanged — still **zero supported edge claims**.
+- **No partial credit.** #193 and #194 clearing clause 3 on CONFIRMATION is
+  recorded, not banked. Locked before the run: single confirmation, no
+  partial credit, no re-runs.
+- **No re-specification.** Not a different vol window, not a different
+  target, not a different cap, not clause 3 alone because it is "the test".
+- **The standing placebo rule has now caught two defects in two programs**
+  (`rank_permutation_placebo`, `block_shuffle_placebo`), in the same family:
+  a null that differs from the strategy in more than the one thing it claims
+  to isolate. Every future placebo is checked for turnover fidelity **and**
+  universe fidelity before it is used for a verdict.

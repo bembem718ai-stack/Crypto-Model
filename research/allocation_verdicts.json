@@ -1,0 +1,177 @@
+{
+  "verdicts": {
+    "#193": "FAIL",
+    "#194": "FAIL",
+    "#196": "FAIL"
+  },
+  "pctiles": {
+    "DISCOVERY": {
+      "#193": {
+        "pctile": 30.583333333333336,
+        "mean": 0.4388431474426821,
+        "p50": 0.4403692401378382
+      },
+      "#194": {
+        "pctile": 27.833333333333332,
+        "mean": 0.7227488123334828,
+        "p50": 0.7262038895918358
+      },
+      "#196": {
+        "pctile": 63.083333333333336,
+        "mean": 1.5803111357104103,
+        "p50": 1.5874821681102935
+      }
+    },
+    "CONFIRMATION": {
+      "#193": {
+        "pctile": 66.66666666666666,
+        "mean": 0.13775159458929198,
+        "p50": 0.13876171293679004
+      },
+      "#194": {
+        "pctile": 78.33333333333333,
+        "mean": 0.2269046394913966,
+        "p50": 0.227670995465365
+      },
+      "#196": {
+        "pctile": 64.33333333333333,
+        "mean": 0.40932081794762865,
+        "p50": 0.41595463729632076
+      }
+    }
+  },
+  "stability": {
+    "DISCOVERY": {
+      "#193": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 47,
+        "negative": 3,
+        "zero": 0,
+        "sign_stability": 0.94,
+        "modal_sign": "positive",
+        "mean": 0.35649189483106264,
+        "median": 0.42475939866405965,
+        "min": -0.19361967250514817,
+        "max": 0.5545707411635106,
+        "first_value": 0.3881567292538778,
+        "last_value": 0.1678270393417714
+      },
+      "#194": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 47,
+        "negative": 3,
+        "zero": 0,
+        "sign_stability": 0.94,
+        "modal_sign": "positive",
+        "mean": 0.5779277936948344,
+        "median": 0.6735821031070277,
+        "min": -0.14494491675924692,
+        "max": 0.8567233526364061,
+        "first_value": 0.6349050097646265,
+        "last_value": 0.18549485314316716
+      },
+      "#196": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 44,
+        "negative": 6,
+        "zero": 0,
+        "sign_stability": 0.88,
+        "modal_sign": "positive",
+        "mean": 1.249962227617542,
+        "median": 1.6760928282258534,
+        "min": -0.28601738008806366,
+        "max": 1.9804064644249457,
+        "first_value": 1.6304635816380935,
+        "last_value": -0.22018261069370398
+      },
+      "#195": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 44,
+        "negative": 6,
+        "zero": 0,
+        "sign_stability": 0.88,
+        "modal_sign": "positive",
+        "mean": 0.8694326771671816,
+        "median": 1.142295691880427,
+        "min": -0.1342685728243264,
+        "max": 1.2838617867771314,
+        "first_value": 1.1002792514680844,
+        "last_value": -0.016922561519092345
+      }
+    },
+    "CONFIRMATION": {
+      "#193": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.20682550461999075,
+        "median": 0.20441417410931623,
+        "min": 0.013455462029457972,
+        "max": 0.34959134794885177,
+        "first_value": 0.2878812639408276,
+        "last_value": 0.19606517691987507
+      },
+      "#194": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.3511584928972833,
+        "median": 0.33980545685325725,
+        "min": 0.0635492774239003,
+        "max": 0.5851927587052794,
+        "first_value": 0.48015350397290274,
+        "last_value": 0.31466920060159803
+      },
+      "#196": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 48,
+        "negative": 2,
+        "zero": 0,
+        "sign_stability": 0.96,
+        "modal_sign": "positive",
+        "mean": 0.5711572984443366,
+        "median": 0.45389017520229036,
+        "min": -0.017412955956666528,
+        "max": 1.1544861383690095,
+        "first_value": 1.062255685222558,
+        "last_value": 0.3617743585582254
+      },
+      "#195": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 49,
+        "negative": 1,
+        "zero": 0,
+        "sign_stability": 0.98,
+        "modal_sign": "positive",
+        "mean": 0.3943864014384063,
+        "median": 0.30339485654443155,
+        "min": -0.022393716843564143,
+        "max": 0.7865036390667809,
+        "first_value": 0.7166987463686495,
+        "last_value": 0.26979480857661464
+      }
+    }
+  }
+}

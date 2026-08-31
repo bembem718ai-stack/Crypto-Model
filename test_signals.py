@@ -4535,3 +4535,100 @@ class TestFixedRankPermutation:
         W.iloc[7:14] = 0.0
         out = ph.rank_permutation_fixed_placebo(W, seed=3)
         assert (out.iloc[7:14].to_numpy() == 0).all()
+
+
+# ======================================================================
+# ALLOCATION's block-shuffle repair — the null must be constrained the
+# way the strategy is constrained
+# ======================================================================
+# ROTATION established the standing rule: a placebo pays what the strategy
+# pays. Checking block_shuffle_placebo against it found a SECOND failure of
+# the same family -- shuffling the whole weight matrix moves the
+# cross-section through time, so a late block landing on an early date holds
+# assets that had not listed yet. Measured on DISCOVERY: 15.4% of gross
+# weight on non-existent assets, against 0.013% for the real path. Those
+# positions earn exactly 0 via fillna(0.0) -- an invisible drag the strategy
+# never pays. Shuffling the SCALE path instead destroys the timing claim
+# while leaving the investable universe alone: 0.023%.
+class TestAllocationScaleShuffle:
+
+    def _al(self):
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        return importlib.import_module("run_allocation")
+
+    def _scale(self, n=105):
+        idx = pd.date_range("2024-01-01", periods=n, freq="D")
+        return pd.Series(np.linspace(0.2, 1.4, n), index=idx)
+
+    def test_shuffle_preserves_the_multiset_of_values(self):
+        # Same exposure profile, different order. Nothing invented, nothing
+        # dropped -- that is what makes it an exposure-matched null.
+        al = self._al()
+        s = self._scale()
+        out = al.scale_block_shuffle(s, seed=1)
+        assert sorted(out.to_numpy()) == pytest.approx(sorted(s.to_numpy()))
+
+    def test_shuffle_actually_reorders(self):
+        al = self._al()
+        s = self._scale()
+        assert not np.allclose(al.scale_block_shuffle(s, seed=2).to_numpy(),
+                               s.to_numpy())
+
+    def test_blocks_stay_contiguous(self):
+        # A 21-day block must survive intact, or this is not a block shuffle
+        # and the exposure path's own persistence is destroyed too.
+        al = self._al()
+        s = self._scale()
+        out = al.scale_block_shuffle(s, seed=3, block_days=21).to_numpy()
+        src = s.to_numpy()
+        blocks = [src[i:i + 21] for i in range(0, len(src), 21)]
+        for j in range(0, len(out) - 21 + 1, 21):
+            chunk = out[j:j + 21]
+            assert any(np.allclose(chunk, b) for b in blocks if len(b) == 21)
+
+    def test_a_constant_scale_shuffles_to_itself(self):
+        # Why #195's clause 2 is DEGENERATE rather than passed or failed:
+        # its scale path is constant, so its null IS the rule.
+        al = self._al()
+        s = pd.Series(1.0, index=pd.date_range("2024-01-01", periods=84, freq="D"))
+        assert np.allclose(al.scale_block_shuffle(s, seed=4).to_numpy(),
+                           s.to_numpy())
+
+    def test_universe_fidelity_beats_weight_matrix_shuffling(self):
+        # The defect and its repair, as an assertion. Assets B and C do not
+        # exist for the first half; a weight-matrix shuffle moves them there,
+        # a scale shuffle cannot.
+        al = self._al()
+        import importlib
+        ph = importlib.import_module("portfolio_harness")
+        n = 84
+        idx = pd.date_range("2024-01-01", periods=n, freq="D")
+        px = pd.DataFrame({"A": np.linspace(100, 200, n),
+                           "B": np.linspace(100, 200, n),
+                           "C": np.linspace(100, 200, n)}, index=idx)
+        px.loc[idx[:42], ["B", "C"]] = np.nan
+        base = pd.DataFrame(0.0, index=idx, columns=px.columns)
+        base.loc[idx[:42], "A"] = 1.0
+        base.loc[idx[42:]] = 1.0 / 3
+        scale = pd.Series(np.linspace(0.3, 1.2, n), index=idx)
+        rule = base.mul(scale, axis=0)
+
+        wm = np.mean([al.held_nonexistent_weight(
+            ph.block_shuffle_placebo(rule, seed=s, block_days=21), px)
+            for s in range(8)])
+        ss = np.mean([al.held_nonexistent_weight(
+            base.mul(al.scale_block_shuffle(scale, seed=s), axis=0), px)
+            for s in range(8)])
+        assert al.held_nonexistent_weight(rule, px) == 0.0
+        assert wm > 0.05, "the weight-matrix defect should be visible here"
+        assert ss == 0.0, "the scale shuffle must never hold a non-existent asset"
+
+    def test_held_nonexistent_weight_is_zero_for_a_clean_path(self):
+        al = self._al()
+        idx = pd.date_range("2024-01-01", periods=30, freq="D")
+        px = pd.DataFrame({"A": np.arange(30.0) + 1}, index=idx)
+        W = pd.DataFrame({"A": np.ones(30)}, index=idx)
+        assert al.held_nonexistent_weight(W, px) == 0.0
