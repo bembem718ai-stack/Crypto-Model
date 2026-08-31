@@ -5156,3 +5156,159 @@ and p99.6667, the observed percentile, all four fidelity-axis measurements
 (with axis 3 marked N/A and axis 4's inheritance quantified), the
 cross-venue flag state, and days excluded by §6 per symbol. Negatives get the
 same detail as positives (research rule 5).
+
+---
+
+# BINANCE FUNDING RESULT — #220–#234, run 2026-08-31
+
+`research/run_220.py`, raw in `research/h220_results.json`.
+
+**VERDICT: 0 of 15 pass. All fifteen FAIL.**
+
+Executed as registered §7: **one batch, one invocation, all thirty cells
+written to disk before any was read.** No result gated, reordered or aborted
+another.
+
+Windows as locked: DISCOVERY 2021-01-13 → 2023-10-24, CONFIRMATION
+2023-10-24 → 2026-01-31, LOCKBOX from 2026-01-31 **sealed and unread**.
+k = 15 → 99.6667th percentile, 3,000 seeds.
+
+## Cross-venue flag — FIRED on all three, as disclosed in advance
+
+| symbol | Pearson vs Kraken | n days | flag |
+|---|---|---|---|
+| BTC | **+0.452** | 157 | **FIRED** |
+| ETH | **+0.371** | 157 | **FIRED** |
+| SOL | **+0.719** | 157 | **FIRED** |
+
+The registration predicted this from the reconciliation record's Spearman
+(+0.595/+0.512/+0.492) and refused to relax the inherited 0.80 bar to avoid
+it. Pearson comes in **lower still** than Spearman — the two venues agree on
+ranks more than on levels, which is what cross-venue framing predicted. The
+flag is disclosure and changes no verdict.
+
+Days excluded by the signed-off ≥2-of-3 coverage rule: **BTC 0, ETH 0,
+SOL 1**, exactly as the sign-off table said.
+
+## Fidelity axes — measured before any test was scored
+
+| axis | DISCOVERY | CONFIRMATION |
+|---|---|---|
+| **1 turnover** | 385 real trades, null mean **385.0 (ratio 1.000)**; `cost_r` real 0.0237 vs null 0.0281 | 357 vs **357.0 (1.000)**; 0.0309 vs 0.0327 |
+| **2 eligibility** | **0** of 77,000 null events on excluded days | **0** of 71,400 |
+| **3 cash-months** | N/A — event series has no exposure budget | N/A |
+| **4 inheritance** | −0.0635 vs −0.0606 → **−0.0029** | +0.0850 vs +0.0872 → **−0.0022** |
+
+Axis 1 is exactly 1.000 by construction and was measured anyway — "by
+construction" is how the last three defects were justified before they were
+found. The null pays *slightly more* cost per trade than the rule does, so
+the bar is marginally conservative rather than flattered.
+
+**Axis 4 needs an honest caveat.** It reads ≈ 0, and that does **not**
+vindicate episode-matching. #167 chose episode-matching because independent-
+day placebos are structurally lower-**variance**; axis 4 as defined measures
+**centre** displacement. The centres coincide here because both draws sample
+the same window's return distribution — the difference episode-matching makes
+is in the tail, which is where the 99.67th percentile actually lives, and
+this axis does not see it. So the reading is "no centre inflation", not "the
+null choice was unnecessary".
+
+## Results — every cell, both clauses
+
+| # | rule | mode | window | n | eps | pooled | plc p95 | plc adj | pctile | clause 1 | clause 2 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| #220 | F1 | standalone | DISC | 385 | 61 | −0.034 | +0.074 | +0.163 | 63.5% | FAIL | FAIL |
+| #220 | F1 | standalone | CONF | 357 | 45 | +0.141 | +0.236 | +0.333 | 71.8% | FAIL | FAIL |
+| #221 | F1 | overlay | DISC | 20 | 18 | +0.347 | +0.462 | +0.766 | 90.6% | UNMEAS (3/3) | FAIL |
+| #221 | F1 | overlay | CONF | 43 | 27 | +0.290 | +0.499 | +0.731 | 76.9% | UNMEAS (3/3) | FAIL |
+| #222 | F2 | standalone | DISC | 5 | 5 | −0.420 | +0.788 | +1.980 | 24.4% | UNMEAS (3/3) | FAIL |
+| #222 | F2 | standalone | CONF | 2 | 2 | +0.468 | +1.966 | +1.978 | 73.1% | UNMEAS (3/3) | FAIL |
+| #223 | F2 | overlay | DISC | 1 | 1 | −1.020 | +1.991 | +1.995 | 18.9% | UNMEAS (3/3) | FAIL |
+| #223 | F2 | overlay | CONF | **0** | 0 | — | — | — | — | UNMEAS (3/3) | FAIL |
+| #224 | F3 | standalone | DISC | 228 | 34 | −0.002 | +0.202 | +0.315 | 51.0% | UNMEAS (2/3) | FAIL |
+| #224 | F3 | standalone | CONF | 40 | 12 | −0.421 | +0.475 | +0.702 | 4.4% | UNMEAS (3/3) | FAIL |
+| #225 | F3 | overlay | DISC | 16 | 8 | −0.159 | +0.742 | +1.133 | 29.7% | UNMEAS (3/3) | FAIL |
+| #225 | F3 | overlay | CONF | 4 | 3 | −1.026 | +1.094 | +1.978 | 1.7% | UNMEAS (3/3) | FAIL |
+| **#226** | F4 | suppress | DISC | 528 | 69 | −0.053 | +0.066 | +0.142 | 46.1% | FAIL | FAIL |
+| **#226** | F4 | suppress | CONF | 434 | 52 | **+0.193** | +0.211 | +0.305 | **92.6%** | **PASS** | FAIL |
+| #227 | F5 | standalone | DISC | 500 | 32 | −0.090 | +0.114 | +0.219 | 25.5% | FAIL | FAIL |
+| #227 | F5 | standalone | CONF | 209 | 17 | +0.035 | +0.276 | +0.394 | 50.5% | UNMEAS (3/3) | FAIL |
+| #228 | F5 | overlay | DISC | 55 | 16 | −0.502 | +0.370 | +0.575 | 0.7% | UNMEAS (3/3) | FAIL |
+| #228 | F5 | overlay | CONF | 42 | 11 | +0.186 | +0.473 | +0.690 | 70.2% | UNMEAS (3/3) | FAIL |
+| #229 | F6 | standalone | DISC | 155 | 45 | −0.121 | +0.186 | +0.311 | 27.1% | FAIL | FAIL |
+| #229 | F6 | standalone | CONF | 100 | 35 | +0.178 | +0.370 | +0.526 | 70.1% | UNMEAS (2/3) | FAIL |
+| #230 | F6 | overlay | DISC | 6 | 5 | −0.031 | +0.970 | +1.616 | 57.1% | UNMEAS (3/3) | FAIL |
+| #230 | F6 | overlay | CONF | 11 | 10 | +0.599 | +0.822 | +1.264 | 87.8% | UNMEAS (3/3) | FAIL |
+| #231 | F7 | standalone | DISC | 35 | 8 | +0.351 | +0.605 | +0.936 | 86.1% | UNMEAS (3/3) | FAIL |
+| #231 | F7 | standalone | CONF | 14 | 4 | −0.613 | +0.892 | +1.322 | 4.0% | UNMEAS (3/3) | FAIL |
+| #232 | F7 | overlay | DISC | 1 | 1 | +1.990 | +1.991 | +1.995 | 93.6% | UNMEAS (3/3) | FAIL |
+| #232 | F7 | overlay | CONF | 1 | 1 | +1.945 | +1.971 | +1.983 | 69.4% | UNMEAS (3/3) | FAIL |
+| #233 | F8 | standalone | DISC | 18 | 5 | +0.415 | +0.818 | +1.320 | 77.9% | UNMEAS (3/3) | FAIL |
+| #233 | F8 | standalone | CONF | **0** | 0 | — | — | — | — | UNMEAS (3/3) | FAIL |
+| #234 | F8 | overlay | DISC | 6 | 2 | +0.277 | +1.478 | +1.987 | 61.6% | UNMEAS (3/3) | FAIL |
+| #234 | F8 | overlay | CONF | **0** | 0 | — | — | — | — | UNMEAS (3/3) | FAIL |
+
+`UNMEAS (k/3)` = `ex_best` undefined on k of 3 tickers; per the inherited
+rule that is **UNMEASURABLE and cannot pass — it is the absence of a result,
+not a failure.** The FAIL verdict in those rows is carried by **clause 2**,
+which is measurable everywhere the cell has trades at all.
+
+## What actually happened
+
+**Clause 2 fails in all thirty cells. Not one cell reaches its adjusted
+percentile.** The best is #232's 93.6% on a single trade, and the best
+non-degenerate is **#226 CONFIRMATION at 92.6%** against a 99.67 bar.
+
+**The closest call, and the only clause-1 pass anywhere in the program:**
+
+> **#226 (F4 euphoria-fade suppression), CONFIRMATION** — `ex_best` positive
+> on **all three** tickers (BTC +0.059, ETH +0.131, SOL +0.121; folds 3/4,
+> 4/4, 3/4), pooled **+0.193 across 434 trades / 52 episodes**. It clears
+> clause 1 outright and lands at the **92.6th** placebo percentile. It needed
+> 99.67. **It fails, and its DISCOVERY half is −0.053 at the 46th
+> percentile** — so even the near-miss does not survive both windows.
+
+**Depth did not fix what depth was supposed to fix.** #172–#186 registered a
+power warning for its 12-month C1 window: *"a real but modest edge will
+likely read as unmeasurable or fail."* This program ran on **5.05 usable
+years — five times C1** — and **24 of 30 cells still have at least one
+undefined `ex_best`.** Only six cells are fully computable: #220 both
+windows, #226 both windows, #227 DISCOVERY, #229 DISCOVERY.
+
+The binding constraint is not window length. It is **event rate**:
+
+| | median pooled trades per cell |
+|---|---|
+| standalone tests | **100** |
+| overlay tests | **6** |
+
+**Overlays are structurally starved, and that is a property of the design,
+not of the data.** An overlay fires only where the incumbent already
+signalled AND the funding condition holds. The incumbent's BUY days are
+sparse; intersecting them with a conditional funding state leaves single
+digits — #223 CONFIRMATION and #232 both windows produced **one trade or
+none**. Five more years would not repair this; a 5× longer window multiplies
+6 trades into 30, still under the 10-per-fold × 3-fold bar. **The overlay
+half of this program was unmeasurable by construction, and that is now
+measured rather than suspected.**
+
+**Three cells produced literally zero events:** #223, #233 and #234 on
+CONFIRMATION. F8 requires funding negative for 168 consecutive hours; across
+2023-10 → 2026-01 that never once occurred on any of the three symbols. That
+is a factual statement about the regime, not a defect.
+
+## Consequences, as registered
+
+- **No promotion. `docs/claims.md` unchanged** — still zero supported edge
+  claims.
+- **No re-runs, no looser bar, no partial credit.** #226's 92.6% is recorded,
+  not banked. "Almost" is a failure, as the inherited text says.
+- **No new funding hypothesis may be registered as a variation of a failed
+  one.** That inherited clause binds here.
+- **This does NOT close the funding question.** #172–#186 remains **sealed,
+  unmodified and pending**, trigger unchanged at ~2027-06-27, as the
+  independent cross-venue test. Its own closure clause — failure at *its* C2
+  — is what closes funding, and this document does not amend it.
+- **A result here does not license editing #172–#186 in either direction**,
+  and the cross-venue flag firing on all three symbols is a reason to value
+  that independence more, not less.
