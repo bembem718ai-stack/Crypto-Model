@@ -2072,6 +2072,35 @@ moved DISCOVERY's cut from 2023-09-16 to 2023-04-06 and grew the sample
 from 58 trades to 93. It is a different window over different years, and
 the answer changed with it.
 
+### Sharpened 2026-08-28: not window-dependent, BOUNDARY-CONJUNCTION-dependent
+
+`research/window_stability.py` profiled the exact #171 statistic across **50
+rolling window starts** with the END pinned at DISCOVERY's current cut:
+
+| | value |
+|---|---|
+| starts evaluated | 50 (all defined) |
+| sign-stability | **88% negative** — 44 negative, 6 positive |
+| range | **−0.167 … +0.177**, median −0.046 |
+
+Two things follow, and the second is stronger than what was first recorded.
+
+1. **The negative reading is the typical one.** −0.167 is not an unlucky
+   split; it is the earliest start in a sweep that comes out negative at 44
+   of 50.
+2. **The published +0.237 lies OUTSIDE the entire sweep.** It sits above the
+   maximum of +0.177 and is **not reachable by moving the start alone.** That
+   window also ENDED earlier (2023-09-16 vs 2023-04-06), so reproducing it
+   requires BOTH boundaries in conjunction.
+
+So "window-dependent" understates it. The published figure was
+**boundary-conjunction-dependent**: it needed a particular start AND a
+particular end together, and no single-boundary perturbation reaches it. A
+statistic that survives neither margin of its own window is weaker evidence
+than one that merely moves when the window does.
+
+The sweep bounds one degree of freedom. Both moved.
+
 **That is the finding.** The claim was window-dependent, and nothing in the
 original measurement disclosed that. A +0.237R at the 100th percentile
 reads as robust; it was one split away from −0.167R. This is precisely the
@@ -2434,3 +2463,280 @@ one-year rolling window, so a day not collected is dropped by the venue and
 is gone from this program's test sample permanently.** There is no backfill.
 A silent collector failure today costs test data in 2027 that cannot be
 bought back at any price.
+
+---
+
+# REGISTERED PROGRAMS — SHADOW-EVAL, ROTATION (#187-#192), ALLOCATION (#193-#196), ABLATION (#197-#202)
+
+> **LOCKED 2026-08-28.** Approved with two amendments, both incorporated:
+> ROTATION gains control #191b (random-5, distributional, Bonferroni
+> unchanged at k=6), and ABLATION's removal scheme is pinned to
+> one-at-a-time-from-full. From this commit research rule 4 applies: no
+> parameter, threshold, control or pass condition below may be changed on
+> the basis of a result.
+
+Four programs. Every constant is fixed below. Nothing has been run and no
+data has been looked at for any of them.
+
+Standing rules apply throughout: registered before scoring (rule 3), no
+parameter changed after a result (rule 4), negatives reported with the same
+detail as positives (rule 5), lockbox never read (rule 2).
+
+---
+
+## A. SHADOW-EVAL — evaluating the shadow basket
+
+**Registered before the first shadow row exists.** `shadow_log.csv` was
+created empty by commit `49a1245`; this document is written before it has
+been read for any purpose.
+
+### Trigger
+
+**30 pooled CLOSED episodes** across the tradable-26 in `shadow_outcomes.csv`.
+Episodes, not rows and not trades: the log writes ~26 rows an hour and a
+standing signal produces dozens of rows for one tradeable event.
+
+**The shadow log may not be inspected before the trigger.** Not plotted, not
+tallied, not "just to see how it's going". A peek at 12 episodes that shapes
+what is asked at 30 is the failure this project has spent its whole record
+guarding against.
+
+### Scope, and the superset caveat
+
+This evaluates the **UNGATED** construction. The gate is dampen-only, so
+shadow BUY days are a strict superset of gated ones. A SHADOW-EVAL result is
+therefore evidence about the ungated basket incumbent and is **NOT** a
+drop-in estimate of the gated live system. It is expected to coincide
+(`gate_multiplier` has been 1.0 on every production row ever logged) but
+expected is not verified, and the write-up must say which object was
+measured.
+
+### Protocol — run ONCE
+
+| item | value |
+|---|---|
+| trigger | 30 pooled closed episodes |
+| pooling | all 26 tickers pooled; per-ticker reported but not tested |
+| statistics | n, **episodes**, win%, `net_all`, `ex_best`, `total_R`, `maxDD_R`, median stop%, median `cost_r` |
+| folds | 4 equal-duration time splits of the shadow span |
+| placebo | **episode-matched**, 300 seeds, per #167 |
+| costs | 2bps fee + 2bps slippage per side (trade-level convention, NOT the portfolio 8bps) |
+
+**Reported outcome, no pass/fail.** At 30 episodes `ex_best` will almost
+certainly be undefined (3 folds x 10 trades is the bar, and 30 episodes
+spread over 4 folds is ~7 each). **That is the expected result and it is
+recorded now** so that "unmeasurable" cannot later be presented as
+disappointing news. SHADOW-EVAL answers *how fast is forward evidence
+accumulating and what does it look like*, not *is there an edge*.
+
+**A second checkpoint at 100 pooled episodes is registered now**, identical
+protocol, so running it is a pre-declared sample increase and not a second
+bite. No third checkpoint; if 100 episodes does not settle it, that is the
+finding.
+
+---
+
+## B. ROTATION — #187–#192
+
+Cross-sectional momentum on the tradable-26. Scored through
+`research/portfolio_harness.py`, which passed its equivalence gate to
+machine precision before this was written.
+
+### Fixed parameters
+
+| element | value |
+|---|---|
+| universe | the #167 tradable-26, fixed, no additions |
+| lookbacks | **30d** and **90d**, each with a **3-day skip** (signal uses returns to t−3, avoiding short-horizon reversal) |
+| selection | **top-5** and **top-10** by lookback return |
+| weighting | equal-weight within the selection |
+| rebalance | **weekly**, every Monday 00:00 UTC |
+| costs | **8bps per side** on traded notional |
+| windows | **BOTH** DISCOVERY and CONFIRMATION, on the current frozen dataset |
+| folds | 4 equal-duration time splits per window |
+| placebo | **rank-permutation**, 300 seeds |
+| k (Bonferroni) | **6** |
+
+### The six hypotheses
+
+2 lookbacks x 2 selection sizes = 4, plus 2 registered controls = **6 tests**,
+which is exactly the k the correction uses.
+
+| # | rule |
+|---|---|
+| **#187** | top-5 by 30d return, skip 3d, weekly |
+| **#188** | top-10 by 30d return, skip 3d, weekly |
+| **#189** | top-5 by 90d return, skip 3d, weekly |
+| **#190** | top-10 by 90d return, skip 3d, weekly |
+| **#191** | CONTROL: equal-weight all 26, weekly rebalance (the "did selection do anything" benchmark) |
+| **#191b** | CONTROL (distributional): **random-5**, five assets drawn uniformly without replacement at each weekly rebalance, equal-weight, same costs. **1,200 draws**, reported as a DISTRIBUTION, not a point estimate. |
+| **#192** | CONTROL: **bottom**-5 by 30d return, skip 3d, weekly (if momentum is real, this should be its mirror; if both win, the result is beta, not selection) |
+
+**#191b is a CONTROL, not a hypothesis.** It is not counted in the Bonferroni
+correction, which stays at **k = 6**. It carries no pass rule of its own and
+cannot pass or fail; it exists solely to supply a null distribution for
+five-asset selection at this turnover.
+
+Why it is needed on top of #191: equal-weight-26 answers "did selecting help
+at all", but it is a *different portfolio* — 26 names, near-zero turnover. A
+top-5 rule that beats it might be winning on concentration or on turnover
+timing rather than on selection. Random-5 holds concentration, position
+count, rebalance cadence and cost structure IDENTICAL and randomises only
+which five. It is the tightest available null for a five-asset picker.
+
+**Additional condition for the top-5 rules (#187, #189):** annualised net
+return must also exceed **#191b's p95**. #188 and #190 are top-10 and are not
+subject to it — random-5 is not their matched null, and inventing a random-10
+after seeing results would be exactly the move this project forbids.
+
+#191 and #192 are registered as controls and carry the same pass rule as the
+rest. #192 exists because a rotation rule that wins while its inverse also
+wins has demonstrated exposure, not skill.
+
+### Pass rule
+
+On **BOTH** windows, all required:
+
+1. Annualised net return **> 0**, AND
+2. Annualised net return above the **rank-permutation placebo's
+   Bonferroni-adjusted percentile**: alpha = 0.05/6 = 0.00833, so the
+   **99.17th percentile**. With 300 seeds that percentile is estimated from
+   the top ~2.5 draws, so **seeds are raised to 1,200** for the adjusted
+   threshold (~10 draws above it); p95 reported alongside from the same
+   draws.
+3. Beats #191 (equal-weight-26) on annualised net return **on both windows**, AND
+4. **For #187 and #189 only:** beats **#191b random-5's p95** on both windows.
+
+Condition 3 is the one that matters most: a rotation rule that cannot beat
+holding all 26 has not earned its turnover. Condition 4 closes the remaining
+gap — beating equal-weight-26 could be concentration; beating random-5 at the
+same concentration and cadence can only be selection.
+
+**Single confirmation, no partial credit, no re-runs.**
+
+---
+
+## C. ALLOCATION — #193–#196
+
+Exposure scaling on a fixed basket. Answers a different question from
+ROTATION: not *which* assets, but *how much*.
+
+### Fixed parameters
+
+| element | value |
+|---|---|
+| universe | tradable-26, equal-weight within the invested portion |
+| vol targets | **30%** and **50%** annualised |
+| vol estimator | 30-day realised stdev of daily portfolio returns, annualised by sqrt(365) |
+| leverage cap | **1.5x** gross, hard |
+| floor | 0.0x (fully in cash is permitted) |
+| rebalance | weekly, Monday 00:00 UTC |
+| costs | 8bps per side on traded notional |
+| windows | BOTH DISCOVERY and CONFIRMATION |
+| placebo | **block-shuffle**, block = **21 days**, 1,200 seeds |
+| k (Bonferroni) | **4** |
+
+### The four hypotheses
+
+| # | rule |
+|---|---|
+| **#193** | 30% vol target, cap 1.5x |
+| **#194** | 50% vol target, cap 1.5x |
+| **#195** | CONTROL: constant 1.0x equal-weight-26 (no scaling) |
+| **#196** | CONTROL: **inverted** signal — scale UP when realised vol is high (if vol-targeting works, its inverse should not) |
+
+### Matched-exposure benchmark — the condition that makes this honest
+
+A vol-targeted portfolio that happens to run higher average gross exposure
+will out-return a 1.0x benchmark **for that reason alone**, and reporting
+that as a vol-targeting result would be a category error.
+
+So each of #193/#194 is compared against a **matched-exposure benchmark**:
+constant-weight equal-26 scaled by a single constant chosen so its **average
+gross exposure over the window equals the tested rule's**. That constant is
+computed from the tested rule's own realised exposure — it is not a free
+parameter and nothing is chosen by looking at returns.
+
+### Pass rule
+
+On **BOTH** windows, all required:
+
+1. Annualised net return **> 0**, AND
+2. Above the block-shuffle placebo's Bonferroni percentile: alpha =
+   0.05/4 = 0.0125, the **98.75th percentile**, from 1,200 seeds, AND
+3. **Sharpe** above the **matched-exposure benchmark's** Sharpe.
+
+Condition 3 is the test. Vol targeting claims better risk-adjusted return at
+comparable exposure; matching exposure is what isolates that claim from
+simply holding more.
+
+**Single confirmation, no partial credit, no re-runs.**
+
+---
+
+## D. ABLATION — #197–#202
+
+Which components of the incumbent's BUY_ALL construction carry its behaviour?
+BTC only, on the current frozen dataset, both windows.
+
+Not a search for an edge — #171 established BTC INC_BUY_ALL is negative on
+DISCOVERY. This asks what the pieces contribute, which is worth knowing
+whether the total is positive or not.
+
+### Removal scheme: ONE-AT-A-TIME-FROM-FULL
+
+**Fixed before lock.** Every rung removes **exactly one** component from the
+FULL construction and restores everything else to production values. Rungs
+are independent of each other and of their listed order.
+
+**Why not cumulative.** Under cumulative removal each rung's delta would
+contain every prior removal, so no delta would be attributable to its own
+component, every number would depend on an arbitrary listing order, and the
+final rung would be "almost everything removed" — a different model, not an
+ablation. One-at-a-time is the only scheme where the delta at rung k is a
+statement about component k.
+
+**Its limitation, stated now.** One-at-a-time measures MAIN EFFECTS only. A
+component that matters solely in combination with another will read as NO
+DETECTABLE CONTRIBUTION here, and that is a real blind spot rather than
+evidence of irrelevance. Interaction terms are out of scope for this program
+and may not be inferred from it; testing one requires its own registered
+hypothesis.
+
+| # | rung | change from full |
+|---|---|---|
+| **#197** | full construction | baseline (= #171's measurement, reproduced) — the reference every delta is taken against |
+| **#198** | no Step 3 | weights become 1.0 pattern / 0.0 indicators |
+| **#199** | no Step 1 | weights become 0.0 pattern / 1.0 indicators |
+| **#200** | no confirm | `confirm_days` 2 → 1 |
+| **#201** | no VIX regime | `extreme_fear_mode` disabled, bars fixed at 60/40 |
+| **#202** | no conviction scaling | STRONG_BUY target multiplier 1.333 → 1.0 |
+
+### The epsilon rule — fixed now
+
+A rung "matters" if removing it moves `net_all` by more than
+
+**epsilon = 0.05 R**
+
+in absolute terms, on **both** windows in the **same direction**.
+
+0.05R is fixed here and derives from a measured quantity, not taste: the
+median `cost_r` on BTC 4h is **0.045R** (recorded in #163's liquidity table).
+A component whose removal moves expectancy by less than one round trip's
+transaction cost cannot be distinguished from friction, so that is the floor.
+
+**Any rung moving less than epsilon on either window, or moving in opposite
+directions across the two, is reported as NO DETECTABLE CONTRIBUTION.** That
+is a result, not a failure, and it may not be re-tested at a smaller epsilon.
+
+### Reporting
+
+Every rung reports n, **episodes**, win%, `net_all`, `ex_best`, and the delta
+against #197 on both windows, plus a **window-stability profile**
+(`research/window_stability.py`, 50 starts) beside each delta — because #171
+demonstrated that a single-window delta on this construction can reverse.
+
+**No pass/fail and no Bonferroni.** ABLATION is descriptive: it apportions
+behaviour, it does not claim edge. Nothing may be promoted from it, and any
+component it flags as load-bearing needs its own registered hypothesis
+before it becomes a claim.
