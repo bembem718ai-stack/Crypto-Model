@@ -4334,3 +4334,206 @@ asset class where the effect is descriptively visible in this very table.
 - **The crypto record stands as written**, with one addition: the
   null-contamination finding is recorded against it, and any future citation
   of the crypto zeros must carry it.
+
+---
+
+# PRE-REGISTRATION — NULL-CALIBRATION PROGRAM (#217–#219)
+
+> **REGISTERED 2026-08-31, before any number below was produced.** Research
+> rule 4 applies to every constant here.
+>
+> **THIS IS A METHODS PROGRAM. IT MAKES NO EDGE CLAIM AND CANNOT.** It has no
+> pass rule, promotes nothing, and cannot move a single prior verdict. Its
+> output is a **correction to the instrument** and a calibration fact for
+> every future program to register from the start.
+
+## Motivation — the bar was contaminated upward, and by how much is unmeasured
+
+EQUITIES #204–#216 measured something the crypto programs never checked. On a
+**correlated universe, the rank-permutation null inherits part of the very
+selection effect it exists to destroy**, because a rule ranking a *relabelled*
+signal still lands on genuinely high-momentum assets a large fraction of the
+time.
+
+Measured on DISCOVERY (2000–2014), 21 equity ETFs:
+
+| quantity | value |
+|---|---|
+| CS rank-permutation null, **centre** | **+0.0864** |
+| #215 random-3, **median** | +0.0616 |
+| #210 equal-weight eligible | +0.0709 |
+| **null-centre excess over random-3** | **+0.0248 (≈ 2.5 pp/yr)** |
+
+Had permutation destroyed selection, the null's centre would sit near
+random-N. It sits ~2.5 pp/yr above it — **above equal-weight too.** The
+clause-2 bar was therefore set higher than its construction intends, and every
+clause-2 FAIL in this project was measured against a bar carrying an unknown
+amount of inherited effect.
+
+**ROTATION's 26-asset crypto universe is at least as correlated and was never
+measured.** The size of the contamination on each prior program is unknown.
+That is the gap this program closes — **not by re-opening any verdict, but by
+recording what the bars actually were.**
+
+---
+
+## #217 — MEASURE the inheritance. Descriptive, table only.
+
+For **crypto ROTATION (#187–#190)** and the **equities CS rules
+(#204–#207)**, per window, report:
+
+| column | definition |
+|---|---|
+| null centre | median of that rule's registered clause-2 null distribution |
+| random-N median | median of the matched random-N control |
+| equal-weight | the program's equal-weight benchmark |
+| **excess over random-N** | null centre − random-N median (**pp/yr**) |
+| **excess over equal-weight** | null centre − equal-weight (**pp/yr**) |
+| **universe ρ̄** | average pairwise correlation of daily asset returns over that window |
+
+`ρ̄` is the mean of the off-diagonal entries of the return correlation matrix,
+computed over assets eligible for the whole window, so the record states the
+correlation each contaminated bar was drawn on.
+
+**No verdict is touched. No pass rule exists. This is a table.** It is
+reported whatever it shows, including if inheritance turns out to be
+negligible on crypto — which would itself be a finding, and would mean the
+equities result does not generalise backwards.
+
+---
+
+## #218 — DESIGN: the TIME-ROTATION null
+
+**Defining property: immunity to correlation inheritance.**
+
+> Shift the **entire signal matrix** in time by a random offset, wrapping at
+> the ends. Every asset's signal moves together by the same amount.
+
+**What it preserves — exactly, by construction:**
+
+- the **full cross-sectional structure** at every date (a whole row moves as
+  a unit, so the correlation between assets' signals is untouched);
+- each asset's **own autocorrelation** and the persistence of its signal;
+- the **marginal distribution** of every signal series;
+- the **number of positions**, cadence, and weighting.
+
+**What it breaks — only this:** the alignment between the signal and the
+returns that followed it.
+
+**Why it is immune to inheritance.** The rank-permutation null asks "would a
+*different asset* selected by this signal have done as well?" — and on a
+correlated universe the answer is partly yes for reasons of correlation alone.
+The time-rotation null asks "would the *same selection rule*, run on the same
+universe, have done as well *aimed at the wrong dates*?" Correlation between
+assets cannot supply that, because the null holds a genuine
+top-momentum-of-some-date portfolio and is scored against a different date's
+returns. Cross-asset correlation is preserved rather than exploited.
+
+### Fixed parameters
+
+| element | value |
+|---|---|
+| operation | circular shift of the signal matrix along the time axis |
+| offset | drawn uniformly from **[24 months, T − 24 months]** |
+| seeds | **1,200**, matching every prior program |
+| applied in | **signal space** — the rule then applies its own eligibility mask, exactly as the repaired EQUITIES CS null does |
+
+**The 24-month minimum offset is pinned now and is not free.** A shift shorter
+than the signal's own persistence would leave the rotated selection
+overlapping the real one, reintroducing inheritance through autocorrelation
+instead of correlation. Twenty-four months is **twice the longest formation
+horizon in any program using this null** (12-1), so no rotated window shares a
+formation period with the real one. Excluding the symmetric tail at the far
+end keeps the same guarantee for near-full rotations.
+
+### Fidelity — all four axes, before any draw is scored
+
+1. **Turnover drag (pp/yr).** Rotation preserves the signal path exactly, so
+   turnover should match apart from the **single wrap seam** joining the end
+   of the series to its start — one rebalance in ~170. Expected negligible;
+   **measured and reported regardless**.
+2. **Universe / eligibility fidelity.** 0% by construction, because the null
+   operates in signal space and the rule applies its own time-correct
+   eligibility mask. **Measured and reported anyway** — "by construction" is
+   how the last two defects were justified before they were found.
+3. **Cash-month count** (where applicable — TS-type rules). Rotation changes
+   which months carry positive signals, so this is **not** guaranteed and must
+   be measured; where it exceeds the ±2% tolerance the affected cell is
+   declared **UNMEASURABLE**, per the standing `ex_best` convention.
+4. **Correlation inheritance** (the new axis, see CLAUDE.md). Null centre
+   minus matched random-N median, in pp/yr, reported beside `ρ̄`.
+
+### Its known weakness, stated before it is used
+
+**Shared seasonality survives the shift.** If the universe has a calendar
+effect — a January pattern, a turn-of-month effect, a recurring risk-on
+rhythm — a rotation by a whole number of months preserves it in the null
+exactly as in the rule, and the null will be flattered by it. The time-rotation
+null therefore **cannot** distinguish a genuine signal from one that is really
+a seasonal.
+
+**A second, smaller weakness:** on a universe whose composition changes, a
+rotated signal row lands on a date with a different eligible set, which is the
+same structural problem that made #208's cash-count fidelity unmeasurable on
+DISCOVERY. It is expected to recur and will be reported, not hidden.
+
+Neither weakness is fixable within this construction, and neither is a reason
+to prefer the contaminated null. **The correct reading is that the two nulls
+fail differently**: rank-permutation is contaminated by cross-asset
+correlation, time-rotation by shared seasonality. Reporting both, with the
+inheritance measured, is more honest than picking one and calling it clean.
+
+---
+
+## #219 — RE-SCORE, as calibration and not adjudication
+
+Re-run the **clause-2 comparison only** for **#187** (crypto ROTATION top-5
+30d) and **#204 / #205** (equities CS top-3 and top-5, 12-1), on **both
+windows**, with the **same 1,200 seeds**, against the time-rotation null.
+
+### The framing, worded now so no result can bend it
+
+> **These re-scores change NO verdicts. Every registered FAIL stands.**
+>
+> Re-testing at a friendlier bar after seeing the result is the exact move
+> this record exists to forbid (research rule 4). A rule that failed
+> clause 2 against its registered null has failed clause 2. It does not
+> become a pass, a partial pass, a "would have passed", or a candidate for
+> anything, no matter what the corrected null says.
+
+**The entire permitted output is one sentence per program:**
+
+> *"Under the corrected null, clause 2 would have read X."*
+
+That sentence is a **calibration fact about the instrument**, not a statement
+about the rule. It is recorded so that the record says how much of each
+historical bar was inherited effect — and so that **every future program
+registers the corrected null from the start**, rather than inheriting a bar
+nobody had measured.
+
+**Binding on everything after this:** SHADOW-EVAL, FUNDING (#172–#186 at its
+trigger), and any program registered from now on must specify its clause-2
+null with the four-axis fidelity check including correlation inheritance, and
+must state which null it uses and why. FUNDING is registered and dormant; this
+requirement attaches to it at trigger time and **does not** otherwise reopen
+or amend it.
+
+### Explicitly out of scope
+
+- **No verdict changes.** Not for #187, not for #204/#205, not for anything.
+- **No promotion.** Nothing here can make anything tradeable.
+- **No re-scoring of clause 1, 3 or 4**, and no re-scoring of any rule not
+  named above. Three rules, one clause, two windows. That is the whole
+  re-score.
+- **No new hypotheses.** A rule that looks better under the corrected null is
+  a candidate for a *future registration on future data*, not for a revision
+  of this one, and this document does not create such a candidate.
+
+---
+
+## Closure
+
+This list is the whole program: one measurement, one design, one calibration
+re-score. Its deliverables are a table, a null, three sentences, and a
+permanent amendment to the placebo methodology. **No edge claim is possible
+from any of it**, and `docs/claims.md` cannot change as a result.

@@ -184,13 +184,25 @@ window, cap, epsilon or placebo is a NEW registration with a new number
 **Still open:** SHADOW-EVAL accrues forward on both arms and may not be
 inspected before 30 pooled closed episodes. FUNDING (#172-#186) is
 registered and DORMANT until its data-depth trigger (~2027-06-27).
+NULL-CALIBRATION (#217-#219) is REGISTERED and not yet run -- a methods
+program that makes no edge claim, measures how much of each historical
+clause-2 bar was inherited effect, and registers a time-rotation null for
+every future program. It changes NO prior verdict.
 
-### Placebo fidelity — check two axes before a null decides anything
+**EQUITIES (#204-#216) is closed: all six FAIL, the fail/fail cell.** The
+ladder did NOT certify the most replicated anomaly in the equities
+literature on 26 years of data, in a universe where the effect is visible
+descriptively (rule beats its own mirror in 9 of 10 comparisons). The
+instrument is NOT validated, and the crypto zeros carry LESS weight as
+evidence about crypto than they appeared to.
+
+### Placebo fidelity — check FOUR axes before a null decides anything
 
 The search found two defects in two placebos, same family: **a null that
 differs from the strategy in more than the one thing it claims to isolate.**
-Both would have made a registered bar easier, i.e. both pushed toward a
-FALSE POSITIVE. Before any placebo is used for a verdict:
+Two of them made a registered bar EASIER (pushing toward a false positive);
+the fourth axis below catches the opposite failure, a bar made too HARD.
+Before any placebo is used for a verdict:
 
 1. **Turnover fidelity** — report the null's turnover as a ratio to the real
    rule's AND convert the gap to **annualised drag in pp/yr**
@@ -201,8 +213,29 @@ FALSE POSITIVE. Before any placebo is used for a verdict:
    on assets that did not exist on that date, beside the real rule's figure.
    Missing prices become zero returns silently, so this is invisible in
    returns, turnover and exposure; it must be measured directly.
+3. **Cash-eligible-month count** (rules that can stand aside) — the null's
+   count of ELIGIBLE asset-months holding nothing must match the real rule's
+   within +/-2% relative. A null in cash a different share of the time is
+   testing a different exposure budget, not timing. Count over ELIGIBLE cells
+   only; counting every zero cell measures the growing universe instead.
+4. **Correlation inheritance** — the null's DISTRIBUTION CENTRE minus the
+   matched random-N median, in pp/yr, reported beside the universe's average
+   pairwise correlation. **A null on a correlated universe can inherit the
+   effect it exists to destroy.** Measured on EQUITIES DISCOVERY: the
+   rank-permutation null's centre sat at +0.0864 against random-3's +0.0616
+   and equal-weight's +0.0709 -- roughly 2.5 pp/yr of inherited effect, so
+   the bar was set higher than its construction intended. This is the one
+   axis whose failure makes a bar TOO HARD rather than too easy, which is why
+   it went unnoticed through five programs: nobody audits a null that is
+   producing failures.
 
-Repair on the same principle both times: **the null pays what the strategy
+   **Report it always. A clause-2 FAIL measured against a null with material
+   inheritance must carry the measured inheritance beside it** -- it does not
+   void the FAIL, and it does not license a re-test (research rule 4), but a
+   bar nobody measured is not a bar anybody can cite. See NULL-CALIBRATION
+   (#217-#219) and the time-rotation null registered there.
+
+Repair on the same principle every time: **the null pays what the strategy
 pays and is constrained the way the strategy is constrained.** Quantify any
 residual and say which side it favours.
 
