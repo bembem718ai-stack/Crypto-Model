@@ -4783,3 +4783,376 @@ registered.
 - **A design fact worth keeping:** crypto's 6.4-year windows are too short to
   carry a rotation-based null at all. Any future crypto program wanting one
   needs a longer history than this project has.
+
+---
+
+# PRE-REGISTRATION — BINANCE FUNDING PROGRAM (#220–#234)
+
+> **LOCKED 2026-08-31.** §6's coverage clause signed off as proposed
+> (**≥ 2 of 3**). An EXECUTION ORDER clause was added before lock at the
+> maintainer's instruction. Research rule 4 now applies to every constant
+> below: nothing may change on the basis of a result.
+
+## What this program is, and what it is not
+
+**Every hypothesis, rule, threshold, definition and pass condition is
+inherited VERBATIM from the locked #172–#186.** Nothing is chosen here.
+This is the same eight rules and fifteen tests, run on a deeper archive from
+a different venue.
+
+**Six things change, and they are exhaustively listed in §1–§6.** Anything
+not in that list is inherited unchanged, and where the inherited text and
+this document appear to disagree, **#172–#186 governs.**
+
+**Why inheritance matters procedurally.** The reconciliation record
+(`research/funding_reconciliation.md`) was read before this was drafted. If
+any threshold here were choosable, that read could have anchored it. Because
+every constant is inherited verbatim, **there is nothing for it to anchor.**
+That is the whole reason the program is built this way rather than
+re-derived.
+
+---
+
+## §0. Inheritance map — every test, original number beside its new one
+
+| new # | orig # | rule | mode | definition (inherited verbatim) |
+|---|---|---|---|---|
+| **#220** | #172 | F1 | standalone | BUY when the trailing **30-day percentile rank** of daily-mean funding is **≤ 10**. |
+| **#221** | #173 | F1 | overlay | Incumbent BUY kept only when F1 holds. |
+| **#222** | #174 | F2 | standalone | BUY on the first day whose daily-mean funding is **> 0** after **≥ 72 consecutive hours** of funding **< 0**. |
+| **#223** | #175 | F2 | overlay | Incumbent BUY kept only when F2 holds. |
+| **#224** | #176 | F3 | standalone | BUY when the **8-hour-equivalent** funding rate is **≤ −0.01%**. |
+| **#225** | #177 | F3 | overlay | Incumbent BUY kept only when F3 holds. |
+| **#226** | #178 | F4 | **overlay only** | **SUPPRESS** an incumbent BUY when the 30-day percentile rank is **≥ 90** AND the close is a **20-day high**. |
+| **#227** | #179 | F5 | standalone | BUY when **cumulative funding over the trailing 7 days is ≤ 0**. |
+| **#228** | #180 | F5 | overlay | Incumbent BUY kept only when F5 holds. |
+| **#229** | #181 | F6 | standalone | BUY when the **30-day z-score** of daily-mean funding is **≤ −2.0**. |
+| **#230** | #182 | F6 | overlay | Incumbent BUY kept only when F6 holds. |
+| **#231** | #183 | F7 | standalone | BUY when the close is a **20-day high** AND the **7-day mean funding is ≤ 0**. |
+| **#232** | #184 | F7 | overlay | Incumbent BUY kept only when F7 holds. |
+| **#233** | #185 | F8 | standalone | BUY when funding has been **< 0 for ≥ 168 consecutive hours**. |
+| **#234** | #186 | F8 | overlay | Incumbent BUY kept only when F8 holds. |
+
+**Inherited unchanged and not restated in full:** the 30-day percentile-rank
+construction (`rolling(30).rank(pct=True) * 100`), the 30-day z-score
+(`ddof=0`, including today), cumulative-7-day funding, the 20-day-high
+definition on the incumbent's daily merged frame, **no-gap-tolerance
+consecutive-hour counting** (a missing settlement breaks the run), long-side
+only, STANDALONE vs OVERLAY semantics, `LIVE_GEOMETRY`, 2bps fee + 2bps
+slippage per side, scoring through `research/harness.py`, the no-lookahead
+alignment rule (funding known as of the last settlement of day D applies to
+day D's daily close, entering at D+1), 4 equal-duration folds, `ex_best`
+requiring ≥3 folds of ≥10 trades, **an undefined `ex_best` is UNMEASURABLE
+and CANNOT PASS**, episode-matched placebo at **3,000 seeds**, pass condition
+`ex_best > 0 on ALL THREE tickers` AND pooled `net_all` above the adjusted
+placebo percentile, single confirmation, no re-runs, no partial credit.
+
+---
+
+## §1. CHANGE — data and primary venue
+
+**Data: `data/derivatives/binance_funding.csv`.** Binance USD-M perpetuals
+`BTCUSDT` / `ETHUSDT` / `SOLUSDT`, from the Binance Vision monthly archive.
+**20,941 rows**, BTC/ETH 2020-01-01 → 2026-07-31, SOL 2020-09-13 → 2026-07-31.
+
+**Field used: `funding_rate`** — the dimensionless per-interval rate as
+published (`last_funding_rate` in the source files). This is the direct
+analogue of Kraken's `relative_funding_rate`, which #172–#186 selected for
+exactly the same reason: it is dimensionless and therefore comparable across
+symbols and price levels.
+
+**Binance is primary on measured grounds, cited, not asserted** — see
+`research/funding_reconciliation.md` and `research/funding_source_probe.md`:
+
+| ground | measurement |
+|---|---|
+| depth | **5.05 usable years** after burn-in and lockbox, against 1.00 at #172–#186's C1 |
+| structure | **zero** gaps beyond the stated interval; **100%** of settlements on 00/08/16 UTC; all 12 overlap months fully covered |
+| comparison | Kraken over the same overlap: 8 gaps/symbol, longest 3.0h, ~9 hours missing |
+| archive form | monthly files are **immutable once published** — re-running is idempotent and history cannot be silently revised under us |
+
+**The archive floor is 2020-01 and is an ARCHIVE floor, not contract
+inception** (2019 months verified HTTP 404 for both `fundingRate` and
+`klines/1d`; the first klines month is a full 31-row January). Nothing before
+2020-01 exists in this source. This bounds the program and is not a defect.
+
+---
+
+## §2. CHANGE — units, mapped mechanically
+
+#172–#186's normalization clause: *"all absolute thresholds in this program
+are stated in 8h-equivalent units"*, computed from Kraken by summing 8 hourly
+rates, **summed rather than scaled because the sum is the actual cost of
+holding those 8 hours**.
+
+**Binance settles natively at 8h, so the mapping is mechanical:**
+
+- Where `funding_interval_hours == 8`, the **row value IS the 8h-equivalent**.
+  No transformation.
+- Where the interval is shorter (stress schedule), **consecutive rows are
+  SUMMED to 8 hours**. Identical holding-cost logic to F3's original
+  normalization — the sum is what a position actually paid.
+
+**The known instance, measured:** `SOLUSDT` ran a **2-hour** interval from
+**2022-11-09 20:00Z to 2022-11-18 08:00Z** (the FTX window; Binance shortens
+intervals under stress), plus two 4-hour rows. **101 non-8h rows in the whole
+archive, all SOL, all inside that window.** BTCUSDT and ETHUSDT are 8h for
+every one of their 7,212 rows.
+
+Every threshold inherited from #172–#186 is therefore applied to a series
+already in the units those thresholds were written in. **F3's −0.0001
+threshold is unchanged.**
+
+---
+
+## §3. CHANGE — the adjudicating null, named at registration
+
+Per standing law, the null is **named here** and its four fidelity axes are
+**measured before any draw is scored**.
+
+**Adjudicating null: the episode-matched placebo, inherited from #167 and
+#172–#186. 3,000 seeds.** Per ticker: take the observed run-lengths of
+consecutive event days, draw the same NUMBER of runs with the same LENGTHS at
+random non-overlapping start positions in the same window, apply the same
+confirm rule. Independent-day placebos remain **forbidden** — funding regimes
+are persistent, so a scattered placebo is structurally lower-variance than
+what it benchmarks.
+
+### The four axes, and how they map to a single-ticker event series
+
+The axes were derived on portfolio rules. Two map directly, one by analogue,
+one does not apply — stated rather than forced:
+
+| axis | mapping | expected |
+|---|---|---|
+| **1. Turnover** | same event count and run-lengths by construction → same trade count; report mean `cost_r` real vs null | ratio ≈ 1.00 by construction; **measured anyway**, because "by construction" is how the last three defects were justified before they were found |
+| **2. Universe / eligibility** | placebo runs may land **only on eligible days** — days not excluded by §6's coverage rule and able to carry a confirmed entry; report the fraction landing on excluded days | **0.000%** expected; if not, the null is trading days the rule cannot |
+| **3. Cash-month count** | **NOT APPLICABLE.** An event series has no exposure budget to hold aside. Reported as N/A with this reason, not silently omitted | — |
+| **4. Inheritance** | no cross-section exists, so the analogue is: null centre vs an **independent-day draw of the same event count**. The gap measures how much of the bar comes from run-length clustering rather than from funding | **expected non-zero and material** — see below |
+
+### Expected weaknesses on THIS data, stated before use
+
+1. **Axis 4 will show inheritance, and that is by design, not a defect.** The
+   episode-matched null deliberately preserves clustering because #167
+   established that an independent-day null is too easy here. So it is a
+   **timing null, not a mechanism null**: it asks "would runs of this shape,
+   placed at random, have done as well", and cannot distinguish a funding
+   signal from any other signal producing the same run-length structure. The
+   inheritance number is reported so the size of that is on record.
+2. **Persistence inheritance over 5 years.** The window spans 2021–2026,
+   including a sustained bull and a sustained bear. A drawn run lands in some
+   regime, and regimes are long relative to run lengths, so the null inherits
+   regime exposure the same way NULL-CALIBRATION found the time-rotation null
+   did on equities CONFIRMATION.
+3. **No alternate null family is feasible.** The time-rotation null requires
+   ≥48 months per window; DISCOVERY is 2.78y (33 months) and CONFIRMATION
+   2.27y (27 months). **Both are below the bound**, exactly as the crypto
+   ROTATION windows were. It is therefore not reported beside — stated with
+   the number that makes it infeasible, per standing law.
+
+---
+
+## §4. CHANGE — its own Bonferroni
+
+**k is computed for THIS program, not inherited as a number.** #220–#234 is
+**15 registered tests**, so:
+
+**alpha = 0.05 / 15 = 0.003333 → required percentile 99.6667**
+
+This equals #172–#186's figure because the test count is identical, **not
+because the number was carried over**. The correction counts tests, not
+rules: #220 and #221 are two chances at the same idea and both are counted.
+3,000 seeds put ~10 draws above the threshold; p95 is reported alongside from
+the same draws for comparability.
+
+---
+
+## §5. CHANGE — windows anchored on the funding freeze
+
+**Freeze = the archive's last timestamp, `2026-07-31 16:00Z`.** Lockbox is
+the last 6 months; the remainder splits at the project standard
+`DISCOVERY_FRAC = 0.55`. The inherited **4-month burn-in** is applied per
+symbol before the usable window opens.
+
+| | date | length |
+|---|---|---|
+| BTC/ETH data start | 2020-01-01 | |
+| SOL data start | 2020-09-13 | |
+| burn-in ends (BTC/ETH) | 2020-05-01 | |
+| burn-in ends (SOL) | **2021-01-13** | |
+| **common usable start** | **2021-01-13** | governed by SOL |
+| **DISCOVERY** | 2021-01-13 → 2023-10-24 | **2.78 y** |
+| **CONFIRMATION** | 2023-10-24 → 2026-01-31 | **2.27 y** |
+| **LOCKBOX** | 2026-01-31 → 2026-07-31 | 0.50 y — **SEALED** |
+| **total usable** | | **5.05 y** |
+
+**The common start is governed by SOL** because the inherited pass condition
+requires `ex_best > 0` on **all three tickers**, which requires one shared
+window. BTC and ETH individually reach back to 2020-05-01; that extra
+0.70y is deliberately **not used**, because scoring three tickers on
+different spans would make the pooled statistic incoherent.
+
+**5.05 usable years against #172–#186's 1.00 at C1.** The power limitation
+that registration recorded — "a real but modest edge will likely read as
+unmeasurable or fail" — is **substantially relaxed here**. That is the
+substantive reason this program is worth running at all, and it is why the
+DISCOVERY/CONFIRMATION split is available where C1 had only a single window.
+
+---
+
+## §6. ⚠ THE ONE CLAUSE REQUIRING JUDGMENT — daily-mean coverage
+
+**This is the only clause in the document not mechanically determined.
+Explicit sign-off requested.**
+
+**Inherited (#172–#186):** *daily-mean funding for day D = arithmetic mean
+over all hourly rows in `[D 00:00, D 23:59]`; days with fewer than **20 of
+24** hourly rows are excluded from every rule and every lookback.*
+
+Kraken settles **hourly** (24/day). Binance settles **8-hourly** (3/day).
+20-of-24 is **83.3%** coverage, and 3 does not divide into that: **≥2 of 3 is
+66.7%** (more permissive) and **≥3 of 3 is 100%** (stricter). Neither
+reproduces 83.3%. A choice is unavoidable.
+
+**FIXED (signed off 2026-08-31): `≥ 2 of 3 settlements, or the day is
+excluded.`**
+
+**Rationale.** The inherited clause's *purpose* is to exclude days whose mean
+is computed from too little of the day to represent it — not to enforce a
+particular percentage. 20-of-24 tolerates losing up to 4 hours, i.e. **one
+Binance settlement interval's worth of time**. ≥2 of 3 tolerates losing one
+settlement. Requiring 3 of 3 would make a single missing settlement void a
+day, which is stricter than the inherited rule ever was and would let one
+dropped file delete a day the rule could have used.
+
+**What it actually costs, measured (counts only, no values):**
+
+| symbol | days | 3 settlements | excluded at ≥2 of 3 | excluded at ≥3 of 3 |
+|---|---|---|---|---|
+| BTCUSDT | 2,404 | **2,404 (100.00%)** | **0** | **0** |
+| ETHUSDT | 2,404 | **2,404 (100.00%)** | **0** | **0** |
+| SOLUSDT | 2,148 | 2,137 (99.49%) | **1 (0.047%)** | **1 (0.047%)** |
+
+*(SOL's 10 days with more than 3 settlements are the FTX stress window; they
+are denser, not deficient, and are excluded by neither rule.)*
+
+**The two candidate rules differ on exactly ONE day of 6,956.** The clause
+needed a decision because it cannot be derived, but the decision is
+near-costless either way, and that is stated so the sign-off is not mistaken
+for a consequential choice. **≥2 of 3 is now fixed and may not be revisited.**
+
+---
+
+## §7. EXECUTION ORDER — the one residual freedom, foreclosed
+
+Inheritance fixes every parameter, but it does not by itself fix the ORDER
+and GRANULARITY of execution, and that is a real degree of freedom: a session
+that ran #220, looked, then decided whether to run #221 could shape the
+program by stopping early, reordering, or abandoning a line that looked
+unpromising. None of that changes a threshold, so none of it is caught by
+research rule 4.
+
+**Therefore:**
+
+> **All fifteen tests run in a SINGLE BATCH from ONE script invocation, and
+> ALL results are written to disk BEFORE ANY of them is read.**
+
+- **No early result may gate, reorder, or abort a later one.** The batch runs
+  to completion or it fails as a whole; a partial batch is not a result and
+  is not reported as one.
+- **No test may be run individually first** "to check the plumbing" on the
+  real data. Plumbing is verified on the fidelity axes (§3), which are
+  measured before any test is scored.
+- **A crash mid-batch voids the run.** It is fixed and the whole batch is
+  re-run from the start; the fifteen results must come from one execution so
+  that none of them could have been informed by another.
+- **The read happens once, on the complete written output.**
+
+This closes the last thing inheritance leaves open. It costs nothing — the
+tests are independent by construction — and it removes the only remaining
+route by which a human decision could enter between registration and result.
+
+---
+
+## RELATIONSHIP TO #172–#186
+
+**#172–#186 stays SEALED and UNMODIFIED.** Its trigger is unchanged (span ≥
+22 months on `kraken_funding.csv`, expected 2027-06-27), its rules are
+unchanged, its C1/C2 checkpoints are unchanged. **This program neither opens
+nor amends it, and running #220–#234 does not consume, satisfy, or
+substitute for it.**
+
+The two are **independent cross-venue tests of the same eight rules**:
+different venue, different settlement grid, different span, non-overlapping
+usable windows except where the archives coincide. #172–#186 remains the
+**independent cross-venue confirmation**, and its value depends on staying
+untouched by whatever #220–#234 reports.
+
+**A result here does not license editing #172–#186 in either direction.** Not
+to narrow it after a pass, not to abandon it after a failure.
+
+**Inherited cross-venue check, with its expected outcome disclosed.**
+#172–#186 requires reporting Pearson correlation of daily means against the
+secondary venue, flagging any symbol below **0.80**. Inherited verbatim with
+Kraken now secondary. **On the measured evidence this flag is LIKELY TO FIRE
+for all three symbols:** the reconciliation report's Spearman on pre-lockbox
+daily means is **+0.595 / +0.512 / +0.492** (BTC/ETH/SOL). The threshold is
+**not** relaxed to avoid that. The flag cannot change a pass or a fail — it
+is disclosure — and a fired flag is the honest reading of two genuinely
+different contracts, which §RECONCILIATION framing said to expect.
+
+---
+
+## PRIOR EXPOSURE — disclosed, because omitting it would overstate blindness
+
+**#172–#186's central property does not transfer to this program, and
+claiming it would be false.** That registration was made before its test data
+existed. This one is made on an archive that exists now and could in
+principle have been inspected.
+
+What has actually been looked at, in full:
+
+1. **The preliminary quintile table (2026-08-31, `docs/cleanroom.md`).**
+   Kraken funding quintiles vs forward 1/3/7-day returns, three tickers,
+   **pre-lockbox only**, 183 days, ~36 per cell. Marked "Preliminary — NOT
+   registered", no placebo, no thresholds, and explicitly recorded as
+   establishing nothing.
+2. **The reconciliation record (2026-08-31).** Binance-vs-Kraken structural
+   agreement, values pre-lockbox only.
+
+**Why this does not compromise #220–#234:**
+
+- **Different venue and different granularity.** The quintile look was
+  Kraken hourly; this program is Binance 8-hourly.
+- **No threshold here was chosen from it — because no threshold here is
+  chosen at all.** Every constant is inherited verbatim from a registration
+  locked before either look happened. **Inheritance forecloses the choice**,
+  which is a structurally stronger guarantee than a promise not to have been
+  influenced.
+- **The sealed span was never read.** Both looks cut at the lockbox for
+  values.
+
+**What it does cost, stated plainly:** this program cannot claim
+#172–#186's "registered before the data existed" property. It claims the
+weaker but still meaningful one — **registered with no free parameters**. The
+distinction is recorded here so no later write-up can quietly upgrade it.
+
+---
+
+## BUDGET AND CLOSURE
+
+- **This list is the whole program.** Eight rules, fifteen tests, one run.
+- **No rule may be added, edited or re-run.** No parameter may be tuned —
+  every number is inherited or listed above.
+- **Single confirmation, no partial credit, no second look at a looser bar.**
+- **A failure here does not close the funding question**, because #172–#186
+  remains pending as the independent cross-venue test. A failure *there* as
+  well, at C2, is what closes it — per that registration's own closure
+  clause, which is not amended by this document.
+
+**Reported whatever the outcome:** per test and per ticker — `n`,
+**episodes**, win%, `net_all`, `ex_best`, folds counted/positive, placebo p95
+and p99.6667, the observed percentile, all four fidelity-axis measurements
+(with axis 3 marked N/A and axis 4's inheritance quantified), the
+cross-venue flag state, and days excluded by §6 per symbol. Negatives get the
+same detail as positives (research rule 5).
