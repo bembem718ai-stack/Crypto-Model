@@ -3227,7 +3227,7 @@ seeds) · **3** ann > #191 · **4** ann > #191b p95 (#187, #189 only).
 
 | # | rule | window | ann | plc p_adj | eq26 | r5 p95 | 1 | 2 | 3 | 4 |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **#187** | top-5 30d | DISCOVERY | **+1.399** | +1.137 | +1.101 | +1.377 | PASS | PASS | PASS | **PASS** |
+| **#187** | top-5 30d | DISCOVERY | **+1.399** | +1.137 | +1.101 | +1.377 | PASS | PASS | PASS | **PASS** |  ⚠ *(clause 2 UNCITABLE — see the annotation below)*
 | | | CONFIRMATION | +0.527 | +0.619 | +0.291 | +0.477 | PASS | **FAIL** | PASS | PASS |
 | **#188** | top-10 30d | DISCOVERY | +1.321 | +0.973 | +1.101 | — | PASS | PASS | PASS | — |
 | | | CONFIRMATION | +0.340 | +0.482 | +0.291 | — | PASS | **FAIL** | PASS | — |
@@ -3267,6 +3267,33 @@ their result is the move this project forbids.
 momentum rules pass clauses 1 and 3 on both windows. All four clear the
 adjusted placebo on DISCOVERY. Not one clears it on CONFIRMATION. That is a
 single, sharp failure mode, not a scatter of small ones.
+
+
+> ### ⚠ ANNOTATION ADDED 2026-08-31 — #187's DISCOVERY clause-2 pass is UNCITABLE
+>
+> **NULL-CALIBRATION #217 measured the null this comparison was made against.
+> On DISCOVERY it held ~31.97% of its gross weight in assets that did not
+> exist** (the real rule: 0.000%; only **5 of 26** assets were alive for the
+> whole window). That weight earned exactly zero through `fillna(0.0)`,
+> dragging the null's centre to **+0.5378 — 50.12 pp/yr BELOW random-5
+> selection (+1.0390)** and 56 pp below equal-weight.
+>
+> Universe fidelity was never checked here because **axis 2 did not exist
+> when ROTATION ran** — it was introduced by ALLOCATION, one program later.
+>
+> **The bar was far too EASY. #187's DISCOVERY clause-2 PASS may not be cited
+> as evidence of anything**, here or anywhere.
+>
+> **Verdicts are unchanged.** #187 is FAIL and always was, on CONFIRMATION,
+> whose null held only 3.40% ineligible weight and is unaffected.
+>
+> **The counterfactual is UNMEASURABLE.** The corrected time-rotation null
+> cannot be run on either ROTATION window: its locked offset range
+> [24, T−24] months is **empty** at **T = 42.4 months (DISCOVERY)** and
+> **T = 34.7 months (CONFIRMATION)**. The bound may not be relaxed to force a
+> run (research rule 4), and rotating over the full series to lengthen T
+> would pull rows out of the LOCKBOX. Recorded as a data fact: **crypto's
+> windows are too short to carry a rotation-based null at all.**
 
 **#187 is the closest this project has come to a pass.** It clears **all four
 clauses on DISCOVERY**, including the two that were designed to be hard: it
@@ -3472,6 +3499,11 @@ executed and reported.
 **Six axes searched, zero survivors, and the closest calls died at registered
 bars.**
 
+> **Annotated 2026-08-31:** #187's DISCOVERY clause-2 pass, cited below as
+> part of "the closest call", was measured against a null holding ~30% dead
+> weight (#217). It is **uncitable as evidence**. The FAIL verdicts below are
+> unchanged — they rest on CONFIRMATION.
+
 ## Verdicts
 
 | program | # | axis searched | verdict |
@@ -3493,6 +3525,33 @@ exposure and when, **(5)** which components of the incumbent contribute, and
 Recording these precisely matters more than recording the failures, because
 these are the ones a less disciplined version of this project would have
 shipped.
+
+
+> ### ⚠ ANNOTATION ADDED 2026-08-31 — #187's DISCOVERY clause-2 pass is UNCITABLE
+>
+> **NULL-CALIBRATION #217 measured the null this comparison was made against.
+> On DISCOVERY it held ~31.97% of its gross weight in assets that did not
+> exist** (the real rule: 0.000%; only **5 of 26** assets were alive for the
+> whole window). That weight earned exactly zero through `fillna(0.0)`,
+> dragging the null's centre to **+0.5378 — 50.12 pp/yr BELOW random-5
+> selection (+1.0390)** and 56 pp below equal-weight.
+>
+> Universe fidelity was never checked here because **axis 2 did not exist
+> when ROTATION ran** — it was introduced by ALLOCATION, one program later.
+>
+> **The bar was far too EASY. #187's DISCOVERY clause-2 PASS may not be cited
+> as evidence of anything**, here or anywhere.
+>
+> **Verdicts are unchanged.** #187 is FAIL and always was, on CONFIRMATION,
+> whose null held only 3.40% ineligible weight and is unaffected.
+>
+> **The counterfactual is UNMEASURABLE.** The corrected time-rotation null
+> cannot be run on either ROTATION window: its locked offset range
+> [24, T−24] months is **empty** at **T = 42.4 months (DISCOVERY)** and
+> **T = 34.7 months (CONFIRMATION)**. The bound may not be relaxed to force a
+> run (research rule 4), and rotating over the full series to lengthen T
+> would pull rows out of the LOCKBOX. Recorded as a data fact: **crypto's
+> windows are too short to carry a rotation-based null at all.**
 
 - **#187 (top-5 by 30d momentum)** cleared **all four clauses on
   DISCOVERY** — including the two built to be hard: it beat equal-weight-26

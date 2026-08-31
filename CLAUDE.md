@@ -184,17 +184,30 @@ window, cap, epsilon or placebo is a NEW registration with a new number
 **Still open:** SHADOW-EVAL accrues forward on both arms and may not be
 inspected before 30 pooled closed episodes. FUNDING (#172-#186) is
 registered and DORMANT until its data-depth trigger (~2027-06-27).
-NULL-CALIBRATION (#217-#219) is RUN and closed. It changed no verdict. Two
-results bind on everything after it. (1) Crypto ROTATION's DISCOVERY
-clause-2 null held ~30% of its gross weight in assets that did not exist --
-axis 2 did not exist yet when ROTATION ran -- so that bar was far too EASY,
-and #187's DISCOVERY clause-2 pass may not be cited as evidence of anything.
-Where universes are complete, inheritance is UPWARD and tracks rho-bar
-(+0.5 to +3.0 pp/yr). (2) The time-rotation null removes correlation
-inheritance (-0.14 pp/yr on equities DISCOVERY vs the permutation null's
-+2.48) but NOT persistence inheritance (+2.16 pp/yr on CONFIRMATION). It is
-available with that weakness attached; it is not a default and not a clean
-instrument. Crypto's 6.4-year windows are too short to carry it at all.
+NULL-CALIBRATION (#217-#219) is RUN and CLOSED. It changed no verdict, and
+it put the instrument into its final honest form: every null this project
+owns is now measured, and every one of them is contaminated in some regime
+(see the table above). Two findings bind on everything after it. (1) Crypto
+ROTATION's DISCOVERY clause-2 null held ~30% of its gross weight in assets
+that did not exist -- axis 2 did not exist yet when ROTATION ran -- so that
+bar was far too EASY, and **#187's DISCOVERY clause-2 pass may not be cited
+as evidence of anything**; its counterfactual is UNMEASURABLE, because the
+time-rotation null is infeasible on both ROTATION windows (T = 42.4 and 34.7
+months against a 48-month minimum). Where universes are complete,
+inheritance runs the other way -- UPWARD, tracking rho-bar, +0.5 to +3.0
+pp/yr. (2) The time-rotation null removes correlation inheritance (-0.14
+pp/yr on equities DISCOVERY vs the permutation null's +2.48) but NOT
+persistence inheritance (+2.16 on CONFIRMATION). It is available with that
+weakness attached.
+
+**THE BOARD IS CLEAR.** Every search program this project has registered is
+run and closed: the crypto grid, the basket programs, the architectural
+search (#187-#203), EQUITIES (#204-#216) and NULL-CALIBRATION (#217-#219).
+**SHADOW-EVAL and FUNDING are the only open programs, and both are
+calendar-gated** -- SHADOW-EVAL until 30 pooled closed episodes accrue,
+FUNDING until ~2027-06-27. Neither may be inspected before its gate. There
+is no research work in flight, and starting a new search means writing a new
+registration first.
 
 **EQUITIES (#204-#216) is closed: all six FAIL, the fail/fail cell.** The
 ladder did NOT certify the most replicated anomaly in the equities
@@ -245,6 +258,35 @@ Before any placebo is used for a verdict:
 Repair on the same principle every time: **the null pays what the strategy
 pays and is constrained the way the strategy is constrained.** Quantify any
 residual and say which side it favours.
+
+#### The standing rule, final form
+
+1. **Every program NAMES its adjudicating null at registration.** Not "a
+   placebo" -- which generator, on what quantity, with what parameters. A null
+   chosen after seeing results is not a null.
+2. **All four axes are measured on it BEFORE any draw scores anything**, and
+   the measured numbers are reported with the result, not just the verdict.
+3. **Where feasible, the alternate null family is reported beside it** with
+   its own measured contamination. Where it is NOT feasible, say so and give
+   the number that makes it infeasible -- e.g. the time-rotation null cannot
+   run on a window shorter than 48 months, and crypto's ROTATION windows are
+   42.4 and 34.7.
+4. **NO NULL IS PRESUMED CLEAN.** Not the permutation null, not the
+   time-rotation null, not a future one. Every null measured so far is
+   contaminated in some regime:
+
+   | null | regime | contamination |
+   |---|---|---|
+   | rank-permutation (weights) | growing universe | ~30% dead weight -> bar far too EASY (crypto DISC) |
+   | rank-permutation (signal) | correlated universe | +0.5 to +2.5 pp/yr inherited -> bar too HARD |
+   | time-rotation | persistent regime | +2.2 to +2.4 pp/yr inherited -> bar too HARD (equities CONF) |
+   | time-rotation | short window | INFEASIBLE below 48 months |
+
+   **That table is the citation.** A claim that some null is neutral must
+   beat it with a measurement, not an argument.
+5. **Contamination does not void a verdict and does not license a re-test**
+   (research rule 4). It is recorded beside the result so the result can be
+   read for what it is.
 
 ## Known open issues
 
