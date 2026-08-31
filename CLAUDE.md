@@ -163,6 +163,49 @@ Research is kept separate from the live system, and stays separate.
    as hygiene; do not go hunting further per-rule micro-optimisations
    expecting a win that is not there.
 
+## Research status — the architectural search is CLOSED
+
+**Six axes searched, zero survivors.** ROTATION (#187-#192), ALLOCATION
+(#193-#196), ABLATION (#197-#202) and SQUEEZE-ONLY (#203) are all run,
+reported and closed out in `docs/cleanroom.md`. `docs/claims.md` holds
+**zero supported edge claims** and nothing from these programs may be quoted
+as support.
+
+Closest calls, so nobody re-opens them casually: **#187** cleared all four
+clauses on DISCOVERY and died on CONFIRMATION's placebo (+0.527 vs +0.619);
+**#203** posted the project's best `ex_best` (+0.234, 4/4 folds) and died at
+the 91.5th placebo percentile against a p95 bar; **#194** cleared "the test"
+on CONFIRMATION and died because its **inverted** control cleared it too.
+
+**Do not re-specify any of them.** A different lookback, rebalance day, vol
+window, cap, epsilon or placebo is a NEW registration with a new number
+(research rule 4). The recorded results stand.
+
+**Still open:** SHADOW-EVAL accrues forward on both arms and may not be
+inspected before 30 pooled closed episodes. FUNDING (#172-#186) is
+registered and DORMANT until its data-depth trigger (~2027-06-27).
+
+### Placebo fidelity — check two axes before a null decides anything
+
+The search found two defects in two placebos, same family: **a null that
+differs from the strategy in more than the one thing it claims to isolate.**
+Both would have made a registered bar easier, i.e. both pushed toward a
+FALSE POSITIVE. Before any placebo is used for a verdict:
+
+1. **Turnover fidelity** — report the null's turnover as a ratio to the real
+   rule's AND convert the gap to **annualised drag in pp/yr**
+   (`extra_turnover x cost_per_side x 365`). **The ratio alone is the wrong
+   unit:** 1.42x cost ALLOCATION's null 0.23 pp/yr (it trades 0.019/day),
+   while ROTATION's 13.6x cost ~42 pp/yr (0.116/day). Judge in pp/yr.
+2. **Universe fidelity** — report the fraction of gross weight the null puts
+   on assets that did not exist on that date, beside the real rule's figure.
+   Missing prices become zero returns silently, so this is invisible in
+   returns, turnover and exposure; it must be measured directly.
+
+Repair on the same principle both times: **the null pays what the strategy
+pays and is constrained the way the strategy is constrained.** Quantify any
+residual and say which side it favours.
+
 ## Known open issues
 
 - **4-year degradation (unresolved).** Extending the backtest to ~4 years

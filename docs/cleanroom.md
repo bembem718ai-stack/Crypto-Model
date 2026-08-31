@@ -3461,3 +3461,122 @@ registration requires it; not evidence.
   a null that differs from the strategy in more than the one thing it claims
   to isolate. Every future placebo is checked for turnover fidelity **and**
   universe fidelity before it is used for a verdict.
+
+---
+
+# CLOSE-OUT — THE ARCHITECTURAL SEARCH (#187–#203)
+
+Closed 2026-08-31. Four programs, registered before any of them ran, all now
+executed and reported.
+
+**Six axes searched, zero survivors, and the closest calls died at registered
+bars.**
+
+## Verdicts
+
+| program | # | axis searched | verdict |
+|---|---|---|---|
+| **ROTATION** | #187–#190 | *which* assets, *how many*, *over what horizon* | **FAIL** — all four momentum rules |
+| | #191 / #191b / #192 | equal-weight, random-5, inverse-momentum controls | controls behaved; #192 FAIL |
+| **ALLOCATION** | #193–#194 | *how much* exposure (vol targets 30% / 50%) | **FAIL** — both |
+| | #195 / #196 | constant-1.0×, inverted-signal controls | #195 degenerate by construction; #196 **FAIL** |
+| **ABLATION** | #197–#202 | *which components* carry the incumbent's behaviour | descriptive, no pass/fail — one rung load-bearing, **in the wrong direction** |
+| **SQUEEZE-ONLY** | #203 | *what blend* of components (1.0 / 0.0) | **FAIL** |
+
+The six axes, enumerated so the count is checkable: **(1)** which assets,
+**(2)** how many of them, **(3)** over what lookback, **(4)** how much gross
+exposure and when, **(5)** which components of the incumbent contribute, and
+**(6)** what weighting those components should carry.
+
+## The closest calls, and exactly where each died
+
+Recording these precisely matters more than recording the failures, because
+these are the ones a less disciplined version of this project would have
+shipped.
+
+- **#187 (top-5 by 30d momentum)** cleared **all four clauses on
+  DISCOVERY** — including the two built to be hard: it beat equal-weight-26
+  (+1.399 vs +1.101) and beat random-5's p95 (+1.399 vs +1.377, by 0.022).
+  On CONFIRMATION it returned **+0.527 against a Bonferroni-adjusted placebo
+  of +0.619**. Died on clause 2, second window.
+- **#203 (squeeze-only)** produced the strongest `ex_best` in the project's
+  history — **+0.234 on 4 of 4 positive folds** — and was positive at **100
+  of 100** window starts across both windows. It sat at the **91.5th
+  percentile** of its episode-matched placebo where the bar was p95. Died
+  on the placebo, by roughly three and a half percentiles.
+- **#194 (50% vol target)** cleared clause 3, *the* test, on CONFIRMATION
+  (+0.594 vs matched-exposure +0.421). So did **#196, the inverted rule that
+  levers UP into volatility** (+0.449 vs +0.419). The registration had
+  written in advance: *"if vol-targeting works, its inverse should not."*
+  Died on its own control.
+- **#198 (drop Step 3)** was the only ABLATION rung to clear epsilon on both
+  windows — and it cleared it by showing the indicator block **subtracts**
+  (+0.175 / +0.119 from removing it). The one load-bearing component found
+  in the whole search is load-bearing in the wrong direction. #203 then took
+  that finding to a real bar and it failed.
+
+Two patterns run through all four. **Everything positive was exposure, not
+selection or timing** — random-5's median draw returned +104%/yr on
+DISCOVERY, buying the *worst* five returned +75%/yr, and levering into
+volatility returned +163%/yr. And **every promising number came from one
+window**; not one survived both.
+
+## PERMANENT METHODOLOGY — the two-axis placebo fidelity rule
+
+This search found **two defects in two different placebos**, both of the same
+family: *a null that differs from the strategy in more than the one thing it
+claims to isolate.* Both would have made a bar easier than registered, and
+both were caught before the draws they would have corrupted were scored.
+
+| | defect | measured | effect if unfixed |
+|---|---|---|---|
+| `rank_permutation_placebo` | re-permuted every **row**, so weekly-held weights became fresh random names **daily** | turnover **1.566 vs 0.116 real — 13.6×** | null dragged to −0.38/yr by fabricated trading; **~42 pp/yr** of costs the strategy never pays |
+| `block_shuffle_placebo` | shuffled the whole **weight matrix**, moving the cross-section through time | **15.4% of gross weight** on assets that had not listed, vs 0.013% real | that weight earns exactly 0 through `fillna(0.0)` — an invisible drag, absent from every output column |
+
+**The rule, now standing for every placebo in this project:**
+
+> **Before a placebo decides anything, verify it on two axes.**
+>
+> **1. Turnover fidelity.** Report the null's average turnover as a ratio to
+> the real rule's, *and* convert the difference to **annualised return drag
+> in percentage points** — `extra_turnover × cost_per_side × 365`. **The
+> ratio alone is the wrong unit.** ALLOCATION's residual 1.42–1.49× looks
+> like ROTATION's disaster and costs only **0.23–0.26 pp/yr**, because that
+> strategy trades at 0.019/day; ROTATION's 13.6× sat on 0.116/day and cost
+> ~42 pp/yr. Judge materiality in pp/yr, never in multiples.
+>
+> **2. Universe fidelity.** Report the fraction of gross weight the null
+> places on assets that did not exist on that date, beside the real rule's
+> figure. Missing prices become zero returns silently, so this defect is
+> invisible in returns, turnover, and exposure alike — it has to be measured
+> directly or it is not seen at all.
+>
+> **Repair by the same principle both times: the null pays what the strategy
+> pays, and is constrained the way the strategy is constrained.** Destroy the
+> one property under test and nothing else. Where a repair leaves a residual,
+> quantify it and state which side it favours — both residuals here handicap
+> the null, so every FAIL above is conservative.
+
+A consequence worth stating plainly: **a placebo that is too weak does not
+produce a cautious error, it produces a false positive.** Both defects would
+have pushed toward promoting a rule. That is the direction defects tend to
+run, because a null is the thing nobody checks when the answer looks good.
+
+## Where this leaves the project
+
+- **`claims.md` still holds zero supported edge claims.** Nothing from
+  #187–#203 changes that, and nothing from them may be quoted as support.
+- **No re-specification of anything above.** Not a different lookback,
+  rebalance day, vol window, cap, epsilon, or placebo. Each is a new
+  registration with a new number.
+- **The incumbent is unchanged.** ABLATION was descriptive and promoted
+  nothing; #203 was the promotion path and it failed.
+- **SHADOW-EVAL is the only live research question.** It accrues forward,
+  out-of-sample, on both the incumbent and squeeze-only arms, and may not be
+  inspected before 30 pooled closed episodes.
+- **FUNDING (#172–#186) remains registered and dormant**, awaiting its
+  data-depth trigger (~2027-06-27). Nothing in this close-out touches it.
+
+The honest summary of six months of architecture: the search was wide, the
+bars were set first, and nothing cleared them. That is a result, and it is
+the reason the bars were set first.
