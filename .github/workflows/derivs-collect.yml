@@ -3,12 +3,13 @@ name: Derivatives Collect
 # DATA COLLECTION ONLY. No hypothesis, no number, no registered direction.
 # Nothing this workflow writes is scored by anything.
 #
-# WHY DAILY IS ENOUGH: every source is a rolling window, and the collector
+# WHY DAILY IS ENOUGH: the API sources are rolling windows, and the collector
 # re-fetches the WHOLE window each run and merges on (symbol, timestamp).
 # Kraken funding is ~1 year rolling, OKX funding ~3 months, OKX open
 # interest 180 daily rows. So a missed day is not a hole -- the next run
 # still contains it. Running more often would only re-download the same
-# window.
+# window. Binance Vision is different in kind: a STATIC monthly archive
+# back to 2020-01, so the daily run only asks it for the last two months.
 #
 # COMPLETELY INDEPENDENT OF signal-check.yml. Different concurrency group,
 # different schedule, and it only ever `git add`s data/derivatives/. It must
@@ -53,6 +54,19 @@ jobs:
       # archive it could not read.
       - name: Collect derivatives data
         run: python research/collect_derivs.py
+
+      # Binance Vision is a STATIC archive, not a rolling window, so it is
+      # collected differently from the venues above: `recent` pulls only the
+      # last two monthly files. Published months are immutable, so
+      # re-downloading all 229 daily would rewrite bytes that cannot have
+      # changed. Two months back covers the month roll-over.
+      #
+      # Same failure contract as the others: a failed pull emits a
+      # ::warning, leaves the existing archive untouched rather than
+      # truncating one it could not read, and never fails the job.
+      - name: Collect Binance Vision funding (recent months)
+        run: python research/collect_binance_vision.py recent
+        continue-on-error: true
 
       - name: Commit merged data
         run: |
