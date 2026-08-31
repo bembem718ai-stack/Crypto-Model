@@ -1,0 +1,226 @@
+{
+  "verdicts": {
+    "#204": {
+      "verdict": "FAIL",
+      "any_clause": true
+    },
+    "#205": {
+      "verdict": "FAIL",
+      "any_clause": true
+    },
+    "#206": {
+      "verdict": "FAIL",
+      "any_clause": true
+    },
+    "#207": {
+      "verdict": "FAIL",
+      "any_clause": true
+    },
+    "#208": {
+      "verdict": "FAIL",
+      "any_clause": true
+    },
+    "#209": {
+      "verdict": "FAIL",
+      "any_clause": true
+    }
+  },
+  "stability": {
+    "DISCOVERY": {
+      "#204": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.07452936473176408,
+        "median": 0.06504446662151189,
+        "min": 0.04873562340124012,
+        "max": 0.1283551155427639,
+        "first_value": 0.04873562340124012,
+        "last_value": 0.12264148218642898
+      },
+      "#205": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.08379638729294975,
+        "median": 0.07362944195827592,
+        "min": 0.05516805565341102,
+        "max": 0.14104363609708584,
+        "first_value": 0.05516805565341102,
+        "last_value": 0.13580481843907818
+      },
+      "#206": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.09705193774522232,
+        "median": 0.0962216454604567,
+        "min": 0.0756111096302793,
+        "max": 0.1307400880667573,
+        "first_value": 0.0756111096302793,
+        "last_value": 0.11896670394897561
+      },
+      "#207": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.09238866602921045,
+        "median": 0.09117008336161433,
+        "min": 0.07032787848698047,
+        "max": 0.13114983880273906,
+        "first_value": 0.07032787848698047,
+        "last_value": 0.1211241050931203
+      },
+      "#208": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.06023339815124421,
+        "median": 0.0541422878328958,
+        "min": 0.04056698881489301,
+        "max": 0.09701943505131662,
+        "first_value": 0.04056698881489301,
+        "last_value": 0.09701943505131662
+      },
+      "#209": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.09189543123230318,
+        "median": 0.09456275906743572,
+        "min": 0.06258856527485558,
+        "max": 0.11291203071919755,
+        "first_value": 0.10174641411363386,
+        "last_value": 0.10140927542482504
+      }
+    },
+    "CONFIRMATION": {
+      "#204": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.10185918561053306,
+        "median": 0.10275985043241004,
+        "min": 0.07659366121801855,
+        "max": 0.1270931641778555,
+        "first_value": 0.07659366121801855,
+        "last_value": 0.11849279502827502
+      },
+      "#205": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.10686603750017727,
+        "median": 0.10898603859605369,
+        "min": 0.07974527018805015,
+        "max": 0.13279652727314398,
+        "first_value": 0.07974527018805015,
+        "last_value": 0.1242484107072105
+      },
+      "#206": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.10190303443585844,
+        "median": 0.10271681047482498,
+        "min": 0.08540483063745191,
+        "max": 0.1193744241692945,
+        "first_value": 0.08780760969314244,
+        "last_value": 0.11095527837008397
+      },
+      "#207": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.09533530059893469,
+        "median": 0.09462098916702066,
+        "min": 0.07972189066104324,
+        "max": 0.11227848315484933,
+        "first_value": 0.07972189066104324,
+        "last_value": 0.10546151095817778
+      },
+      "#208": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.06597320296175672,
+        "median": 0.06742866193355296,
+        "min": 0.0498890612582077,
+        "max": 0.08160097546258901,
+        "first_value": 0.0498890612582077,
+        "last_value": 0.07819135786020935
+      },
+      "#209": {
+        "n_starts": 50,
+        "n_defined": 50,
+        "n_undefined": 0,
+        "positive": 50,
+        "negative": 0,
+        "zero": 0,
+        "sign_stability": 1.0,
+        "modal_sign": "positive",
+        "mean": 0.10798433753538353,
+        "median": 0.10952787587549785,
+        "min": 0.09160027089299537,
+        "max": 0.12787948902609908,
+        "first_value": 0.10891170339653275,
+        "last_value": 0.12787948902609908
+      }
+    }
+  }
+}

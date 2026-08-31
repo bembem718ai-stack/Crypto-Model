@@ -4114,3 +4114,223 @@ fidelity ratios, and a **50-start window-stability profile for every rule**
 on the basis of their result is the move this project forbids).
 
 Negatives are reported with the same detail as positives (research rule 5).
+
+---
+
+# EQUITIES RESULT — #204–#216, run 2026-08-31
+
+`research/run_equities.py`, `research/equities_verdicts.py`. Raw in
+`research/equities_results.json`, `research/equities_verdicts.json`.
+
+**VERDICT: #204 FAIL, #205 FAIL, #206 FAIL, #207 FAIL, #208 FAIL, #209 FAIL.**
+Nothing passes. This is the **fail/fail** cell of the registered
+interpretation matrix.
+
+Windows as locked: DISCOVERY 2000-01-03 → 2014-05-22 (3,619 trading days),
+CONFIRMATION 2014-05-23 → 2026-02-27 (2,959), LOCKBOX sealed and unread.
+Fast scoring path verified against `portfolio_returns` on each window's own
+weight paths: max abs err **4.44e-16** both windows.
+
+## Placebo fidelity — two failures caught before any draw, one repaired
+
+**The check did its job on the first program where it was mandatory.**
+
+**Failure 1 — CS universe fidelity, DISCOVERY (material, repaired).** The
+registered generator `rank_permutation_fixed_placebo` permutes *output
+weights*. On DISCOVERY it placed **7.06–7.86% of gross weight in ETFs that
+were not yet eligible** (real rule: 0.000%), because a single fixed
+relabelling cannot respect a universe growing from 13 ETFs to 21. That weight
+earns exactly zero through `fillna(0.0)` — the ALLOCATION defect in a new
+costume, and confined to DISCOVERY (CONFIRMATION measured 0.000%, the
+universe being complete), so it would have made **exactly one window's bar
+easier**.
+
+**Repaired** under the clause the registration wrote for this: permute the
+**decision input** — one fixed relabelling of the signal columns per seed —
+and run the real selection rule, so eligibility is enforced by the same code
+the rule uses.
+
+| | before (weight-permutation) | after (signal-permutation) |
+|---|---|---|
+| ineligible weight, DISCOVERY | **7.06 – 7.86%** | **0.000%** |
+| turnover ratio, DISCOVERY | 1.00× | 0.85 – 0.87× (drag **−0.05 to −0.08 pp/yr**) |
+| turnover ratio, CONFIRMATION | 1.00× | 1.00× (drag ≤ +0.002 pp/yr) |
+
+The residual turnover gap is *negative* — the repaired null trades slightly
+less than the rule — so the bar is marginally **harder**, and every FAIL
+below is conservative on that axis.
+
+**Failure 2 — TS cash-eligible-month fidelity, #208 on DISCOVERY (not
+repairable, declared UNMEASURABLE).** Registered tolerance ±2%; measured
+**1,087 → 1,216.9, deviation 11.95%**. Cause: block-shuffling moves a
+12-month signal block from a late period (21 eligible) to an early one (13
+eligible), and because eligibility and signal sign are both time-dependent on
+a growing universe, the count of stand-aside months shifts. No shuffle of a
+persistent series can preserve that on a window whose investable universe
+grows 62%.
+
+Per the project's standing `ex_best` convention, **clause 2 for #208 on
+DISCOVERY is reported UNMEASURABLE — not a pass, not a fail.** It is **not
+decision-relevant**: #208 fails clause 3 on *both* windows, so its verdict is
+FAIL on evidence that does not touch the unmeasurable cell.
+
+All other cells passed all three axes. #209 passed cash fidelity at **0.00%
+deviation on both windows**; #208 passed at 0.00% on CONFIRMATION.
+
+*Measurement correction, disclosed:* the first implementation counted cash
+over **all** asset-months including ETFs that had not launched. The registered
+axis is the **cash-ELIGIBLE**-month count, so it was masked to eligible cells
+before any verdict. Ineligible cells are trivially zero for rule and null
+alike and vary with the growing universe rather than with anything either
+decides.
+
+## Results — every registered clause
+
+| # | rule | window | ann | Sharpe | maxDD | plc p_adj | plc pct | #210 | r-N p95 | 1 / 2 / 3 / 4 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **#204** | CS top-3 12-1 | DISC | +0.0726 | +0.356 | −0.443 | +0.1273 | 20.7% | +0.0709 | +0.0972 | P **F** P **F** |
+| | | CONF | +0.1264 | +0.700 | −0.314 | +0.1484 | **89.9%** | +0.1036 | +0.1264 | P **F** P **F** |
+| **#205** | CS top-5 12-1 | DISC | +0.0821 | +0.449 | −0.444 | +0.1147 | 35.2% | +0.0709 | +0.0870 | P **F** P **F** |
+| | | CONF | +0.1234 | +0.819 | −0.223 | +0.1350 | **95.0%** | +0.1036 | +0.1166 | P **F** P P |
+| **#206** | CS top-3 6-1 | DISC | +0.0979 | +0.493 | −0.457 | +0.1231 | 83.1% | +0.0709 | +0.0972 | P **F** P P |
+| | | CONF | +0.1092 | +0.593 | −0.334 | +0.1430 | 69.8% | +0.1036 | +0.1264 | P **F** P **F** |
+| **#207** | CS top-5 6-1 | DISC | +0.0918 | +0.504 | −0.410 | +0.1114 | 77.6% | +0.0709 | +0.0870 | P **F** P P |
+| | | CONF | +0.0960 | +0.579 | −0.335 | +0.1330 | 38.0% | +0.1036 | +0.1166 | P **F** **F** **F** |
+| **#208** | TS-MOM 12-1 | DISC | +0.0603 | +0.569 | −0.220 | +0.0922 | 74.0% | +0.0709 | — | P **UNMEAS** **F** |
+| | | CONF | +0.0664 | +0.642 | −0.266 | +0.1045 | 13.7% | +0.1036 | — | P **F** **F** |
+| **#209** | SPY abs mom | DISC | +0.0652 | +0.494 | −0.245 | +0.0933 | 86.8% | +0.0709 | — | P **F** **F** |
+| | | CONF | +0.1214 | +0.752 | −0.337 | +0.1561 | 35.1% | +0.1036 | — | P **F** P |
+
+**Clause 2 fails in all twelve measurable cells.** No rule reaches the
+Bonferroni-adjusted 99.1667th percentile of its own null on either window.
+
+### Controls
+
+| window | #210 eq-wt | #211 bot-3 12-1 | #212 bot-5 12-1 | #213 bot-3 6-1 | #214 bot-5 6-1 | #216 inverted TS |
+|---|---|---|---|---|---|---|
+| DISCOVERY | +0.0709 | +0.0892 | +0.0731 | +0.0798 | +0.0642 | **+0.0096** |
+| CONFIRMATION | +0.1036 | +0.0481 | +0.0639 | +0.0765 | +0.0819 | **+0.0357** |
+
+**#215 random-N** (1,200 draws): DISCOVERY random-3 p05/p50/p95
++0.0265/+0.0616/+0.0972, random-5 +0.0373/+0.0622/+0.0870. CONFIRMATION
+random-3 +0.0601/+0.0936/+0.1264, random-5 +0.0716/+0.0940/+0.1166.
+
+### Window-stability (50 starts, end pinned) — every rule clearing any clause
+
+All six, all 50 starts defined, **100% positive in all twelve profiles.**
+DISCOVERY medians +0.054 to +0.096; CONFIRMATION medians +0.067 to +0.110.
+As in every prior program, sign-stability on a long-only portfolio in a
+rising market measures how reliably it was invested. Reported because the
+registration requires it; not evidence.
+
+## What the numbers say
+
+**The anomaly is visible. It does not clear the bar.**
+
+Momentum's *direction* shows up clearly in the descriptive contrasts:
+
+- **Rule beats its own mirror in 9 of 10 comparisons.** On CONFIRMATION,
+  top-3 12-1 returns +0.1264 against bottom-3's +0.0481 — a **+7.8 pp/yr**
+  spread. The single exception is top-3 12-1 on DISCOVERY (−1.7 pp).
+- **TS-MOM beats inverted TS on both windows**, +0.0603 vs +0.0096 and
+  +0.0664 vs +0.0357. The inverted control does what the registration said it
+  should: it loses.
+- **TS-MOM shows its documented risk profile** — max drawdown −0.220 against
+  equal-weight's −0.460 on DISCOVERY, at two-thirds the gross exposure.
+- **CS rules beat equal-weight in 7 of 8 rule-windows** (clause 3).
+
+And every one of them fails clause 2. The gap between "clearly ordered" and
+"clears a Bonferroni-adjusted permutation bar" is the whole result.
+
+### A measured reason clause 2 is so hard here — evidence on registered reading (b)
+
+The null's *centre*, not just its tail, is informative:
+
+| window | CS placebo mean | #210 equal-weight | #215 random-3 p50 |
+|---|---|---|---|
+| DISCOVERY | **+0.0864** | +0.0709 | +0.0616 |
+| CONFIRMATION | **+0.1001** | +0.1036 | +0.0936 |
+
+**If permuting the labels had destroyed selection, the placebo's centre
+should sit near random-N. It sits ~2.5 pp/yr above it on DISCOVERY.** The
+reason is structural: 21 equity ETFs are highly correlated, so a rule ranking
+a *relabelled* signal still lands on genuinely high-momentum assets a large
+fraction of the time. **The null inherits part of the effect it exists to
+destroy**, which makes clause 2 a harder bar than its construction intends.
+
+This is measured evidence bearing on the registered fail/fail reading **(b)
+the ladder is insensitive** — it is not a new third reading, and it does not
+rescue anything. It also **applies to the crypto programs**, whose 26 assets
+are at least as correlated: the same contamination was present in ROTATION's
+clause 2 and was never measured there. It does not change a single crypto
+verdict — nothing passed under either reading — but it does mean the crypto
+zeros carry **less** weight as evidence about crypto than they appeared to.
+That is the opposite of the comfortable conclusion, and it is what this
+program was built to find out.
+
+### The era pattern, recorded without a narrative
+
+CS momentum is at the **20.7th and 35.2nd** placebo percentile on DISCOVERY
+(2000–2014) and the **89.9th and 95.0th** on CONFIRMATION (2014–2026). It is
+*stronger in the later era*.
+
+That is the reverse of the published post-2000s decay, and the registration's
+pre-worded decay note **does not apply** — that note was written for a
+DISCOVERY-only pass and this is not one. Per the matrix's own instruction for
+a later-era signal, it is **recorded as-is and gets no special narrative.**
+No explanation is offered here, and none may be attached later without a new
+registration.
+
+### TS-MOM caveat — retained, by the registered expiry test
+
+The caveat expires only if #208/#209 fail the descriptive risk-adjusted read
+as well. They do not:
+
+| | Sharpe vs #210 | max drawdown vs #210 |
+|---|---|---|
+| #208 DISCOVERY | +0.569 vs +0.389 — **beats** | −0.220 vs −0.460 — **better** |
+| #208 CONFIRMATION | +0.642 vs +0.754 — loses | −0.266 vs −0.297 — **better** |
+| #209 DISCOVERY | +0.494 vs +0.389 — **beats** | −0.245 vs −0.460 — **better** |
+| #209 CONFIRMATION | +0.752 vs +0.754 — loses | −0.337 vs −0.297 — worse |
+
+**Caveat RETAINED for both.** The failure is narrow — on *return* — exactly
+as the registration anticipated, and TS-MOM's documented drawdown property is
+present in three of four cells. This retains a caveat; it promotes nothing
+and changes no verdict.
+
+## Interpretation — the registered fail/fail cell, both readings, neither chosen
+
+> **(a)** The effect is too weak at **ETF granularity** and **these costs** to
+> clear a Bonferroni-adjusted two-window bar.
+>
+> **(b)** **The ladder is insensitive** — the bars are set where a real,
+> documented anomaly cannot pass them.
+
+**This program does not adjudicate between them, and no later program may
+quietly assume either.** The null-contamination measurement above is evidence
+bearing on (b); it is not a decision between them, because (a) remains fully
+consistent with everything measured — the rules' raw edge over equal-weight
+is 1–3 pp/yr before the null is even considered, which is thin enough that
+(a) needs no help to be true.
+
+**What this does settle:** the instrument is **not** validated. The original
+question — "do the ~200 crypto zeros mean crypto has no edge, or that the
+ladder can't see one?" — is **not answered in the direction that would have
+made the crypto record stronger.** The ladder failed to certify the most
+replicated anomaly in the equities literature, on 26 years of data, in an
+asset class where the effect is descriptively visible in this very table.
+
+## Closure
+
+- **The program is closed.** This list was the whole program. Equity momentum
+  at this granularity is closed for this project.
+- **No additions.** Not a third lookback, not top-10, not a different skip,
+  not weekly rebalancing, not single stocks, not a looser placebo because
+  this one turned out to be contaminated. Any of those is a new registration
+  with a new number and its own correction.
+- **Nothing promoted.** There is no equities live path and none is proposed.
+  `docs/claims.md` is unchanged and still holds **zero supported edge
+  claims**.
+- **The crypto record stands as written**, with one addition: the
+  null-contamination finding is recorded against it, and any future citation
+  of the crypto zeros must carry it.
