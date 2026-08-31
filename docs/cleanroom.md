@@ -3580,3 +3580,104 @@ run, because a null is the thing nobody checks when the answer looks good.
 The honest summary of six months of architecture: the search was wide, the
 bars were set first, and nothing cleared them. That is a result, and it is
 the reason the bars were set first.
+
+---
+
+# Preliminary — NOT REGISTERED: funding quintiles vs forward returns
+
+Run 2026-08-31, `research/funding_look.py`.
+
+**This is a descriptive table and nothing else.** No placebo, no thresholds,
+no pass rule, no verdict, nothing promotable. It is recorded so that looking
+at the data is on the record, not so that anything can be built on it.
+
+**It does not reduce the Bonferroni burden of #172–#186.** That program's
+k is fixed by its registration and is untouched by anything below. Looking at
+data before a registered program runs does not buy down its correction — if
+anything it is the reason the correction exists.
+
+**It does not move #172–#186's trigger.** The trigger is on *measured span*
+(≥ 22 months for all three symbols, expected 2027-06-27) and this changes it
+by zero days. The program stays REGISTERED and DORMANT.
+
+## The lockbox halves the archive
+
+The Kraken archive spans **2025-08-27 → 2026-08-30 (12.1 months)**. The
+lockbox opens **2026-02-26**. Research rule 2 is absolute — "not for fitting,
+not for plotting, not for a sanity check, not just to look" — so this uses
+the **pre-lockbox half only: 2025-08-27 → 2026-02-25, 183 days**, about **36
+days per quintile per ticker**.
+
+Source: Kraken Futures hourly funding, daily mean, UTC days. Quintiles are
+computed **within each ticker**.
+
+## The table
+
+**BTC** — 183 days
+
+| quintile | n | funding lo | funding hi | fwd 1d | fwd 3d | fwd 7d |
+|---|---|---|---|---|---|---|
+| Q1 | 37 | −1.08164 | +0.19097 | +0.25% | −1.13% | −1.43% |
+| Q2 | 36 | +0.19906 | +0.50691 | −0.42% | +0.04% | −0.41% |
+| Q3 | 37 | +0.51039 | +0.82643 | −0.42% | −1.03% | −3.24% |
+| Q4 | 36 | +0.83382 | +1.08608 | −0.18% | −0.68% | −2.26% |
+| Q5 | 37 | +1.09073 | +2.13071 | −0.42% | −1.15% | −1.49% |
+| **Q5 − Q1** | | | | **−0.68%** | **−0.02%** | **−0.07%** |
+
+**ETH** — 183 days
+
+| quintile | n | funding lo | funding hi | fwd 1d | fwd 3d | fwd 7d |
+|---|---|---|---|---|---|---|
+| Q1 | 37 | −0.13225 | −0.00098 | +0.29% | −1.45% | −2.01% |
+| Q2 | 36 | −0.00096 | +0.00865 | −1.15% | −1.02% | −1.78% |
+| Q3 | 37 | +0.00914 | +0.01630 | −0.44% | −1.72% | −5.52% |
+| Q4 | 36 | +0.01634 | +0.02936 | −0.19% | −1.04% | −2.46% |
+| Q5 | 37 | +0.02941 | +0.07436 | −0.37% | −0.81% | −2.14% |
+| **Q5 − Q1** | | | | **−0.67%** | **+0.64%** | **−0.14%** |
+
+**SOL** — 183 days
+
+| quintile | n | funding lo | funding hi | fwd 1d | fwd 3d | fwd 7d |
+|---|---|---|---|---|---|---|
+| Q1 | 37 | −0.01824 | −0.00060 | −1.26% | −2.87% | −4.97% |
+| Q2 | 36 | −0.00059 | +0.00008 | −0.50% | −2.10% | −4.14% |
+| Q3 | 37 | +0.00009 | +0.00077 | +0.91% | +0.02% | −0.64% |
+| Q4 | 36 | +0.00077 | +0.00141 | −0.42% | −0.85% | −2.89% |
+| Q5 | 37 | +0.00143 | +0.00450 | −0.59% | −0.88% | −2.94% |
+| **Q5 − Q1** | | | | **+0.67%** | **+1.99%** | **+2.03%** |
+
+Median daily funding: BTC +0.672871, ETH +0.011639, SOL +0.000425.
+
+## Two things about the table that are not findings
+
+**The levels are not comparable across tickers.** Kraken's `funding_rate` is
+an absolute rate, not normalised, which is why BTC's median is +0.67 and
+SOL's is +0.0004. Quintiles are within-ticker ranks, so this does not affect
+any ordering — but the `funding lo/hi` columns must not be read across rows
+of different tables.
+
+**The quintile assignment is sensitive to which rate column is used, and
+that is a specification gap in #172–#186.** The file also carries
+`relative_funding_rate`. Rank correlation between the two is high (Spearman
+0.982–0.990) but **only 78.1% / 86.9% / 80.3% of days (BTC/ETH/SOL) land in
+the same quintile**. One fifth of the sample moves.
+
+`#172` is written as "the trailing 30-day percentile rank of daily-mean
+funding" and **does not say which column that is**. That is a genuine gap,
+found here before the program has run and before any result exists. It is
+recorded, not fixed: **#172–#186 is locked and this session does not amend
+it.** The trigger-date session must pin the column as its first act, and it
+must do so on documented grounds rather than by trying both.
+
+## What may be concluded
+
+Nothing. At ~36 observations per cell with no null distribution, no number
+above is distinguishable from noise by anything computed here, and no
+ordering in it may be called a finding — including SOL's monotone-looking
+Q5 − Q1 spread, which is the sort of pattern that appears readily in 36-day
+buckets and is exactly what the registered program's placebo exists to test.
+
+The direction of the whole table is also worth noting only as context: most
+cells are negative at every horizon for all three tickers, because the
+pre-lockbox half of this archive was a falling market. A quintile table over
+a downtrend measures the downtrend first.
