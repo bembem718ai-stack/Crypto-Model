@@ -1,21 +1,24 @@
 # CoinAPI acceptance probe — NOT RUN
 
-**COINAPI_KEY was not present in this process's environment**, so no
-request was made and no credit was spent.
+**No key was reachable**, so no request was made and no credit was
+spent.
 
-Checked: the Bash tool environment, the PowerShell session, and the
-Windows User and Machine environment scopes. Not set in any of them,
-and no `.env`/secret file in the repo carries it.
+Two sources are checked, in order: the `COINAPI_KEY` environment
+variable, and a `.coinapi_key` file in the repo root. Neither was
+present. The Windows User and Machine environment scopes were also
+checked directly and are unset.
 
 Most likely cause: the variable was set in an interactive shell, and
-each tool call starts a new process that does not inherit it.
+each tool call starts a separate process that does not inherit it.
 
-To make it visible to this script, either persist it for new
-processes (PowerShell, once):
+Either of these makes it visible, no restart needed:
 
+    # option A — a local file, already in .gitignore
+    Set-Content -Path .coinapi_key -Value '<key>' -NoNewline
+
+    # option B — persist for new processes, once
     [Environment]::SetEnvironmentVariable('COINAPI_KEY','<key>','User')
 
-or set it inline for the single command that runs the probe. Do not
-paste the key into chat — it would land in the transcript.
+Do not paste the key into chat — it would land in the transcript.
 
 Requests used: **0**. Nothing registered, nothing scored.

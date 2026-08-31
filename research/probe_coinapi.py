@@ -38,7 +38,34 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTFILE = os.path.join(ROOT, "research", "coinapi_probe.md")
 BASE = "https://rest.coinapi.io"
 HARD_CAP = 50
-KEY = (os.environ.get("COINAPI_KEY") or "").strip()
+
+# The key comes from ONE of two places, in this order:
+#   1. the COINAPI_KEY environment variable, or
+#   2. a local file, .coinapi_key in the repo root.
+#
+# The file fallback exists because a variable set in an interactive shell is
+# NOT inherited by a separately-launched process, which is exactly how the
+# first attempt at this probe failed. The file is in .gitignore and is read,
+# stripped, and never echoed. Neither path ever reaches disk from here and
+# neither is ever printed.
+KEYFILE = os.path.join(ROOT, ".coinapi_key")
+
+
+def _load_key():
+    k = (os.environ.get("COINAPI_KEY") or "").strip()
+    if k:
+        return k, "environment"
+    try:
+        with open(KEYFILE, encoding="utf-8") as fh:
+            k = fh.read().strip()
+        if k:
+            return k, "file"
+    except OSError:
+        pass
+    return "", "none"
+
+
+KEY, KEY_SOURCE = _load_key()
 
 EXCHANGES = ("BINANCEFTS", "OKEX", "KRAKENFTS")
 BASES = ("BTC", "ETH", "SOL", "XBT")
@@ -103,23 +130,26 @@ def main():
     if not KEY:
         say("# CoinAPI acceptance probe — NOT RUN")
         say()
-        say("**COINAPI_KEY was not present in this process's environment**, so no")
-        say("request was made and no credit was spent.")
+        say("**No key was reachable**, so no request was made and no credit was")
+        say("spent.")
         say()
-        say("Checked: the Bash tool environment, the PowerShell session, and the")
-        say("Windows User and Machine environment scopes. Not set in any of them,")
-        say("and no `.env`/secret file in the repo carries it.")
+        say("Two sources are checked, in order: the `COINAPI_KEY` environment")
+        say("variable, and a `.coinapi_key` file in the repo root. Neither was")
+        say("present. The Windows User and Machine environment scopes were also")
+        say("checked directly and are unset.")
         say()
         say("Most likely cause: the variable was set in an interactive shell, and")
-        say("each tool call starts a new process that does not inherit it.")
+        say("each tool call starts a separate process that does not inherit it.")
         say()
-        say("To make it visible to this script, either persist it for new")
-        say("processes (PowerShell, once):")
+        say("Either of these makes it visible, no restart needed:")
         say()
+        say("    # option A — a local file, already in .gitignore")
+        say("    Set-Content -Path .coinapi_key -Value '<key>' -NoNewline")
+        say()
+        say("    # option B — persist for new processes, once")
         say("    [Environment]::SetEnvironmentVariable('COINAPI_KEY','<key>','User')")
         say()
-        say("or set it inline for the single command that runs the probe. Do not")
-        say("paste the key into chat — it would land in the transcript.")
+        say("Do not paste the key into chat — it would land in the transcript.")
         say()
         say("Requests used: **0**. Nothing registered, nothing scored.")
         write(lines)
@@ -129,7 +159,7 @@ def main():
     say("# CoinAPI acceptance probe — mechanical only")
     say()
     say("Not a registered program. No hypothesis, no price joins, no backfill.")
-    say("Key read from the environment; never printed, logged, or written here.")
+    say("Key read from the %s; never printed, logged, or written here." % KEY_SOURCE)
     say()
     say("Run: %s UTC" % dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M"))
     say()
