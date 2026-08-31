@@ -184,10 +184,17 @@ window, cap, epsilon or placebo is a NEW registration with a new number
 **Still open:** SHADOW-EVAL accrues forward on both arms and may not be
 inspected before 30 pooled closed episodes. FUNDING (#172-#186) is
 registered and DORMANT until its data-depth trigger (~2027-06-27).
-NULL-CALIBRATION (#217-#219) is REGISTERED and not yet run -- a methods
-program that makes no edge claim, measures how much of each historical
-clause-2 bar was inherited effect, and registers a time-rotation null for
-every future program. It changes NO prior verdict.
+NULL-CALIBRATION (#217-#219) is RUN and closed. It changed no verdict. Two
+results bind on everything after it. (1) Crypto ROTATION's DISCOVERY
+clause-2 null held ~30% of its gross weight in assets that did not exist --
+axis 2 did not exist yet when ROTATION ran -- so that bar was far too EASY,
+and #187's DISCOVERY clause-2 pass may not be cited as evidence of anything.
+Where universes are complete, inheritance is UPWARD and tracks rho-bar
+(+0.5 to +3.0 pp/yr). (2) The time-rotation null removes correlation
+inheritance (-0.14 pp/yr on equities DISCOVERY vs the permutation null's
++2.48) but NOT persistence inheritance (+2.16 pp/yr on CONFIRMATION). It is
+available with that weakness attached; it is not a default and not a clean
+instrument. Crypto's 6.4-year windows are too short to carry it at all.
 
 **EQUITIES (#204-#216) is closed: all six FAIL, the fail/fail cell.** The
 ladder did NOT certify the most replicated anomaly in the equities

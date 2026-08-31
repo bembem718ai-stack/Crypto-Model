@@ -4537,3 +4537,190 @@ This list is the whole program: one measurement, one design, one calibration
 re-score. Its deliverables are a table, a null, three sentences, and a
 permanent amendment to the placebo methodology. **No edge claim is possible
 from any of it**, and `docs/claims.md` cannot change as a result.
+
+---
+
+# NULL-CALIBRATION RESULT — #217–#219, run 2026-08-31
+
+`research/run_null_calibration.py`, raw in `research/null_calibration.json`.
+
+**EVERY REGISTERED VERDICT IS UNCHANGED. #187 FAIL. #204 FAIL. #205 FAIL.**
+No edge claim is made or possible.
+
+**The headline is not the one this program was registered expecting.** The
+motivation assumed the bars were contaminated *upward* everywhere. On crypto
+they were contaminated **downward, massively** — the crypto clause-2 bar was
+far too **easy**, not too hard.
+
+## #217 — Inheritance measurement (descriptive, table only)
+
+Excesses in **percentage points per year**. `ρ̄` = mean off-diagonal
+daily-return correlation over assets present for the whole window.
+
+| program | # | rule | window | null centre | rand-N p50 | eq-wt | **exc rand** | **exc eq** | ρ̄ |
+|---|---|---|---|---|---|---|---|---|---|
+| ROTATION | #187 | top-5 30d | DISC | +0.5378 | +1.0390 | +1.1011 | **−50.12** | −56.33 | 0.751 |
+| ROTATION | #188 | top-10 30d | DISC | +0.5746 | — | +1.1011 | — | −52.65 | 0.751 |
+| ROTATION | #189 | top-5 90d | DISC | +0.5827 | +1.1586 | +1.1011 | **−57.59** | −51.84 | 0.751 |
+| ROTATION | #190 | top-10 90d | DISC | +0.5361 | — | +1.1011 | — | −56.50 | 0.751 |
+| ROTATION | #187 | top-5 30d | CONF | +0.2447 | +0.2331 | +0.2915 | **+1.16** | −4.68 | 0.606 |
+| ROTATION | #188 | top-10 30d | CONF | +0.2568 | — | +0.2915 | — | −3.46 | 0.606 |
+| ROTATION | #189 | top-5 90d | CONF | +0.2583 | +0.2283 | +0.2915 | **+2.99** | −3.32 | 0.606 |
+| ROTATION | #190 | top-10 90d | CONF | +0.2664 | — | +0.2915 | — | −2.51 | 0.606 |
+| EQUITIES | #204 | CS top-3 12-1 | DISC | +0.0864 | +0.0616 | +0.0709 | **+2.48** | +1.54 | 0.637 |
+| EQUITIES | #205 | CS top-5 12-1 | DISC | +0.0874 | +0.0622 | +0.0709 | **+2.51** | +1.64 | 0.637 |
+| EQUITIES | #206 | CS top-3 6-1 | DISC | +0.0806 | +0.0616 | +0.0709 | **+1.90** | +0.97 | 0.637 |
+| EQUITIES | #207 | CS top-5 6-1 | DISC | +0.0811 | +0.0622 | +0.0709 | **+1.88** | +1.01 | 0.637 |
+| EQUITIES | #204 | CS top-3 12-1 | CONF | +0.1009 | +0.0936 | +0.1036 | **+0.73** | −0.27 | 0.454 |
+| EQUITIES | #205 | CS top-5 12-1 | CONF | +0.1008 | +0.0940 | +0.1036 | **+0.68** | −0.28 | 0.454 |
+| EQUITIES | #206 | CS top-3 6-1 | CONF | +0.0989 | +0.0936 | +0.1036 | **+0.52** | −0.47 | 0.454 |
+| EQUITIES | #207 | CS top-5 6-1 | CONF | +0.1005 | +0.0940 | +0.1036 | **+0.65** | −0.31 | 0.454 |
+
+`#188`/`#190` have no matched random-N: the ROTATION registration refused to
+invent a random-10 after seeing results, and that refusal is honoured here
+rather than quietly reversed.
+
+### Mechanism — measured, not asserted
+
+Crypto DISCOVERY's −50 to −58 pp/yr is not correlation inheritance in
+reverse. It is the **universe-fidelity defect**, applied retroactively to a
+null that was never checked for it — axis 2 was introduced by ALLOCATION, one
+program *after* ROTATION ran.
+
+| window | # | real ineligible weight | **null ineligible weight** | assets alive all window |
+|---|---|---|---|---|
+| DISCOVERY | #187 | 0.000% | **31.97%** | **5 of 26** |
+| DISCOVERY | #188 | 0.000% | 30.71% | 5 |
+| DISCOVERY | #189 | 0.000% | 30.43% | 5 |
+| DISCOVERY | #190 | 0.000% | 29.82% | 5 |
+| CONFIRMATION | #187 | 0.000% | 3.40% | 24 of 26 |
+| CONFIRMATION | #189 | 0.000% | 3.09% | 24 |
+
+**Roughly a third of the crypto null's gross weight sat in assets that did
+not exist**, earning exactly zero through `fillna(0.0)`. That is what dragged
+its centre 50 pp/yr below random selection. Only **5 of 26** assets were alive
+for the whole of DISCOVERY.
+
+### What the table says
+
+1. **The crypto clause-2 bar on DISCOVERY was far too EASY.** Every ROTATION
+   rule was compared against a null crippled by holding one-third
+   non-existent assets. **#187's DISCOVERY clause-2 PASS — the single
+   clause-2 pass anywhere in the crypto record — was measured against that
+   null and means nothing.** The verdict was and remains FAIL, on
+   CONFIRMATION, which is unaffected.
+2. **Where universes are complete, inheritance is upward and tracks ρ̄.**
+   Equities DISCOVERY ρ̄ 0.637 → +1.9 to +2.5 pp; equities CONFIRMATION
+   ρ̄ 0.454 → +0.5 to +0.7 pp; crypto CONFIRMATION ρ̄ 0.606 → +1.2 to +3.0 pp.
+   The equities motivation generalises to crypto CONFIRMATION and is roughly
+   the same size there.
+3. **The two defects push opposite ways and can coexist in one program.**
+   ROTATION's DISCOVERY bar was too easy and its CONFIRMATION bar slightly too
+   hard. A single "the bars were contaminated upward" story would have been
+   wrong.
+
+## #218 — The time-rotation null, own fidelity, all four axes
+
+### Feasibility first — and the crypto legs are INFEASIBLE
+
+| window | T (months) | range [24, T−24] | |
+|---|---|---|---|
+| crypto ROTATION DISCOVERY | 42.4 | [24, 18.4] | **EMPTY — INFEASIBLE** |
+| crypto ROTATION CONFIRMATION | 34.7 | [24, 10.7] | **EMPTY — INFEASIBLE** |
+| equities DISCOVERY | 172.6 | [24, 148.6] | feasible |
+| equities CONFIRMATION | 141.3 | [24, 117.3] | feasible |
+
+**The crypto windows cannot carry this null.** The 24-month bound is locked
+and may not be relaxed to make a run happen (research rule 4), and rotating
+over the full crypto series to lengthen T would pull signal rows out of the
+**LOCKBOX**. Recorded as a fact about the data: *crypto's windows are too
+short to support a correlation-immune null of this design.*
+
+### Measured fidelity, equities, before any draw scored anything
+
+| window | # | 1 turnover | 2 universe | 3 cash-months | 4 **inheritance** |
+|---|---|---|---|---|---|
+| DISCOVERY | #204 | 1.02×, **+0.007 pp/yr** | 0.000% vs 0.000% | 2847 → 2847.0, **0.00%** PASS | **−0.14 pp/yr** |
+| DISCOVERY | #205 | 0.98×, −0.006 pp/yr | 0.000% vs 0.000% | 2501 → 2501.0, 0.00% PASS | **−0.12 pp/yr** |
+| CONFIRMATION | #204 | 1.01×, +0.005 pp/yr | 0.000% vs 0.000% | 2556 → 2556.0, 0.00% PASS | **+2.16 pp/yr** |
+| CONFIRMATION | #205 | 1.01×, +0.005 pp/yr | 0.000% vs 0.000% | 2272 → 2272.0, 0.00% PASS | **+2.40 pp/yr** |
+
+Offsets drawn 40–143 months (DISCOVERY) and 36–113 (CONFIRMATION).
+
+Axes 1–3 are excellent: turnover within 2% (drag ≤0.007 pp/yr), zero
+ineligible weight, and **cash-month counts preserved exactly** — 0.00%
+deviation, which is what a whole-block rotation should give and is now
+measured rather than assumed.
+
+### Axis 4 — the design's defining property holds on one window and not the other
+
+**This is the finding of #218 and it is a partial refutation of its own
+registration.** The null was registered as *immune to correlation
+inheritance*. On DISCOVERY it is: inheritance **−0.14 / −0.12 pp/yr**,
+essentially zero, against the rank-permutation null's **+2.48 / +2.51** on the
+same data. The design works exactly as claimed.
+
+On CONFIRMATION it does not: **+2.16 / +2.40 pp/yr**, no better than the
+rank-permutation null it was built to replace (+0.73 / +0.68 — in fact
+*worse*).
+
+The mechanism is not cross-asset correlation, which rotation does neutralise.
+It is **regime persistence**: over 2014–2026 the same few ETFs led throughout,
+so a top-momentum portfolio formed at *any* date overlaps heavily with one
+formed at another. Rotation moves the formation date and lands on much the
+same holdings. This is the second weakness the registration named — shared
+structure surviving the shift — arriving as persistence rather than
+seasonality.
+
+**So the corrected null is not a clean instrument either.** It removes
+correlation inheritance and remains exposed to persistence inheritance. That
+is recorded here, before it is used by anything, so no future program adopts
+it believing it is neutral.
+
+## #219 — Calibration re-score. NO VERDICT CHANGES.
+
+> **#187** — *Under the corrected null, clause 2 would have read:*
+> **INFEASIBLE — the locked [24, T−24] offset range is empty on both ROTATION
+> windows (42.4 and 34.7 months).**
+> *(Registered read: DISCOVERY +1.3993 vs p_adj +1.1365 → PASS; CONFIRMATION
+> +0.5270 vs p_adj +0.6185 → FAIL.)*
+
+> **#204** — *Under the corrected null, clause 2 would have read:*
+> **DISC +0.0723 vs p_adj +0.1308 → FAIL; CONF +0.1267 vs p_adj +0.1614 →
+> FAIL.**
+> *(Registered read: DISC +0.0726 vs p_adj +0.1273 → FAIL; CONF +0.1264 vs
+> p_adj +0.1484 → FAIL.)*
+
+> **#205** — *Under the corrected null, clause 2 would have read:*
+> **DISC +0.0818 vs p_adj +0.1082 → FAIL; CONF +0.1239 vs p_adj +0.1493 →
+> FAIL.**
+> *(Registered read: DISC +0.0821 vs p_adj +0.1147 → FAIL; CONF +0.1234 vs
+> p_adj +0.1350 → FAIL.)*
+
+**The corrected null is mostly a HARDER bar, not a friendlier one** — p_adj
+rises in three of the four measurable cells (+0.1273→+0.1308,
++0.1484→+0.1614, +0.1350→+0.1493) and falls in one (+0.1147→+0.1082). Nothing
+here was a route to an easier test, and nothing changes: every FAIL stands as
+registered.
+
+## Consequences
+
+- **No verdict moves.** #187 FAIL, #204 FAIL, #205 FAIL, and every other
+  registered verdict in this project stands exactly as written.
+- **`docs/claims.md` is unchanged** and still holds zero supported edge
+  claims.
+- **Binding on every future program.** SHADOW-EVAL, FUNDING at its trigger,
+  and anything registered from now on must specify its clause-2 null with the
+  four-axis check, must report inheritance in pp/yr beside ρ̄, and must state
+  which null it uses and why. The time-rotation null is available **with its
+  measured persistence weakness attached** — it is not a default and not a
+  clean instrument.
+- **One correction to the crypto record, recorded not revised:** ROTATION's
+  DISCOVERY clause-2 comparisons were made against a null holding ~30% dead
+  weight. That does not change ROTATION's FAIL verdicts, which rest on
+  CONFIRMATION, but **#187's DISCOVERY clause-2 pass may not be cited as
+  evidence of anything**, and the close-out's description of it as "the
+  closest this project has come" should be read with that attached.
+- **A design fact worth keeping:** crypto's 6.4-year windows are too short to
+  carry a rotation-based null at all. Any future crypto program wanting one
+  needs a longer history than this project has.

@@ -1,0 +1,364 @@
+{
+  "217": [
+    {
+      "program": "ROTATION",
+      "rule": "#187",
+      "label": "top-5 by 30d",
+      "window": "DISCOVERY",
+      "null_centre": 0.5377971791278744,
+      "random_n": 1.0390069394914532,
+      "equal_weight": 1.1011315204467584,
+      "excess_random": -0.5012097603635788,
+      "excess_eq": -0.563334341318884,
+      "rho_bar": 0.7505832875594555,
+      "n_assets": 5,
+      "matched_n": 5
+    },
+    {
+      "program": "ROTATION",
+      "rule": "#188",
+      "label": "top-10 by 30d",
+      "window": "DISCOVERY",
+      "null_centre": 0.5746351760501518,
+      "random_n": NaN,
+      "equal_weight": 1.1011315204467584,
+      "excess_random": NaN,
+      "excess_eq": -0.5264963443966066,
+      "rho_bar": 0.7505832875594555,
+      "n_assets": 5,
+      "matched_n": 10
+    },
+    {
+      "program": "ROTATION",
+      "rule": "#189",
+      "label": "top-5 by 90d",
+      "window": "DISCOVERY",
+      "null_centre": 0.5826965552647649,
+      "random_n": 1.1585908997881034,
+      "equal_weight": 1.1011315204467584,
+      "excess_random": -0.5758943445233384,
+      "excess_eq": -0.5184349651819935,
+      "rho_bar": 0.7505832875594555,
+      "n_assets": 5,
+      "matched_n": 5
+    },
+    {
+      "program": "ROTATION",
+      "rule": "#190",
+      "label": "top-10 by 90d",
+      "window": "DISCOVERY",
+      "null_centre": 0.5361243052868738,
+      "random_n": NaN,
+      "equal_weight": 1.1011315204467584,
+      "excess_random": NaN,
+      "excess_eq": -0.5650072151598846,
+      "rho_bar": 0.7505832875594555,
+      "n_assets": 5,
+      "matched_n": 10
+    },
+    {
+      "program": "ROTATION",
+      "rule": "#187",
+      "label": "top-5 by 30d",
+      "window": "CONFIRMATION",
+      "null_centre": 0.24470084721427954,
+      "random_n": 0.23306210565581337,
+      "equal_weight": 0.29145783648283813,
+      "excess_random": 0.01163874155846617,
+      "excess_eq": -0.04675698926855859,
+      "rho_bar": 0.6058971098312601,
+      "n_assets": 24,
+      "matched_n": 5
+    },
+    {
+      "program": "ROTATION",
+      "rule": "#188",
+      "label": "top-10 by 30d",
+      "window": "CONFIRMATION",
+      "null_centre": 0.25681355454400834,
+      "random_n": NaN,
+      "equal_weight": 0.29145783648283813,
+      "excess_random": NaN,
+      "excess_eq": -0.03464428193882979,
+      "rho_bar": 0.6058971098312601,
+      "n_assets": 24,
+      "matched_n": 10
+    },
+    {
+      "program": "ROTATION",
+      "rule": "#189",
+      "label": "top-5 by 90d",
+      "window": "CONFIRMATION",
+      "null_centre": 0.2582556977390067,
+      "random_n": 0.22831457866330274,
+      "equal_weight": 0.29145783648283813,
+      "excess_random": 0.02994111907570396,
+      "excess_eq": -0.03320213874383143,
+      "rho_bar": 0.6058971098312601,
+      "n_assets": 24,
+      "matched_n": 5
+    },
+    {
+      "program": "ROTATION",
+      "rule": "#190",
+      "label": "top-10 by 90d",
+      "window": "CONFIRMATION",
+      "null_centre": 0.26637621589774585,
+      "random_n": NaN,
+      "equal_weight": 0.29145783648283813,
+      "excess_random": NaN,
+      "excess_eq": -0.02508162058509228,
+      "rho_bar": 0.6058971098312601,
+      "n_assets": 24,
+      "matched_n": 10
+    },
+    {
+      "program": "EQUITIES",
+      "rule": "#204",
+      "label": "CS top-3 12-1",
+      "window": "DISCOVERY",
+      "null_centre": 0.08637426191678416,
+      "random_n": 0.061608557144021865,
+      "equal_weight": 0.07093842735098746,
+      "excess_random": 0.02476570477276229,
+      "excess_eq": 0.015435834565796697,
+      "rho_bar": 0.6374685804597633,
+      "n_assets": 14,
+      "matched_n": 3
+    },
+    {
+      "program": "EQUITIES",
+      "rule": "#205",
+      "label": "CS top-5 12-1",
+      "window": "DISCOVERY",
+      "null_centre": 0.08737218756252044,
+      "random_n": 0.06223336495613826,
+      "equal_weight": 0.07093842735098746,
+      "excess_random": 0.02513882260638218,
+      "excess_eq": 0.016433760211532977,
+      "rho_bar": 0.6374685804597633,
+      "n_assets": 14,
+      "matched_n": 5
+    },
+    {
+      "program": "EQUITIES",
+      "rule": "#206",
+      "label": "CS top-3 6-1",
+      "window": "DISCOVERY",
+      "null_centre": 0.08059664712892221,
+      "random_n": 0.061608557144021865,
+      "equal_weight": 0.07093842735098746,
+      "excess_random": 0.01898808998490035,
+      "excess_eq": 0.009658219777934754,
+      "rho_bar": 0.6374685804597633,
+      "n_assets": 14,
+      "matched_n": 3
+    },
+    {
+      "program": "EQUITIES",
+      "rule": "#207",
+      "label": "CS top-5 6-1",
+      "window": "DISCOVERY",
+      "null_centre": 0.08107879198240436,
+      "random_n": 0.06223336495613826,
+      "equal_weight": 0.07093842735098746,
+      "excess_random": 0.018845427026266105,
+      "excess_eq": 0.010140364631416904,
+      "rho_bar": 0.6374685804597633,
+      "n_assets": 14,
+      "matched_n": 5
+    },
+    {
+      "program": "EQUITIES",
+      "rule": "#204",
+      "label": "CS top-3 12-1",
+      "window": "CONFIRMATION",
+      "null_centre": 0.10090017837760452,
+      "random_n": 0.09363575968875254,
+      "equal_weight": 0.10356611135768944,
+      "excess_random": 0.007264418688851984,
+      "excess_eq": -0.002665932980084912,
+      "rho_bar": 0.4539232154081093,
+      "n_assets": 21,
+      "matched_n": 3
+    },
+    {
+      "program": "EQUITIES",
+      "rule": "#205",
+      "label": "CS top-5 12-1",
+      "window": "CONFIRMATION",
+      "null_centre": 0.10077378222010273,
+      "random_n": 0.09395403674432334,
+      "equal_weight": 0.10356611135768944,
+      "excess_random": 0.00681974547577939,
+      "excess_eq": -0.002792329137586702,
+      "rho_bar": 0.4539232154081093,
+      "n_assets": 21,
+      "matched_n": 5
+    },
+    {
+      "program": "EQUITIES",
+      "rule": "#206",
+      "label": "CS top-3 6-1",
+      "window": "CONFIRMATION",
+      "null_centre": 0.0988501872279485,
+      "random_n": 0.09363575968875254,
+      "equal_weight": 0.10356611135768944,
+      "excess_random": 0.005214427539195959,
+      "excess_eq": -0.0047159241297409366,
+      "rho_bar": 0.4539232154081093,
+      "n_assets": 21,
+      "matched_n": 3
+    },
+    {
+      "program": "EQUITIES",
+      "rule": "#207",
+      "label": "CS top-5 6-1",
+      "window": "CONFIRMATION",
+      "null_centre": 0.10047636708962113,
+      "random_n": 0.09395403674432334,
+      "equal_weight": 0.10356611135768944,
+      "excess_random": 0.006522330345297783,
+      "excess_eq": -0.003089744268068309,
+      "rho_bar": 0.4539232154081093,
+      "n_assets": 21,
+      "matched_n": 5
+    }
+  ],
+  "218": {
+    "feasibility": {
+      "crypto ROTATION DISCOVERY": false,
+      "crypto ROTATION CONFIRMATION": false,
+      "equities DISCOVERY": true,
+      "equities CONFIRMATION": true
+    },
+    "fidelity": {
+      "DISCOVERY": {
+        "#204": {
+          "bounds_months": [
+            24,
+            149
+          ],
+          "offsets_used": [
+            40,
+            143
+          ],
+          "real_turn": 0.03050253845469262,
+          "plc_turn": 0.03107206183691371,
+          "ratio": 1.018671343798715,
+          "drag_pp": 0.00717599461598574,
+          "real_inelig": 0.0,
+          "plc_inelig": 0.0,
+          "real_cash": 2847,
+          "plc_cash": 2847.0,
+          "cash_dev": 0.0,
+          "cash_ok": true,
+          "centre": 0.06021793230209936,
+          "random_p50": 0.061608557144021865,
+          "inheritance": -0.001390624841922504,
+          "p95": 0.12016296271769486,
+          "p_adj": 0.1310789230293549,
+          "real_ann": 0.07255934196512986,
+          "pctile": 65.25
+        },
+        "#205": {
+          "bounds_months": [
+            24,
+            149
+          ],
+          "offsets_used": [
+            40,
+            143
+          ],
+          "real_turn": 0.028103851610770867,
+          "plc_turn": 0.02760615815505886,
+          "ratio": 0.9822909164692122,
+          "drag_pp": -0.006270937541971285,
+          "real_inelig": 0.0,
+          "plc_inelig": 0.0,
+          "real_cash": 2501,
+          "plc_cash": 2501.0,
+          "cash_dev": 0.0,
+          "cash_ok": true,
+          "centre": 0.06127214083846855,
+          "random_p50": 0.06223336495613826,
+          "inheritance": -0.0009612241176697109,
+          "p95": 0.10381036241230282,
+          "p_adj": 0.10843327387012096,
+          "real_ann": 0.08213421893115505,
+          "pctile": 72.0
+        }
+      },
+      "CONFIRMATION": {
+        "#204": {
+          "bounds_months": [
+            24,
+            118
+          ],
+          "offsets_used": [
+            36,
+            113
+          ],
+          "real_turn": 0.03347144919144632,
+          "plc_turn": 0.03385472999893414,
+          "ratio": 1.0114509773776323,
+          "drag_pp": 0.004829338174346524,
+          "real_inelig": 0.0,
+          "plc_inelig": 0.0,
+          "real_cash": 2556,
+          "plc_cash": 2556.0,
+          "cash_dev": 0.0,
+          "cash_ok": true,
+          "centre": 0.1147892204567645,
+          "random_p50": 0.09363575968875254,
+          "inheritance": 0.02115346076801196,
+          "p95": 0.14558981197144408,
+          "p_adj": 0.16117895666537307,
+          "real_ann": 0.12635556927948252,
+          "pctile": 69.08333333333333
+        },
+        "#205": {
+          "bounds_months": [
+            24,
+            118
+          ],
+          "offsets_used": [
+            36,
+            113
+          ],
+          "real_turn": 0.027758633443306032,
+          "plc_turn": 0.028157473428250562,
+          "ratio": 1.0143681419245338,
+          "drag_pp": 0.005025383810301081,
+          "real_inelig": 0.0,
+          "plc_inelig": 0.0,
+          "real_cash": 2272,
+          "plc_cash": 2272.0,
+          "cash_dev": 0.0,
+          "cash_ok": true,
+          "centre": 0.11774178668786651,
+          "random_p50": 0.09395403674432334,
+          "inheritance": 0.02378774994354317,
+          "p95": 0.142772468002906,
+          "p_adj": 0.14931156770119952,
+          "real_ann": 0.12344575995000044,
+          "pctile": 68.91666666666667
+        }
+      }
+    }
+  },
+  "219": {
+    "#187": {
+      "original": "registered null: DISCOVERY +1.3993 vs p_adj +1.1365 -> PASS; CONFIRMATION +0.5270 vs p_adj +0.6185 -> FAIL",
+      "corrected": "INFEASIBLE \u2014 the locked [24, T-24] offset range is empty on both ROTATION windows (42.4 and 34.7 months)."
+    },
+    "#204": {
+      "original": "registered null: DISC +0.0726 vs p_adj +0.1273 -> FAIL; CONF +0.1264 vs p_adj +0.1484 -> FAIL",
+      "corrected": "DISC +0.0726 vs p_adj +0.1311 -> FAIL; CONF +0.1264 vs p_adj +0.1612 -> FAIL"
+    },
+    "#205": {
+      "original": "registered null: DISC +0.0821 vs p_adj +0.1147 -> FAIL; CONF +0.1234 vs p_adj +0.1350 -> FAIL",
+      "corrected": "DISC +0.0821 vs p_adj +0.1084 -> FAIL; CONF +0.1234 vs p_adj +0.1493 -> FAIL"
+    }
+  }
+}
