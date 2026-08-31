@@ -9,7 +9,7 @@ Repo is PUBLIC: `bembem718ai-stack/Crypto-Model`.
 $py = "C:\Users\gubby\AppData\Local\Programs\Python\Python312\python.exe"
 $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 
-& $py -m pytest test_signals.py -q        # 462 passed + 1 skipped, must stay green
+& $py -m pytest test_signals.py -q        # 473 passed + 1 skipped, must stay green
 & $py audit.py --offline                  # structural health, seconds, no network
 & $py audit.py BTC ETH SOL --years 4      # full audit, 10-40 min
 & $py pipeline.py run BTC                 # live signal — COSTS 1 ADANOS REQUEST
@@ -31,7 +31,7 @@ Four core files plus the audit, and two directories that support research:
   classification, backtests, position sizing, robustness validation.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 462 tests covering all decision logic.
+- `test_signals.py` — 473 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
 - `data/` — the frozen offline dataset: ~5y of Binance.US 4h bars plus the
   incumbent's daily frame per ticker (BTC/ETH/SOL), with `MANIFEST.json`
@@ -45,6 +45,12 @@ Four core files plus the audit, and two directories that support research:
   missed run self-heals and existing rows win on a collision. DATA ONLY: no
   hypothesis, and it supports none until ~1 year of depth accumulates. See
   the derivatives provenance note in `docs/cleanroom.md`.
+- `shadow_log.csv` / `shadow_outcomes.csv` — the SHADOW basket: the
+  incumbent scored hourly across the #167 tradable-26, logged and NEVER
+  published. Separate file, no alerts, no charts, zero Adanos (ungated —
+  the gate is dampen-only, so shadow BUY days are a strict SUPERSET of
+  gated ones). Written by `shadow_basket.py`; evaluation is pre-registered
+  as SHADOW-EVAL and may not be looked at before 30 pooled episodes.
 - `research/` — all research and experiment code. Nothing here is imported
   by the live path. See "Research rules".
 

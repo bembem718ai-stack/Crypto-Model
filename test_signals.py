@@ -3929,3 +3929,145 @@ class TestCollectorStaleness:
 
     def test_threshold_is_three_days(self):
         assert self._audit().DERIVS_STALE_DAYS == 3
+
+
+# ======================================================================
+# SHADOW BASKET LOGGER
+# ======================================================================
+# Scored, logged, NEVER published. The four properties that make it safe
+# are asserted here rather than trusted: separate file, zero Adanos, daily
+# indicator caching, and the superset relationship that makes ungated
+# scoring sound.
+class TestShadowBasket:
+
+    def _sb(self):
+        import importlib
+        return importlib.import_module("shadow_basket")
+
+    def test_universe_is_the_tradable_26(self):
+        u = self._sb().universe()
+        assert len(u) == 26, f"expected the #167 tradable-26, got {len(u)}"
+        for t in ("BTC", "ETH", "SOL"):
+            assert t in u
+
+    def _code_strings(self):
+        """Every string LITERAL in the module, docstrings excluded.
+
+        Grepping the source text catches prose -- the docstring says the
+        module never touches signal_log.csv, and a text search cannot tell
+        that apart from actually touching it. The AST can.
+        """
+        import ast
+        tree = ast.parse(open("shadow_basket.py", encoding="utf-8").read())
+        docs = {id(ast.get_docstring(n, clean=False)) for n in ast.walk(tree)
+                if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef))}
+        out = []
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Constant) and isinstance(n.value, str):
+                if id(n.value) not in docs:
+                    out.append(n.value)
+        return out
+
+    def _code_names(self):
+        import ast
+        tree = ast.parse(open("shadow_basket.py", encoding="utf-8").read())
+        return {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)} |                {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+
+    def test_writes_a_separate_log_never_signal_log(self):
+        sb = self._sb()
+        assert sb.SHADOW_LOG == "shadow_log.csv"
+        assert sb.SHADOW_LOG != lt.DEFAULT_LOG
+        assert "signal_log.csv" not in self._code_strings(), (
+            "shadow code must never name the live log")
+
+    def test_spends_zero_adanos(self):
+        # Checked on the AST, not the text: the docstring legitimately says
+        # "ZERO ADANOS", and a grep cannot tell prose from a call.
+        names = self._code_names()
+        for forbidden in ("cached_sentiment_check", "apply_reddit_step",
+                          "first_pass_sentiment_check_adanos",
+                          "fetch_token_sentiment", "sentiment_gate"):
+            assert forbidden not in names, f"shadow path calls {forbidden}"
+        for lit in self._code_strings():
+            assert "ADANOS_API_KEY" not in lit
+
+    def test_never_publishes(self):
+        names = self._code_names()
+        for forbidden in ("fire_alert", "generate_html_chart",
+                          "append_ping_to_log", "passes_confluence"):
+            assert forbidden not in names, f"shadow path calls {forbidden}"
+
+    def test_daily_indicators_cached_once_per_day(self, monkeypatch):
+        sb = self._sb()
+        sb._IND_CACHE.clear()
+        calls = []
+
+        def fake(ticker, step2_result, period="2y", use_ml=False):
+            calls.append(ticker)
+            return {"step": 3, "indicator_final_score": 60.0, "vix_level": 18.0}
+
+        monkeypatch.setattr(sb.pl, "apply_indicator_step", fake)
+        now = datetime(2026, 9, 1, 5, 0, tzinfo=timezone.utc)
+        for hour in (5, 6, 7):
+            sb.daily_indicators("BTC", now=now.replace(hour=hour))
+        assert calls == ["BTC"], f"expected 1 pull for the day, got {len(calls)}"
+
+    def test_cache_refreshes_on_a_new_utc_day(self, monkeypatch):
+        sb = self._sb()
+        sb._IND_CACHE.clear()
+        calls = []
+
+        def fake(ticker, step2_result, period="2y", use_ml=False):
+            calls.append(ticker)
+            return {"step": 3, "indicator_final_score": 60.0, "vix_level": 18.0}
+
+        monkeypatch.setattr(sb.pl, "apply_indicator_step", fake)
+        sb.daily_indicators("BTC", now=datetime(2026, 9, 1, 23, tzinfo=timezone.utc))
+        sb.daily_indicators("BTC", now=datetime(2026, 9, 2, 0, tzinfo=timezone.utc))
+        assert len(calls) == 2
+
+    def test_second_indicator_call_reports_cache_hit(self, monkeypatch):
+        sb = self._sb()
+        sb._IND_CACHE.clear()
+        monkeypatch.setattr(sb.pl, "apply_indicator_step",
+                            lambda *a, **k: {"step": 3, "indicator_final_score": 1.0,
+                                             "vix_level": 18.0})
+        now = datetime(2026, 9, 1, 5, tzinfo=timezone.utc)
+        assert sb.daily_indicators("BTC", now=now)[1] is False
+        assert sb.daily_indicators("BTC", now=now)[1] is True
+
+    def test_ungated_score_is_a_superset_of_gated(self):
+        # THE property that makes ungated shadow scoring sound: the gate is
+        # dampen-only, so ungated >= gated, so shadow BUY days are a
+        # superset of gated BUY days and nothing is silently lost.
+        step3 = {"indicator_final_score": 70.0, "vix_level": 18.0}
+        for initial in (20.0, 45.0, 61.0, 88.0):
+            ungated = um.combine_and_decide({"gated_score": initial}, step3)
+            for mult in (0.5, 0.6, 0.8, 1.0):        # the gate's whole range
+                gated = um.combine_and_decide({"gated_score": initial * mult}, step3)
+                assert ungated["final_score"] >= gated["final_score"] - 1e-9
+
+    def test_one_bad_ticker_does_not_stop_the_rest(self, monkeypatch, tmp_path):
+        sb = self._sb()
+        sb._IND_CACHE.clear()
+
+        def flaky(ticker, now=None):
+            if ticker == "BOOM":
+                raise RuntimeError("kaboom")
+            return {c: None for c in sb.SHADOW_COLUMNS} | {"ticker": ticker}
+
+        monkeypatch.setattr(sb, "score_shadow", flaky)
+        rows = sb.run_shadow(["AAA", "BOOM", "BBB"],
+                             log_path=str(tmp_path / "s.csv"))
+        assert [r["ticker"] for r in rows] == ["AAA", "BBB"]
+
+    def test_log_schema_is_stable(self, monkeypatch, tmp_path):
+        sb = self._sb()
+        p = str(tmp_path / "s.csv")
+        sb.append_shadow_rows([{c: None for c in sb.SHADOW_COLUMNS}], p)
+        assert list(pd.read_csv(p).columns) == sb.SHADOW_COLUMNS
+
+    def test_outcome_resolution_reuses_the_live_rules(self):
+        # Shadow episodes must be scored by exactly the rules live ones are,
+        # or the two records are not comparable.
+        assert "resolve_outcomes" in self._code_names()

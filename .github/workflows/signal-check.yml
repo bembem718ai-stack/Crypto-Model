@@ -89,6 +89,18 @@ jobs:
           ADANOS_API_KEY: ${{ secrets.ADANOS_API_KEY }}
         run: python live_tools.py check BTC --log-all --confirm-days 2 --long-only
 
+      # SHADOW BASKET. Scored and logged, never published: separate file,
+      # no alerts, no charts, and ZERO Adanos (ungated -- see the superset
+      # property in shadow_basket.py). Runs AFTER the live check so it can
+      # never delay or affect it, and `continue-on-error` guarantees a
+      # shadow failure cannot fail a run whose live work already succeeded.
+      - name: Shadow basket (26 tickers, never published)
+        if: steps.guard.outputs.should_run == 'true'
+        continue-on-error: true
+        run: |
+          python shadow_basket.py run
+          python shadow_basket.py outcomes || echo "shadow outcomes non-fatal"
+
       - name: Build hosted charts (docs/ folder, served by GitHub Pages)
         if: steps.guard.outputs.should_run == 'true'
         run: |
@@ -139,7 +151,7 @@ jobs:
           # and killed this whole step, discarding a completed run (signal
           # check, charts and outcomes had all succeeded). Missing optional
           # artifacts must never fail the commit.
-          for f in signal_log.csv sentiment_cache.json signal_outcomes.csv docs; do
+          for f in signal_log.csv sentiment_cache.json signal_outcomes.csv shadow_log.csv shadow_outcomes.csv docs; do
             if [ -e "$f" ]; then
               git add "$f"
             else
