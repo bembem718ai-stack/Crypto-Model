@@ -4355,3 +4355,183 @@ class TestShadowExitLevelsAreReal:
         sq = lt.extract_episodes(sb.project_arm(df, "squeeze"))
         assert len(sq) == 1
         assert sq[0]["entry_direction"] == "STRONG_BUY"
+
+
+# ======================================================================
+# RANK-PERMUTATION PLACEBO — must preserve the turnover it claims to
+# ======================================================================
+# The placebo's entire job is to destroy ONE thing (which asset was picked)
+# and preserve everything else. The first version re-permuted every ROW, so
+# a weekly-rebalanced portfolio holding 5 names for 7 days became 5 DIFFERENT
+# random names each day: turnover 1.566 vs the real rule's 0.116 on
+# #187/CONFIRMATION, 13x the costs, and a null dragged to -0.38/yr by
+# fabricated trading. A null crippled by costs the real rule never pays is a
+# false-positive generator, so this is tested, not assumed.
+class TestRankPermutationPreservesTurnover:
+
+    def _ph(self):
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        return importlib.import_module("portfolio_harness")
+
+    def _weekly_weights(self, n_days=70, n_assets=10, n_hold=3):
+        """A weekly-rebalanced equal-weight path: same names for 7 days."""
+        idx = pd.date_range("2024-01-01", periods=n_days, freq="D")
+        cols = [f"A{i}" for i in range(n_assets)]
+        W = pd.DataFrame(0.0, index=idx, columns=cols)
+        rng = np.random.default_rng(0)
+        cur = None
+        for d in idx:
+            if d.weekday() == 0 or cur is None:
+                cur = np.zeros(n_assets)
+                cur[rng.choice(n_assets, n_hold, replace=False)] = 1.0 / n_hold
+            W.loc[d] = cur
+        return W
+
+    def test_weights_are_held_between_rebalances(self):
+        ph = self._ph()
+        W = self._weekly_weights()
+        out = ph.rank_permutation_placebo(W, seed=1)
+        # Within a Monday-to-Sunday block the permuted rows must be identical.
+        block = out.loc["2024-01-08":"2024-01-14"]
+        assert block.nunique().sum() == len(block.columns), (
+            "placebo changed its holdings inside a rebalance period")
+
+    def test_row_sums_and_position_counts_are_preserved(self):
+        ph = self._ph()
+        W = self._weekly_weights()
+        out = ph.rank_permutation_placebo(W, seed=2)
+        assert np.allclose(out.sum(axis=1).to_numpy(), W.sum(axis=1).to_numpy())
+        assert ((out > 0).sum(axis=1).to_numpy() ==
+                (W > 0).sum(axis=1).to_numpy()).all()
+
+    def test_turnover_matches_the_real_path(self):
+        ph = self._ph()
+        W = self._weekly_weights()
+        rng = np.random.default_rng(7)
+        px = pd.DataFrame(
+            100 * np.cumprod(1 + rng.normal(0, 0.02, size=W.shape), axis=0),
+            index=W.index, columns=W.columns)
+        real = ph.portfolio_returns(W, px)["turnover"].mean()
+        for seed in range(5):
+            wp = ph.rank_permutation_placebo(W, seed=seed)
+            got = ph.portfolio_returns(wp, px)["turnover"].mean()
+            assert got == pytest.approx(real, rel=0.35), (
+                f"placebo turnover {got:.4f} vs real {real:.4f} — the null "
+                f"is paying costs the strategy never pays")
+
+    def test_a_daily_strategy_still_gets_a_fresh_permutation_each_row(self):
+        # Cadence-agnostic: a genuinely daily rule changes target every row.
+        ph = self._ph()
+        idx = pd.date_range("2024-01-01", periods=40, freq="D")
+        cols = [f"A{i}" for i in range(8)]
+        rng = np.random.default_rng(3)
+        W = pd.DataFrame(0.0, index=idx, columns=cols)
+        for i, d in enumerate(idx):
+            row = np.zeros(8)
+            row[rng.choice(8, 2, replace=False)] = 0.5
+            W.loc[d] = row
+        out = ph.rank_permutation_placebo(W, seed=4)
+        held = {tuple(np.flatnonzero(r)) for r in out.to_numpy()}
+        assert len(held) > 5, "daily strategy was frozen into one permutation"
+
+    def test_selection_is_actually_destroyed(self):
+        # The one thing it MUST break: which asset carries the weight.
+        ph = self._ph()
+        W = self._weekly_weights()
+        out = ph.rank_permutation_placebo(W, seed=11)
+        assert not out.equals(W)
+
+    def test_cash_rows_stay_cash(self):
+        ph = self._ph()
+        W = self._weekly_weights()
+        W.iloc[10:20] = 0.0
+        out = ph.rank_permutation_placebo(W, seed=5)
+        assert (out.iloc[10:20].to_numpy() == 0).all()
+
+
+# ======================================================================
+# FIXED RANK-PERMUTATION — the primary null for a selection claim
+# ======================================================================
+# Differs from the strategy in exactly ONE respect: which asset each weight
+# lands on. Same path, relabelled universe, so the turnover profile is
+# preserved EXACTLY rather than approximately.
+class TestFixedRankPermutation:
+
+    def _ph(self):
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        return importlib.import_module("portfolio_harness")
+
+    def _weekly(self, n_days=84, n_assets=12, n_hold=4):
+        idx = pd.date_range("2024-01-01", periods=n_days, freq="D")
+        cols = [f"A{i}" for i in range(n_assets)]
+        W = pd.DataFrame(0.0, index=idx, columns=cols)
+        rng = np.random.default_rng(0)
+        cur = None
+        for d in idx:
+            if d.weekday() == 0 or cur is None:
+                cur = np.zeros(n_assets)
+                cur[rng.choice(n_assets, n_hold, replace=False)] = 1.0 / n_hold
+            W.loc[d] = cur
+        return W
+
+    def test_row_sums_and_counts_preserved(self):
+        ph = self._ph()
+        W = self._weekly()
+        out = ph.rank_permutation_fixed_placebo(W, seed=1)
+        assert np.allclose(out.sum(axis=1).to_numpy(), W.sum(axis=1).to_numpy())
+        assert ((out > 0).sum(axis=1).to_numpy() ==
+                (W > 0).sum(axis=1).to_numpy()).all()
+
+    def test_the_permutation_is_the_same_every_row(self):
+        # The defining property: ONE relabelling for the whole window. Stated
+        # column-wise, which is what "fixed" actually means -- every output
+        # column must equal some input column over ALL rows at once. (A
+        # row-by-row check cannot express this: flatnonzero returns sorted
+        # positions, so pairing them positionally does not recover the map.)
+        ph = self._ph()
+        W = self._weekly()
+        out = ph.rank_permutation_fixed_placebo(W, seed=2)
+        A, B = W.to_numpy(), out.to_numpy()
+        perm = []
+        for j in range(B.shape[1]):
+            hits = [i for i in range(A.shape[1]) if np.array_equal(B[:, j], A[:, i])]
+            assert hits, f"output column {j} matches no input column"
+            perm.append(hits[0])
+        assert np.array_equal(B, A[:, perm]), "not a single fixed relabelling"
+
+    def test_turnover_is_preserved_closely(self):
+        # Same path, relabelled -- turnover differs only through price drift.
+        ph = self._ph()
+        W = self._weekly()
+        rng = np.random.default_rng(9)
+        px = pd.DataFrame(
+            100 * np.cumprod(1 + rng.normal(0, 0.02, size=W.shape), axis=0),
+            index=W.index, columns=W.columns)
+        real = ph.portfolio_returns(W, px)["turnover"].mean()
+        for seed in range(6):
+            wp = ph.rank_permutation_fixed_placebo(W, seed=seed)
+            got = ph.portfolio_returns(wp, px)["turnover"].mean()
+            assert got == pytest.approx(real, rel=0.10), (
+                f"fixed-permutation turnover {got:.4f} vs real {real:.4f}")
+
+    def test_identity_is_destroyed_across_seeds(self):
+        ph = self._ph()
+        W = self._weekly()
+        seen = set()
+        for seed in range(20):
+            out = ph.rank_permutation_fixed_placebo(W, seed=seed)
+            seen.add(tuple(np.flatnonzero(out.iloc[0].to_numpy())))
+        assert len(seen) > 3, "fixed permutation is not exploring relabellings"
+
+    def test_cash_rows_stay_cash(self):
+        ph = self._ph()
+        W = self._weekly()
+        W.iloc[7:14] = 0.0
+        out = ph.rank_permutation_fixed_placebo(W, seed=3)
+        assert (out.iloc[7:14].to_numpy() == 0).all()

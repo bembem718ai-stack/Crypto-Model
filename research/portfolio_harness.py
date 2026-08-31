@@ -162,21 +162,72 @@ def time_folds(index, folds: int = 4):
 # PLACEBOS
 # ----------------------------------------------------------------------
 def rank_permutation_placebo(weights: pd.DataFrame, seed: int):
-    """Permute WHICH ASSET gets each weight, date by date.
+    """Permute WHICH ASSET gets each weight, ONE permutation per rebalance.
 
     Preserves exactly: the weight distribution each day, the number of
-    positions, gross exposure, and the turnover profile's scale. Destroys
-    exactly one thing -- the identity of the asset selected. So it isolates
+    positions, gross exposure, and THE TURNOVER PROFILE. Destroys exactly
+    one thing -- the identity of the asset selected. So it isolates
     SELECTION skill from everything else the strategy does, which is what a
     rotation rule claims.
+
+    A NEW PERMUTATION IS DRAWN ONLY WHEN THE TARGET WEIGHTS CHANGE, and held
+    while they do not. This is the whole correctness of the instrument, and
+    the first version got it wrong: it re-permuted every ROW. For a weekly
+    rebalanced portfolio -- which holds one target for seven days -- that
+    turned "hold these 5 names for a week" into "hold 5 DIFFERENT random
+    names every day". Measured on #187/CONFIRMATION, the placebo's average
+    turnover was 1.566 against the real rule's 0.116, a 13.6x inflation, and
+    it paid 13x the transaction costs. That dragged the null to -0.38/yr
+    almost entirely through fabricated trading, making the bar trivially
+    beatable and the whole test a false-positive generator.
+
+    Detecting the change from the weights themselves keeps this cadence-
+    agnostic: a genuinely daily strategy changes its target every row and
+    gets a fresh permutation every row, exactly as before.
     """
     rng = np.random.default_rng(seed)
     vals = weights.to_numpy(dtype=float).copy()
+    perm = None
+    prev = None
     for i in range(vals.shape[0]):
         row = vals[i]
-        if np.nansum(np.abs(row)) == 0:
+        if np.nansum(np.abs(row)) == 0:      # cash — nothing to permute
+            prev = row.copy()
             continue
-        vals[i] = row[rng.permutation(row.shape[0])]
+        if prev is None or perm is None or not np.array_equal(row, prev):
+            perm = rng.permutation(row.shape[0])
+        prev = row.copy()                    # the ORIGINAL row, not the permuted one
+        vals[i] = row[perm]
+    return pd.DataFrame(vals, index=weights.index, columns=weights.columns)
+
+
+def rank_permutation_fixed_placebo(weights: pd.DataFrame, seed: int):
+    """The same weight PATH, pointed at a relabelled universe.
+
+    ONE permutation of the asset labels, held for the whole window. This is
+    the construction that differs from the strategy in EXACTLY ONE respect --
+    which asset each weight lands on -- and it is the primary null for a
+    selection claim.
+
+    Why this and not the per-rebalance version. Permuting at each rebalance
+    destroys two things at once: which assets were picked, AND the fact that
+    a momentum rule tends to KEEP its winners week to week. The second is a
+    turnover property, not a selection one, and paying for it makes the null
+    poorer than the strategy for reasons that have nothing to do with skill.
+    Measured on #187/CONFIRMATION, per-rebalance permutation still ran ~1.9x
+    the real turnover after the row-wise bug was fixed, a residual drag of
+    roughly 3 percentage points a year charged to the null alone. A fixed
+    relabelling preserves the turnover path exactly, because it is the same
+    path.
+
+    It is also the control that stays INFORMATIVE next to #191b. Random-5
+    redrawn weekly is already the "reshuffle every rebalance" null; a
+    per-rebalance permutation would largely duplicate it. Two controls should
+    answer two questions.
+    """
+    rng = np.random.default_rng(seed)
+    perm = rng.permutation(weights.shape[1])
+    vals = weights.to_numpy(dtype=float)[:, perm]
     return pd.DataFrame(vals, index=weights.index, columns=weights.columns)
 
 

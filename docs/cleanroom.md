@@ -3138,3 +3138,177 @@ chance in *which days it picks*, not in how much it is exposed. Nothing in
 #197–#203 has done that on BTC. Any future attempt is a new registration,
 and it starts by explaining what it selects on — because "positive and
 stable" has now been demonstrated to be reachable by random entry.
+
+---
+
+# ROTATION RESULT — #187–#192 + control #191b, run 2026-08-31
+
+`research/run_rotation.py`, `research/rotation_verdicts.py`. Raw in
+`research/rotation_results.json`, `research/rotation_verdicts.json`.
+
+**VERDICT: #187 FAIL, #188 FAIL, #189 FAIL, #190 FAIL, #192 FAIL.**
+Nothing passes. Nothing is promoted.
+
+## Two specification completions, pinned before the first run
+
+The locked text fixes the rules but is silent on two things the data forces.
+Both were decided before any number was produced, and both are disclosed
+here rather than buried.
+
+**(1) Eligibility.** The tradable-26 did not all exist in 2019 — **6 of 26**
+have prices at DISCOVERY's start, 25 by CONFIRMATION. An asset is eligible at
+a rebalance if it has a **complete price history over that rule's own
+(lookback + skip) window** ending at that date. A rule trades only when it has
+strictly **more** eligible candidates than slots — a top-5 rule needs at least
+6 to be selecting anything — and otherwise holds cash. Executed/skipped
+rebalance counts are reported per rule (they range 166–180 of 184 on
+DISCOVERY, 138–146 of 151 on CONFIRMATION).
+
+Chosen over the alternatives deliberately: requiring 2N eligible would leave
+the top-10 rules untestable on 72% of DISCOVERY, and ranking N of exactly N
+is not a selection at all.
+
+**(2) Matched controls.** #191b randomises *only which five*, so it draws
+from the **same eligible set as the rule it nulls** — computed separately for
+the 30d and 90d families. #191 equal-weights every asset with a complete
+33-day history, one benchmark for all rules as registered.
+
+**Unchanged:** lookbacks, skip, selection sizes, weighting, weekly Monday
+cadence, 8bps per side, both windows, k = 6, and every pass clause.
+
+## A placebo defect found before the run, and what it would have done
+
+`rank_permutation_placebo` re-permuted **every row**. ROTATION's weights are
+constant between weekly rebalances, so "hold these 5 names for a week" became
+"hold 5 **different** random names every day."
+
+Measured on #187/CONFIRMATION before the fix: placebo turnover **1.566
+against the real rule's 0.116 — 13.6×** — and **13× the transaction costs**,
+which dragged the null to −0.38/yr through fabricated trading alone. Every
+rule would have cleared a bar that was crippled by costs it never paid. That
+is a false-positive generator, and it was pointed at the answer this program
+most wanted to hear.
+
+Two constructions were then available, and the choice was made **before
+seeing any rule's result**:
+
+- **Per-rebalance permutation** (the fixed version of the original) destroys
+  two things: which assets were picked, *and* the fact that a momentum rule
+  keeps its winners week to week. The second is a turnover property, not a
+  selection one. It still ran **1.84–2.91×** the real turnover.
+- **Fixed whole-window relabelling** — the same weight path pointed at a
+  permuted universe — differs from the strategy in **exactly one** respect.
+  It ran **0.95–1.02×** the real turnover across all ten rule-window pairs.
+
+The primary null is the **fixed relabelling**, because the contract for a
+selection placebo is to destroy selection and nothing else. It is also the
+control that stays *informative* next to #191b: random-5 redrawn weekly is
+already the "reshuffle every rebalance" null, so a per-rebalance permutation
+would largely duplicate it. The per-rebalance figures are reported below for
+transparency and were **never used for a verdict**.
+
+| | real | fixed-perm | per-rebalance |
+|---|---|---|---|
+| DISCOVERY #187 | 0.1088 | 0.1048 (0.96×) | 0.2112 (1.94×) |
+| DISCOVERY #190 | 0.0494 | 0.0487 (0.99×) | 0.1270 (2.57×) |
+| CONFIRMATION #187 | 0.1155 | 0.1132 (0.98×) | 0.2268 (1.96×) |
+| CONFIRMATION #190 | 0.0550 | 0.0545 (0.99×) | 0.1599 (2.91×) |
+
+Scoring also moved to a vectorised path (the reference loops over days, but
+its `prev` is just the previous target row, so the loop is removable exactly).
+It is **verified against `portfolio_returns` on every window's own weight
+paths before a single draw is taken**: max abs err **2.22e-16** on DISCOVERY,
+**4.44e-16** on CONFIRMATION.
+
+## Results — every registered clause, both windows
+
+Clauses: **1** ann > 0 · **2** ann > rank-permutation p99.17 (k=6, 1,200
+seeds) · **3** ann > #191 · **4** ann > #191b p95 (#187, #189 only).
+
+| # | rule | window | ann | plc p_adj | eq26 | r5 p95 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **#187** | top-5 30d | DISCOVERY | **+1.399** | +1.137 | +1.101 | +1.377 | PASS | PASS | PASS | **PASS** |
+| | | CONFIRMATION | +0.527 | +0.619 | +0.291 | +0.477 | PASS | **FAIL** | PASS | PASS |
+| **#188** | top-10 30d | DISCOVERY | +1.321 | +0.973 | +1.101 | — | PASS | PASS | PASS | — |
+| | | CONFIRMATION | +0.340 | +0.482 | +0.291 | — | PASS | **FAIL** | PASS | — |
+| **#189** | top-5 90d | DISCOVERY | +1.400 | +1.136 | +1.101 | +1.481 | PASS | PASS | PASS | **FAIL** |
+| | | CONFIRMATION | +0.298 | +0.622 | +0.291 | +0.478 | PASS | **FAIL** | PASS | **FAIL** |
+| **#190** | top-10 90d | DISCOVERY | +1.170 | +0.914 | +1.101 | — | PASS | PASS | PASS | — |
+| | | CONFIRMATION | +0.311 | +0.471 | +0.291 | — | PASS | **FAIL** | PASS | — |
+| **#192** | bottom-5 30d | DISCOVERY | +0.749 | +1.072 | +1.101 | — | PASS | **FAIL** | **FAIL** | — |
+| | | CONFIRMATION | −0.043 | +0.573 | +0.291 | — | **FAIL** | **FAIL** | **FAIL** | — |
+
+### Controls
+
+| window | #191 equal-weight | #191b random-5 (30d) | #191b random-5 (90d) | #192 bottom-5 |
+|---|---|---|---|---|
+| DISCOVERY | **+1.101**, turn 0.0254 | p05 +0.731 · p50 **+1.039** · p95 +1.377 | p05 +0.845 · p50 **+1.159** · p95 +1.481 | +0.749 |
+| CONFIRMATION | **+0.291**, turn 0.0190 | p05 +0.013 · p50 **+0.233** · p95 +0.477 | p05 +0.010 · p50 **+0.228** · p95 +0.478 | −0.043 |
+
+1,200 draws each, as registered.
+
+### Window-stability of annualised net return (50 starts, end pinned)
+
+| # | DISCOVERY | CONFIRMATION |
+|---|---|---|
+| #187 | 90% positive, −0.149…+1.607, med +1.457 | **100% positive**, +0.137…+1.072, med +0.560 |
+| #188 | 92% positive, −0.115…+1.461, med +1.322 | **100% positive**, +0.037…+0.909, med +0.398 |
+| #189 | 88% positive, −0.273…+1.495, med +1.241 | **100% positive**, +0.020…+0.908, med +0.314 |
+| #190 | 78% positive, −0.392…+1.399, med +1.166 | 98% positive, −0.002…+0.862, med +0.301 |
+| #192 | 82% positive, −0.180…+0.937, med +0.794 | 56% positive, −0.276…+0.426, med +0.048 |
+
+All 50 starts defined everywhere. Profiled for **every** rule, not only those
+passing something — choosing which results get an error bar on the basis of
+their result is the move this project forbids.
+
+## What actually happened
+
+**Every rule dies on clause 2, on CONFIRMATION, and only there.** All four
+momentum rules pass clauses 1 and 3 on both windows. All four clear the
+adjusted placebo on DISCOVERY. Not one clears it on CONFIRMATION. That is a
+single, sharp failure mode, not a scatter of small ones.
+
+**#187 is the closest this project has come to a pass.** It clears **all four
+clauses on DISCOVERY**, including the two that were designed to be hard: it
+beats equal-weight-26 (+1.399 vs +1.101) and it beats random-5's p95 (+1.399
+vs +1.377, by 0.022). Then CONFIRMATION returns +0.527 against a placebo
+p99.17 of +0.619 and it is over. One window is not a result — that is the
+entire reason there are two.
+
+**The scale is the thing to hold on to.** Equal-weight-26 returned **+110%/yr
+on DISCOVERY**. Random-5's *median* draw returned +104%/yr. Buying the
+**worst** 5 performers returned +75%/yr. In that regime "the strategy made
+money" carries no information whatsoever, and clause 1 is nearly free — which
+is why the registration never let it stand alone.
+
+**#192 is doing real work here.** Momentum's mirror does *not* win: +0.749 on
+DISCOVERY against equal-weight's +1.101, and **−0.043 on CONFIRMATION** while
+equal-weight made +0.291. Its stability profile is 56% on CONFIRMATION — a
+coin flip. So the momentum rules are not simply capturing beta with extra
+steps; ranking by past return does order the cross-section in the right
+direction. That ordering is real **and it is not large enough to clear its own
+null.** Both halves of that sentence are the finding.
+
+**The stability profiles say exposure, not skill — the same lesson as #203.**
+100% positive on CONFIRMATION reads as robustness until you notice #191b's
+random draws are positive in ~95% of cases too. Sign-stability on a long-only
+portfolio in a rising market measures how reliably it was invested. It is
+reported because the registration requires it, and it must not be read as
+support.
+
+## Consequences
+
+- **No promotion.** Nothing from ROTATION becomes a claim. `claims.md`
+  unchanged — still zero supported edge claims.
+- **No partial credit.** #187 clearing four of four clauses on DISCOVERY is
+  recorded, not banked. "Single confirmation, no partial credit, no re-runs"
+  was locked before the run.
+- **No re-specification.** Not a longer lookback, not a different rebalance
+  day, not top-3, not a per-rebalance placebo because it would have been
+  easier to beat. Any of those is a new registration.
+- **k stays 6.** #191b remains a control and was never counted as a
+  hypothesis.
+- **ALLOCATION #193–#196 is unaffected** and runs next as locked. Its
+  placebo is `block_shuffle_placebo`, which this defect did not touch — but
+  that instrument has now been put on notice: it must be checked against the
+  property it claims to preserve before it is used for a verdict.
