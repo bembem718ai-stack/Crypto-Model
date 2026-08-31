@@ -183,7 +183,30 @@ window, cap, epsilon or placebo is a NEW registration with a new number
 
 **Still open:** SHADOW-EVAL accrues forward on both arms and may not be
 inspected before 30 pooled closed episodes. FUNDING (#172-#186) is
-registered and DORMANT until its data-depth trigger (~2027-06-27).
+registered, SEALED and DORMANT until its data-depth trigger (~2027-06-27).
+
+**FUNDING-AT-BINANCE-DAILY (#220-#234) is CLOSED: 0 of 15 pass, clause 2
+failed in all 30 cells.** Eight rules F1-F8 in both modes, daily
+granularity, Binance USD-M, 5.05 usable years -- five times #172-#186's C1
+window -- and 24 of 30 cells still carried an undefined ex_best. Depth was
+not the binding constraint; EVENT RATE was. Closed means no re-runs, no
+looser bar, no partial credit, and NO VARIATIONS of a failed rule.
+
+**#226 is the near-miss and may not be re-specified.** F4 euphoria-fade
+suppression on CONFIRMATION: ex_best positive on all three tickers (+0.059 /
++0.131 / +0.121), pooled +0.193 over 434 trades and 52 episodes, at the
+92.6th placebo percentile against a 99.67 bar -- and -0.053 at the 46th
+percentile on DISCOVERY. It is the best funding result this project has AND
+a failure; both are true.
+
+**The funding QUESTION is not closed.** Its closure clause lives in
+#172-#186 and triggers on failure at THAT program's C2, on a different
+venue, on data that does not yet exist. The inherited cross-venue flag FIRED
+on all three symbols (Pearson vs Kraken +0.452 / +0.371 / +0.719 against a
+0.80 bar), which is measured grounds for valuing that independence MORE: two
+feeds of the same quantity correlating at 0.37-0.72 means a result on one is
+not a proxy for the other.
+
 NULL-CALIBRATION (#217-#219) is RUN and CLOSED. It changed no verdict, and
 it put the instrument into its final honest form: every null this project
 owns is now measured, and every one of them is contaminated in some regime
@@ -287,6 +310,44 @@ residual and say which side it favours.
 5. **Contamination does not void a verdict and does not license a re-test**
    (research rule 4). It is recorded beside the result so the result can be
    read for what it is.
+6. **THE FOUR AXES CERTIFY THE CENTRE, NOT THE TAIL.** Axis 4 compares the
+   null's distribution CENTRE against a matched random draw. It cannot say
+   whether the null is too NARROW or too WIDE -- and every percentile pass
+   condition in this project is decided in the TAIL (99.17th, 98.75th,
+   99.6667th), where width is nearly the whole story. #167 chose the
+   episode-matched null for lower VARIANCE on clustered signals, and axis 4
+   read about zero on #220-#234 while saying nothing about the property the
+   choice was made for.
+
+   **So every percentile verdict this project has issued carries an
+   UNCHARACTERIZED TAIL-WIDTH CAVEAT.** State it when citing one. A width
+   axis would be a methods program with its own registration; inventing one
+   after a batch of tail-comparison failures is the move research rule 4
+   forbids, so the gap is recorded rather than quietly patched.
+
+### Overlay unmeasurability — refuse at registration, not after
+
+**Overlays on incumbent BUY days are unmeasurable BY CONSTRUCTION.** `ex_best`
+needs >=3 folds x >=10 trades = **>=30 trades per ticker per window**.
+Measured over #220-#234's 90 ticker-window cells: overlays median **1.0**
+trade (mean 4.9, max 36) and **2 of 42 cells reached 30**; standalone tests
+median 33.5 and 24 of 48 reached it. Getting from a median of 1 to 30 needs
+**30x the data, roughly 75 years per window** -- longer than crypto has
+existed.
+
+The mechanism is structural: an overlay fires only where the incumbent
+ALREADY signalled AND a conditional state holds, and intersecting sparse BUY
+days with a minority condition leaves single digits.
+
+> **A future overlay registration on incumbent BUY days is REFUSED unless it
+> demonstrates, from EVENT COUNTS ALONE and BEFORE any scoring, that it
+> clears >=30 trades per ticker per window.**
+
+Event counts need no returns, so the check is free. Seven of #220-#234's
+fifteen tests were overlays, all seven were unmeasurable before the first
+trade was scored, and they still consumed Bonferroni budget -- raising the
+bar for the eight tests that could have produced a result. That is the cost
+of not having this rule earlier.
 
 ## Known open issues
 

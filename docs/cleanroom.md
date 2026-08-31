@@ -5312,3 +5312,134 @@ is a factual statement about the regime, not a defect.
 - **A result here does not license editing #172–#186 in either direction**,
   and the cross-venue flag firing on all three symbols is a reason to value
   that independence more, not less.
+
+---
+
+# CLOSE-OUT — BINANCE FUNDING (#220–#234)
+
+Closed 2026-08-31. **0 of 15 pass.** Full verdict table above, under
+*BINANCE FUNDING RESULT — #220–#234*; raw in `research/h220_results.json`.
+
+Three findings outlive the program and are recorded as permanent record.
+
+## Finding 1 — axis 4 measures the centre, and the verdict lives in the tail
+
+Axis 4 (correlation inheritance) read **−0.0029 / −0.0022** — effectively
+zero on both windows. That is **not** a clean bill of health for the null,
+and recording it as one would be the comfortable mistake.
+
+The axis compares the null's **distribution CENTRE** against a matched
+random draw. #167 chose the episode-matched null for a different reason
+entirely: independent-day placebos are structurally lower-**VARIANCE** on
+clustered signals. Centre and width are different properties, and **every
+pass condition in this project that cites a percentile is decided in the
+TAIL** — here the 99.6667th, where width is nearly the whole story.
+
+So the four axes as they stand can certify that a null is not *displaced*,
+and cannot certify that it is not *too narrow or too wide*. A percentile
+verdict therefore carries an **uncharacterized tail-width caveat**, on every
+program run so far, not just this one.
+
+**This is a limitation of the instrument, recorded, not repaired here.**
+Building a width axis is a methods program with its own registration, and
+inventing one now — after seeing that fifteen tests failed on tail
+comparisons — would be exactly the move this record forbids. Added to the
+standing methodology in `CLAUDE.md` so no future program cites a percentile
+as if the tail were validated.
+
+## Finding 2 — THE OVERLAY-UNMEASURABILITY LAW
+
+**Overlays on incumbent BUY days are unmeasurable by construction, and the
+arithmetic settles it rather than the sample.**
+
+`ex_best` requires **≥3 folds each carrying ≥10 trades**, i.e. **≥30 trades
+per ticker per window**. Measured across this program's 90 ticker-window
+cells:
+
+| mode | cells | median trades | mean | max | cells reaching 30 |
+|---|---|---|---|---|---|
+| **overlay** | 42 | **1.0** | 4.9 | 36 | **2 (5%)** |
+| standalone | 48 | 33.5 | 62.7 | 285 | 24 (50%) |
+
+**The overlay median is ONE trade per ticker per window.** Reaching the
+30-trade floor from a median of 1 requires **30× the data — roughly 75 years
+per window.** No crypto asset has existed that long, and Binance's archive
+floor is 2020-01.
+
+The mechanism is structural, not incidental. An overlay fires only where the
+incumbent **already** signalled **AND** a conditional state holds. The
+incumbent's BUY days are sparse; a funding condition that is true a minority
+of the time intersects them to near-nothing. Three cells produced **zero**
+events; six produced **one**.
+
+> **THE LAW: a future overlay registration on incumbent BUY days is REFUSED
+> on measurability grounds unless it first demonstrates, from event counts
+> alone and before any scoring, that it clears ≥30 trades per ticker per
+> window.**
+
+This is a refusal at registration time, not a verdict after the fact. It
+costs nothing to check — event counts need no returns — and it prevents
+spending a Bonferroni allocation on tests that cannot produce a result. Seven
+of this program's fifteen tests were overlays, and **all seven were
+unmeasurable before the first trade was scored.** They still consumed
+correction budget, raising the bar for the eight that could have been
+measured. That is the concrete cost of not having this law earlier.
+
+## Finding 3 — #226's near-miss, preserved with its numbers
+
+**#226 — F4 euphoria-fade suppression, CONFIRMATION window.** The only
+clause-1 pass in the entire program:
+
+| ticker | events | n | episodes | win% | net | `ex_best` | folds |
+|---|---|---|---|---|---|---|---|
+| BTC | 147 | 141 | 17 | 39.0 | +0.167 | **+0.059** | 3/4 |
+| ETH | 146 | 142 | 18 | 42.3 | +0.247 | **+0.131** | 4/4 |
+| SOL | 149 | 151 | 17 | 39.7 | +0.167 | **+0.121** | 3/4 |
+
+Pooled **+0.193** over **434 trades / 52 episodes**, at the **92.6th**
+placebo percentile (p95 +0.211, adjusted bar **+0.305**).
+
+**It fails.** And its DISCOVERY half is **−0.053 at the 46.1st percentile** —
+so it does not merely miss a threshold, it fails to survive its other window.
+
+> **The no-variations rule binds here, inherited verbatim from #172–#186: no
+> new funding hypothesis may be registered as a variation of a failed one.**
+> Not F4 at percentile 85 instead of 90. Not F4 on CONFIRMATION alone. Not F4
+> with a different high-water lookback. A genuinely new idea needs a new
+> program with its own justification, and inherits this record.
+
+The numbers are preserved precisely so the temptation is legible. #226 is the
+best funding result this project has, it is a failure, and both statements
+are true at once.
+
+## The cross-venue flag — measured grounds for #172–#186's independence
+
+The inherited flag **fired on all three symbols**: Pearson against Kraken
+**+0.452 / +0.371 / +0.719**, bar 0.80. It came in **below** the Spearman
+(+0.595/+0.512/+0.492) that prompted the advance disclosure — the venues
+agree on ranks more than on levels.
+
+**This is the strongest available argument for leaving #172–#186 sealed.**
+Two feeds of "the same" quantity correlate at 0.37–0.72 on daily means. A
+result measured on one is therefore **not** a proxy for the other, which is
+precisely what an independent cross-venue confirmation is for. Had the
+correlation been 0.95, running the Kraken program later would have been
+largely redundant; at 0.37 it is not.
+
+**#172–#186 stays SEALED and UNMODIFIED**, trigger unchanged (span ≥ 22
+months, expected **~2027-06-27**), C1/C2 unchanged. **This program neither
+opens, amends, consumes, satisfies nor substitutes for it**, and a failure
+here does not license narrowing it or abandoning it.
+
+## Status
+
+**Funding-at-Binance-daily is CLOSED for this rule family** — the eight
+rules F1–F8 in both modes, at daily granularity, on Binance USD-M, over
+5.05 usable years. Closed means: no re-runs, no looser bar, no partial
+credit, no variations.
+
+**The funding QUESTION is not closed.** Its closure clause lives in
+#172–#186 and is triggered by failure at *that* program's C2, on a different
+venue, on data that does not yet exist.
+
+`docs/claims.md` is unchanged and still holds **zero supported edge claims**.
