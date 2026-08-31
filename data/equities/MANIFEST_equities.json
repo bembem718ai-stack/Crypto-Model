@@ -1,0 +1,220 @@
+{
+  "freeze_date": "2026-08-28",
+  "n_etfs": 21,
+  "requested": [
+    "XLB",
+    "XLE",
+    "XLF",
+    "XLI",
+    "XLK",
+    "XLP",
+    "XLU",
+    "XLV",
+    "XLY",
+    "SPY",
+    "QQQ",
+    "IWM",
+    "EFA",
+    "EEM",
+    "TLT",
+    "IEF",
+    "GLD",
+    "DBC",
+    "EWJ",
+    "EWG",
+    "EWU"
+  ],
+  "failed": [],
+  "adjustment": "yfinance auto_adjust=True (splits AND dividends)",
+  "etfs": {
+    "XLB": {
+      "first": "1998-12-22",
+      "last": "2026-08-28",
+      "rows": 6963,
+      "years": 27.68,
+      "adjusted_total_return": 8.335161082764923,
+      "raw_total_return": 4.106556200827899,
+      "sha256": "740663511626715f369a266411aa6b40284cc402d34668e7c568ff1cab051294"
+    },
+    "XLE": {
+      "first": "1998-12-22",
+      "last": "2026-08-28",
+      "rows": 6963,
+      "years": 27.68,
+      "adjusted_total_return": 10.005074744799737,
+      "raw_total_return": 4.388206434736372,
+      "sha256": "c070ce9613a12685ec5a2d8d3911977a9feb7059ce2060bfadbfa4fecdbf6c7f"
+    },
+    "XLF": {
+      "first": "1998-12-22",
+      "last": "2026-08-28",
+      "rows": 6963,
+      "years": 27.68,
+      "adjusted_total_return": 4.222714879254925,
+      "raw_total_return": 2.067929244860201,
+      "sha256": "012f7c507dd90154bc63f2d0afeb13ebe78c5fa4b9946b002e86dfe9f150310d"
+    },
+    "XLI": {
+      "first": "1998-12-22",
+      "last": "2026-08-28",
+      "rows": 6963,
+      "years": 27.68,
+      "adjusted_total_return": 11.30422657321682,
+      "raw_total_return": 6.608697960360738,
+      "sha256": "9fa801195300fe9b8faff8c74ae07f4a79b5c0b1e588b2104218346ff10d79fa"
+    },
+    "XLK": {
+      "first": "1998-12-22",
+      "last": "2026-08-28",
+      "rows": 6963,
+      "years": 27.68,
+      "adjusted_total_return": 14.592272687123812,
+      "raw_total_return": 10.588649591662604,
+      "sha256": "ff17dbce50b85a08766569ebd4f67eac39e70175beb30b387937c97bd979e473"
+    },
+    "XLP": {
+      "first": "1998-12-22",
+      "last": "2026-08-28",
+      "rows": 6963,
+      "years": 27.68,
+      "adjusted_total_return": 5.152059115256817,
+      "raw_total_return": 2.22452818672612,
+      "sha256": "ca3cbf4c7b8a529d4b406abf646af1815cad0456223b9063c020fc9e9ae8406f"
+    },
+    "XLU": {
+      "first": "1998-12-22",
+      "last": "2026-08-28",
+      "rows": 6963,
+      "years": 27.68,
+      "adjusted_total_return": 6.3732179592223615,
+      "raw_total_return": 1.865080980442598,
+      "sha256": "a31e868187ee34e5eabe1e21181430030096778f569bf0b8a0088efe8151e59b"
+    },
+    "XLV": {
+      "first": "1998-12-22",
+      "last": "2026-08-28",
+      "rows": 6963,
+      "years": 27.68,
+      "adjusted_total_return": 9.239208039187272,
+      "raw_total_return": 5.837852830446317,
+      "sha256": "b8b83659709003f82749f798de9f25875cdece27a141c2617d3ccaab3bfdec02"
+    },
+    "XLY": {
+      "first": "1998-12-22",
+      "last": "2026-08-28",
+      "rows": 6963,
+      "years": 27.68,
+      "adjusted_total_return": 11.5213875655558,
+      "raw_total_return": 8.204220787001534,
+      "sha256": "30857322850c386b536882906f87c52b8aa287b164e9691150722a04b8d1d507"
+    },
+    "SPY": {
+      "first": "1993-01-29",
+      "last": "2026-08-28",
+      "rows": 8453,
+      "years": 33.58,
+      "adjusted_total_return": 30.905672830314998,
+      "raw_total_return": 16.510099017603128,
+      "sha256": "5a97c66d75884fd30d5b286890bbc0a95a859c10517733db1647f566e4a716d2"
+    },
+    "QQQ": {
+      "first": "1999-03-10",
+      "last": "2026-08-28",
+      "rows": 6911,
+      "years": 27.47,
+      "adjusted_total_return": 15.650683740087803,
+      "raw_total_return": 13.030452732940637,
+      "sha256": "75f99469431e06a1b7ba9244a5a77690d617114b6cd114ead3df369efcdee7ee"
+    },
+    "IWM": {
+      "first": "2000-05-26",
+      "last": "2026-08-28",
+      "rows": 6603,
+      "years": 26.26,
+      "adjusted_total_return": 8.074691099288916,
+      "raw_total_return": 5.4688995215311005,
+      "sha256": "c884e5b4c4ea363b7d8d93f6acd0d4c6b4432893c7004385073d69e8bb8a8d3b"
+    },
+    "EFA": {
+      "first": "2001-08-27",
+      "last": "2026-08-28",
+      "rows": 6288,
+      "years": 25.0,
+      "adjusted_total_return": 3.928584431530693,
+      "raw_total_return": 1.5148639163856332,
+      "sha256": "1f2076ed6a048e71f87dde0737d21885067f51f4ac3bce661f9d4fb3d34e2e91"
+    },
+    "EEM": {
+      "first": "2003-04-14",
+      "last": "2026-08-28",
+      "rows": 5882,
+      "years": 23.37,
+      "adjusted_total_return": 8.325925374466916,
+      "raw_total_return": 4.982772166348711,
+      "sha256": "82f4c7b1ac9a6798a4f820732207ba5eae2056029433f3abe1a777bc3b14a58e"
+    },
+    "TLT": {
+      "first": "2002-07-30",
+      "last": "2026-08-28",
+      "rows": 6060,
+      "years": 24.08,
+      "adjusted_total_return": 1.322096016476396,
+      "raw_total_return": 0.0166830307452821,
+      "sha256": "e77e583ce5ddbe103cba31e5f9fd4a5002bf5f90100c8a541433bd2a0d1d36a1"
+    },
+    "IEF": {
+      "first": "2002-07-30",
+      "last": "2026-08-28",
+      "rows": 6060,
+      "years": 24.08,
+      "adjusted_total_return": 1.3049550994333368,
+      "raw_total_return": 0.13550204581051806,
+      "sha256": "514daea90dabe5f788c16cde1643b3c9cd567ca6e3cf303526aaa647dfc91078"
+    },
+    "GLD": {
+      "first": "2004-11-18",
+      "last": "2026-08-28",
+      "rows": 5478,
+      "years": 21.77,
+      "adjusted_total_return": 8.213384515716115,
+      "raw_total_return": 8.213384515716115,
+      "sha256": "be8664d0787aa8c86d24a14724efb105f7d83f4e3e4147cc80518a4b1bba506c"
+    },
+    "DBC": {
+      "first": "2006-02-06",
+      "last": "2026-08-28",
+      "rows": 5173,
+      "years": 20.56,
+      "adjusted_total_return": 0.6048912971075859,
+      "raw_total_return": 0.2723140473069736,
+      "sha256": "9b1dc4642f048393a4e6fde6f3947b34a60a022190065494820f7f40c9d04699"
+    },
+    "EWJ": {
+      "first": "1996-03-18",
+      "last": "2026-08-28",
+      "rows": 7662,
+      "years": 30.44,
+      "adjusted_total_return": 1.493103867316171,
+      "raw_total_return": 0.5912033650884985,
+      "sha256": "9291e0b483bae208e90e5a3301017f03af562b95b8c20b087bb1761dc54134b7"
+    },
+    "EWG": {
+      "first": "1996-03-18",
+      "last": "2026-08-28",
+      "rows": 7662,
+      "years": 30.44,
+      "adjusted_total_return": 5.787779066201383,
+      "raw_total_return": 2.318325592750727,
+      "sha256": "70b7f0a57f2db004bbead1d7083351b2a4be16859f20204588536f5b3082466f"
+    },
+    "EWU": {
+      "first": "1996-03-18",
+      "last": "2026-08-28",
+      "rows": 7662,
+      "years": 30.44,
+      "adjusted_total_return": 5.142557770374135,
+      "raw_total_return": 0.961616130790325,
+      "sha256": "f0857dc99c791b280abb48f35c333d45911c3385f62f890540241f46de7c6002"
+    }
+  }
+}
