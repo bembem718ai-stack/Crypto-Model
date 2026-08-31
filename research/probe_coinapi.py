@@ -165,20 +165,69 @@ def main():
     say()
 
     # ---- auth style ------------------------------------------------------
+    # A 403 whose body is about QUOTA is not an auth-header problem, and
+    # retrying with the other header just spends a second request to be told
+    # the same thing. Only fall back when the rejection is plausibly about
+    # WHO we are (401, or a 403 that does not mention credits).
+    def is_quota(b):
+        t = json.dumps(b) if isinstance(b, (dict, list)) else str(b)
+        t = t.lower()
+        return any(w in t for w in ("quota", "credit", "subscription"))
+
     style = "authorization"
     st, body, _ = get("/v1/exchanges", {"filter_exchange_id": "BINANCEFTS"}, style)
-    if st in (401, 403):
+    if st == 401 or (st == 403 and not is_quota(body)):
         style = "x-coinapi-key"
         st, body, _ = get("/v1/exchanges", {"filter_exchange_id": "BINANCEFTS"}, style)
-    say("Auth header accepted: `%s` (HTTP %s)" % (style, st))
-    say()
+
     if st != 200:
-        say("**ABORT — could not authenticate.** HTTP %s: %s"
-            % (st, redact(body)[:300]))
+        quota = is_quota(body)
+        say("**ABORT — no data retrieved.** HTTP %s using the `%s` header."
+            % (st, style))
         say()
-        say("Requests used: **%d**." % _CALLS["n"])
+        if quota:
+            say("This is a **billing/entitlement rejection, not a bad key**: the")
+            say("response names a quota, not an authentication failure. The")
+            say("credential is recognised; the account has no usable credits or")
+            say("active subscription, so every endpoint returns %s before serving"
+                % st)
+            say("any data.")
+        else:
+            say("The rejection does not name a quota, so this reads as an")
+            say("authentication or entitlement problem with the credential itself.")
+        say()
+        say("Server response (key-free):")
+        say()
+        say("```")
+        say(redact(body)[:600] if not isinstance(body, (dict, list))
+            else redact(json.dumps(body, indent=2))[:600])
+        say("```")
+        say()
+        say("**Nothing further was attempted.** Symbol discovery, the metrics")
+        say("listing and the depth probes all require a served response, so they")
+        say("are UNANSWERED — not answered negatively.")
+        say()
+        say("## Credits / usage")
+        say()
+        say("Requests issued: **%d** (hard cap %d)." % (_CALLS["n"], HARD_CAP))
+        say()
+        if _USAGE:
+            say("| header | value |")
+            say("|---|---|")
+            for k in sorted(_USAGE):
+                say("| `%s` | %s |" % (k, redact(_USAGE[k])))
+        else:
+            say("The API returned no rate-limit / cost / quota headers on the")
+            say("rejected requests.")
+        say()
+        say("A rejected request is not expected to consume a data credit, but")
+        say("that is an assumption about CoinAPI's billing, not something this")
+        say("probe can verify from the outside.")
         write(lines)
         return 1
+
+    say("Auth header accepted: `%s` (HTTP %s)" % (style, st))
+    say()
 
     # ---- 1. symbols ------------------------------------------------------
     say("## 1. Symbol discovery")
