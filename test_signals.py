@@ -4071,3 +4071,57 @@ class TestShadowBasket:
         # Shadow episodes must be scored by exactly the rules live ones are,
         # or the two records are not comparable.
         assert "resolve_outcomes" in self._code_names()
+
+
+# ======================================================================
+# WINDOW-STABILITY PROFILER — the degenerate all-zero case
+# ======================================================================
+# ABLATION rung #201 (extreme-fear regime removed) came back as EXACTLY
+# 0.000 at all 50 window starts, because on BTC the composite score is
+# essentially never in the band the raised buy bar moves through. The
+# profiler rendered that as "sign-stability 0% (positive)" -- the most
+# unstable-looking label it has, for the most stable series it can be
+# handed. A reader skimming the sign-stability column would draw the exact
+# opposite conclusion from the truth.
+class TestWindowStabilityDegenerate:
+
+    def _ws(self):
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        return importlib.import_module("window_stability")
+
+    def test_identically_zero_is_stable_not_unstable(self):
+        ws = self._ws()
+        r = ws.profile(lambda a, b: 0.0, "2020-01-01", "2024-01-01", n_starts=10)
+        assert r["n_defined"] == 10
+        assert r["zero"] == 10
+        assert r["modal_sign"] == "zero"
+        assert r["sign_stability"] == 1.0
+
+    def test_zero_case_renders_without_claiming_a_sign(self):
+        ws = self._ws()
+        r = ws.profile(lambda a, b: 0.0, "2020-01-01", "2024-01-01", n_starts=10)
+        out = ws.render("all-zero", r)
+        assert "zero" in out
+        assert "positive" not in out and "negative" not in out
+
+    def test_ordinary_signs_are_unchanged(self):
+        ws = self._ws()
+        neg = ws.profile(lambda a, b: -0.2, "2020-01-01", "2024-01-01", n_starts=10)
+        assert neg["modal_sign"] == "negative" and neg["sign_stability"] == 1.0
+        pos = ws.profile(lambda a, b: 0.3, "2020-01-01", "2024-01-01", n_starts=10)
+        assert pos["modal_sign"] == "positive" and pos["sign_stability"] == 1.0
+
+    def test_a_single_nonzero_value_restores_a_real_sign(self):
+        ws = self._ws()
+        seen = {"n": 0}
+
+        def stat(a, b):
+            seen["n"] += 1
+            return -1.0 if seen["n"] == 1 else 0.0
+
+        r = ws.profile(stat, "2020-01-01", "2024-01-01", n_starts=10)
+        assert r["zero"] == 9 and r["negative"] == 1
+        assert r["modal_sign"] == "negative"

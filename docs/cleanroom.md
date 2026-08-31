@@ -2740,3 +2740,171 @@ demonstrated that a single-window delta on this construction can reverse.
 behaviour, it does not claim edge. Nothing may be promoted from it, and any
 component it flags as load-bearing needs its own registered hypothesis
 before it becomes a claim.
+
+---
+
+# ABLATION RESULTS — #197–#202, run 2026-08-30
+
+BTC INC_BUY_ALL, both windows, one-at-a-time-from-full as locked.
+Scripts: `research/run_ablation.py`, `research/run_ablation_stability.py`.
+Raw: `research/ablation_results.json`, `research/ablation_stability.json`.
+
+Windows (dataset last date 2026-08-26): DISCOVERY 2019-09-24 → 2023-04-06
+(1,269 days), CONFIRMATION 2023-04-06 → 2026-02-26 (1,056 days), LOCKBOX
+sealed and unread.
+
+## The reconstruction gate — passed before anything was scored
+
+Rungs #198/#199/#201 alter the `direction` column, which means recomputing
+it from its components. That is only legitimate if the recomputation
+reproduces the stored column exactly under production settings; otherwise
+the rungs would be measured against a baseline whose construction they do
+not share.
+
+| check | result |
+|---|---|
+| `combined_final_score` rebuilt vs stored, max abs err | **1.42e-14** |
+| `direction` rebuilt vs stored, mismatching days | **0 of 2,325** |
+
+Reproduced as `0.6 × gated_score + 0.4 × final_score` → `classify_direction`.
+Zero mismatches across every scored day. The rungs and #197 share a
+construction, so the deltas mean what they claim to.
+
+## Results
+
+**DISCOVERY** — baseline #197 `net_all` = **−0.157**
+
+| # | rung | sigdays | n | eps | win% | net_all | delta | ex_best | folds+ |
+|---|---|---|---|---|---|---|---|---|---|
+| #197 | full construction | 192 | 92 | 30 | 28.3 | −0.157 | — | −0.466 | 1/4 |
+| #198 | no Step 3 (1.0/0.0) | 272 | 101 | 33 | 33.7 | +0.018 | **+0.175** | −0.217 | 1/4 |
+| #199 | no Step 1 (0.0/1.0) | 247 | 189 | 19 | 34.4 | +0.009 | +0.166 | −0.093 | 2/4 |
+| #200 | no confirm (2→1) | 192 | 192 | 28 | 30.2 | −0.113 | +0.045 | −0.287 | 1/4 |
+| #201 | no VIX regime | 193 | 92 | 30 | 28.3 | −0.157 | +0.000 | −0.466 | 1/4 |
+| #202 | no conviction scaling | 192 | 92 | 30 | 28.3 | −0.194 | −0.036 | −0.466 | 1/4 |
+
+**CONFIRMATION** — baseline #197 `net_all` = **+0.195**
+
+| # | rung | sigdays | n | eps | win% | net_all | delta | ex_best | folds+ |
+|---|---|---|---|---|---|---|---|---|---|
+| #197 | full construction | 202 | 108 | 23 | 39.8 | +0.195 | — | +0.097 | 3/4 |
+| #198 | no Step 3 (1.0/0.0) | 223 | 84 | 24 | 41.7 | +0.314 | **+0.119** | +0.234 | 4/4 |
+| #199 | no Step 1 (0.0/1.0) | 360 | 286 | 21 | 36.7 | +0.084 | −0.111 | +0.018 | 3/4 |
+| #200 | no confirm (2→1) | 202 | 202 | 20 | 36.1 | +0.079 | −0.116 | −0.008 | 2/4 |
+| #201 | no VIX regime | 202 | 108 | 23 | 39.8 | +0.195 | +0.000 | +0.097 | 3/4 |
+| #202 | no conviction scaling | 202 | 108 | 23 | 39.8 | +0.146 | −0.049 | +0.065 | 3/4 |
+
+Episode counts are what these rest on: **30 and 23** at the baseline. Every
+number in these tables is built on fewer than three dozen occasions per
+window, and nothing below should be read as more precise than that allows.
+
+## Window-stability of each delta (50 starts, end pinned)
+
+| # | DISCOVERY | CONFIRMATION |
+|---|---|---|
+| #198 | **100% positive**, +0.038…+0.185, med +0.123 | **100% positive**, +0.064…+0.175, med +0.100 |
+| #199 | 54% negative, −0.189…+0.218, med −0.030 | 92% negative, −0.175…+0.018, med −0.104 |
+| #200 | 56% negative, −0.104…+0.054, med −0.003 | 100% negative, −0.153…−0.055, med −0.111 |
+| #201 | **100% zero**, +0.000…+0.000 | **100% zero**, +0.000…+0.000 |
+| #202 | **100% negative**, −0.064…−0.036, med −0.045 | **100% negative**, −0.068…−0.046, med −0.055 |
+
+All 50 starts defined in every cell. Sign-stability has no registered
+threshold and none is invented here.
+
+## Epsilon verdicts (registered: |delta| > 0.05R on both windows, same direction)
+
+| # | rung | dDISC | dCONF | verdict |
+|---|---|---|---|---|
+| #198 | no Step 3 | +0.175 | +0.119 | **LOAD-BEARING** |
+| #199 | no Step 1 | +0.166 | −0.111 | NO DETECTABLE CONTRIBUTION (opposite signs) |
+| #200 | no confirm | +0.045 | −0.116 | NO DETECTABLE CONTRIBUTION (below epsilon on DISC) |
+| #201 | no VIX regime | +0.000 | +0.000 | NO DETECTABLE CONTRIBUTION (below epsilon, both) |
+| #202 | no conviction scaling | −0.036 | −0.049 | NO DETECTABLE CONTRIBUTION (below epsilon, both) |
+
+These verdicts stand exactly as the registration wrote them. No rung is
+re-tested at a smaller epsilon.
+
+## What the numbers say
+
+**#198 — Step 3 is load-bearing, and it is load-bearing in the WRONG
+DIRECTION.** Deleting the indicator side and running on pattern+sentiment
+alone IMPROVES expectancy on both windows: +0.175R on DISCOVERY, +0.119R on
+CONFIRMATION, positive at 100 of 100 window starts, and it turns DISCOVERY
+from −0.157 to roughly flat. It is the only rung that clears the registered
+bar, and it clears it by saying the component subtracts.
+
+This is not a new suspicion. `combine_and_decide`'s own docstring records
+that the 0.6/0.4 split "reflects THIS SESSION'S walk-forward finding that
+squeeze was more consistent than the RSI/MACD/momentum-style indicators."
+The ablation says the weight should have kept going: at 0.4, the indicator
+block is still a net drag on both windows.
+
+What it does NOT say: that 1.0/0.0 is a better model worth shipping. This
+program cannot promote anything, the epsilon rule is not a significance
+test, and 30 and 23 episodes are thin. It says one specific thing — the
+indicator block does not pay for its weight — and that is a hypothesis for
+its own registration, not a result to trade.
+
+**#199 and #200 fail on the disagreement between windows, and that is the
+finding.** Removing Step 1 helps DISCOVERY by +0.166 and hurts CONFIRMATION
+by −0.111. Dropping confirmation from 2 days to 1 does the same in
+miniature. Either window alone would have supported a confident story; the
+pair supports neither. The stability profiles show why the registration
+demanded both: #199 is a coin-flip on DISCOVERY (54%) and near-unanimous on
+CONFIRMATION (92%), and #200 goes from 56% to 100%. A single-window ablation
+would have published a component effect that the other half of the data
+contradicts.
+
+**#201 is exactly zero, and the reason is more interesting than the zero.**
+The extreme-fear regime is not dormant — VIX ≥ 35 on **80 DISCOVERY days
+(6.3%)** and 10 CONFIRMATION days, and the raised bars change **35 labels**
+across the two windows. But BUY-tier membership changes on exactly **one
+day** (2020-06-21, combined 62.2, VIX 35.1), and that day is unconfirmed, so
+it produces no trade. Every other label change is on the SELL side, which
+INC_BUY_ALL never trades.
+
+The mechanism: in a panic the composite score is low. Median combined score
+on extreme-fear days is **36.9** on DISCOVERY and **22.5** on CONFIRMATION,
+against a raised buy bar of 70. Days in [60, 70) — the only band where the
+raised bar can bind — number **1** in 3.5 years and **0** in 2.9 years.
+
+So the correct statement is not "the VIX regime does not matter." It is:
+**on the long side, this component has never been exercised.** Its
+contribution is unmeasured rather than measured-and-small, and it would
+first become measurable in a regime where BTC scores highly while equity
+volatility is extreme — which has not happened in seven years of this
+dataset. Recording it as NO DETECTABLE CONTRIBUTION is right by the letter
+of the rule and would be misread without this paragraph.
+
+**#202 is the case where the epsilon rule bites, and it should be allowed
+to.** Removing conviction scaling costs −0.036 on DISCOVERY and −0.049 on
+CONFIRMATION: same direction, both windows, and **100% sign-stable across
+all 100 window starts** with the entire range on one side of zero. Both
+readings sit below the 0.05R epsilon — CONFIRMATION by 0.001.
+
+The registration's floor was derived from BTC's 0.045R median `cost_r`: a
+move smaller than one round trip's friction cannot be told apart from
+friction. That reasoning does not stop applying because the answer landed
+just under. The verdict is NO DETECTABLE CONTRIBUTION, the profile is
+recorded beside it, and the near-miss is disclosed here rather than resolved
+by moving the line. Anyone wanting to claim conviction scaling helps needs a
+registration that says so in advance.
+
+## An instrument defect found and fixed
+
+`window_stability.profile` reported the identically-zero #201 series as
+"sign-stability 0% (positive)" — its most-unstable label for the most stable
+series it can be handed, because `max(pos, neg)` is 0 when every value is
+zero. A reader skimming that column would have concluded the opposite of the
+truth. Fixed: the all-zero case now reports `modal_sign="zero"` with
+stability 1.0, covered by four tests. No registered threshold depends on
+sign-stability, so nothing in this program changes; the numbers above were
+recomputed after the fix and are identical apart from that label.
+
+## Scope
+
+Descriptive, as registered. No pass/fail, no Bonferroni, nothing promoted.
+One-at-a-time measures MAIN EFFECTS only: a component mattering solely in
+combination reads as no-detectable-contribution here, and no interaction may
+be inferred from this program. #198 in particular is a finding about the
+indicator block's weight, not a licence to ship 1.0/0.0.

@@ -72,12 +72,23 @@ def profile(stat_fn, first, last, n_starts: int = 50,
                 "sign_stability": float("nan"), "table": df}
     pos = int((ok > 0).sum())
     neg = int((ok < 0).sum())
-    modal = max(pos, neg)
+    zero = int((ok == 0).sum())
+    # AN IDENTICALLY-ZERO STATISTIC IS NOT "0% POSITIVE". max(pos, neg) is 0
+    # when every value is exactly zero, which rendered as "sign-stability 0%
+    # (positive)" -- the most unstable-looking label available, for the most
+    # stable series possible. That reading is backwards and would mislead
+    # anyone who did not also look at the range, so the degenerate case is
+    # named. It is perfectly stable at zero, and its sign is neither.
+    if zero == len(ok):
+        stability, modal = 1.0, "zero"
+    else:
+        stability = max(pos, neg) / len(ok)
+        modal = "positive" if pos >= neg else "negative"
     return {"n_starts": len(starts), "n_defined": int(len(ok)),
             "n_undefined": int(len(vals) - len(ok)),
-            "positive": pos, "negative": neg, "zero": int((ok == 0).sum()),
-            "sign_stability": modal / len(ok),
-            "modal_sign": "positive" if pos >= neg else "negative",
+            "positive": pos, "negative": neg, "zero": zero,
+            "sign_stability": stability,
+            "modal_sign": modal,
             "mean": float(ok.mean()), "median": float(np.median(ok)),
             "min": float(ok.min()), "max": float(ok.max()),
             "first_value": float(vals[0]) if not np.isnan(vals[0]) else float("nan"),

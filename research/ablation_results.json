@@ -1,0 +1,165 @@
+{
+  "DISCOVERY": {
+    "#197": {
+      "n": 92,
+      "episodes": 30,
+      "win_pct": 28.26086956521739,
+      "net_all": -0.1573152173913043,
+      "ex_best": -0.4657142857142856,
+      "folds_pos": 1,
+      "folds_counted": 4,
+      "signal_days": 192,
+      "label": "full construction"
+    },
+    "#198": {
+      "n": 101,
+      "episodes": 33,
+      "win_pct": 33.663366336633665,
+      "net_all": 0.018148514851485182,
+      "ex_best": -0.21696969696969698,
+      "folds_pos": 1,
+      "folds_counted": 4,
+      "signal_days": 272,
+      "label": "no Step 3 (1.0/0.0)"
+    },
+    "#199": {
+      "n": 189,
+      "episodes": 19,
+      "win_pct": 34.39153439153439,
+      "net_all": 0.00873015873015874,
+      "ex_best": -0.09309722222222219,
+      "folds_pos": 2,
+      "folds_counted": 4,
+      "signal_days": 247,
+      "label": "no Step 1 (0.0/1.0)"
+    },
+    "#200": {
+      "n": 192,
+      "episodes": 28,
+      "win_pct": 30.208333333333332,
+      "net_all": -0.11257812500000001,
+      "ex_best": -0.2865571428571429,
+      "folds_pos": 1,
+      "folds_counted": 4,
+      "signal_days": 192,
+      "label": "no confirm (2->1)"
+    },
+    "#201": {
+      "n": 92,
+      "episodes": 30,
+      "win_pct": 28.26086956521739,
+      "net_all": -0.1573152173913043,
+      "ex_best": -0.4657142857142856,
+      "folds_pos": 1,
+      "folds_counted": 4,
+      "signal_days": 193,
+      "label": "no VIX regime"
+    },
+    "#202": {
+      "n": 92,
+      "episodes": 30,
+      "win_pct": 28.26086956521739,
+      "net_all": -0.19351086956521737,
+      "ex_best": -0.4657142857142855,
+      "folds_pos": 1,
+      "folds_counted": 4,
+      "signal_days": 192,
+      "label": "no conviction scaling"
+    }
+  },
+  "CONFIRMATION": {
+    "#197": {
+      "n": 108,
+      "episodes": 23,
+      "win_pct": 39.81481481481482,
+      "net_all": 0.1950185185185185,
+      "ex_best": 0.0974444444444445,
+      "folds_pos": 3,
+      "folds_counted": 4,
+      "signal_days": 202,
+      "label": "full construction"
+    },
+    "#198": {
+      "n": 84,
+      "episodes": 24,
+      "win_pct": 41.66666666666667,
+      "net_all": 0.31363095238095245,
+      "ex_best": 0.23372131147540987,
+      "folds_pos": 4,
+      "folds_counted": 4,
+      "signal_days": 223,
+      "label": "no Step 3 (1.0/0.0)"
+    },
+    "#199": {
+      "n": 286,
+      "episodes": 21,
+      "win_pct": 36.71328671328671,
+      "net_all": 0.08434615384615386,
+      "ex_best": 0.018351931330472117,
+      "folds_pos": 3,
+      "folds_counted": 4,
+      "signal_days": 360,
+      "label": "no Step 1 (0.0/1.0)"
+    },
+    "#200": {
+      "n": 202,
+      "episodes": 20,
+      "win_pct": 36.13861386138614,
+      "net_all": 0.0791831683168317,
+      "ex_best": -0.00846052631578947,
+      "folds_pos": 2,
+      "folds_counted": 4,
+      "signal_days": 202,
+      "label": "no confirm (2->1)"
+    },
+    "#201": {
+      "n": 108,
+      "episodes": 23,
+      "win_pct": 39.81481481481482,
+      "net_all": 0.1950185185185185,
+      "ex_best": 0.0974444444444445,
+      "folds_pos": 3,
+      "folds_counted": 4,
+      "signal_days": 202,
+      "label": "no VIX regime"
+    },
+    "#202": {
+      "n": 108,
+      "episodes": 23,
+      "win_pct": 39.81481481481482,
+      "net_all": 0.1456851851851852,
+      "ex_best": 0.06455555555555559,
+      "folds_pos": 3,
+      "folds_counted": 4,
+      "signal_days": 202,
+      "label": "no conviction scaling"
+    }
+  },
+  "_verdicts": {
+    "#198": {
+      "delta_disc": 0.1754637322427895,
+      "delta_conf": 0.11861243386243395,
+      "verdict": "LOAD-BEARING"
+    },
+    "#199": {
+      "delta_disc": 0.16604537612146303,
+      "delta_conf": -0.11067236467236465,
+      "verdict": "NO DETECTABLE CONTRIBUTION"
+    },
+    "#200": {
+      "delta_disc": 0.04473709239130429,
+      "delta_conf": -0.11583535020168681,
+      "verdict": "NO DETECTABLE CONTRIBUTION"
+    },
+    "#201": {
+      "delta_disc": 0.0,
+      "delta_conf": 0.0,
+      "verdict": "NO DETECTABLE CONTRIBUTION"
+    },
+    "#202": {
+      "delta_disc": -0.03619565217391307,
+      "delta_conf": -0.04933333333333331,
+      "verdict": "NO DETECTABLE CONTRIBUTION"
+    }
+  }
+}
