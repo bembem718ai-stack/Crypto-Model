@@ -173,6 +173,29 @@ Research is kept separate from the live system, and stays separate.
    as hygiene; do not go hunting further per-rule micro-optimisations
    expecting a win that is not there.
 
+9. **THE RESTLESSNESS RULE.** When the impulse to run a new test arrives,
+   the first act is to re-read the market-structure map (#249) and the
+   closed-axis list in the research status.
+
+   **A new test requires, in its registration, one sentence naming which
+   closed door it does not re-open and what NEW information or structure it
+   rests on.** "The itch" is not new information.
+
+   All currently-legitimate future tests already exist, sealed, with dates:
+
+   | test | gate |
+   |---|---|
+   | SHADOW-EVAL | 30 pooled closed episodes |
+   | FUNDING #172-#186 | ~2027-06-27 |
+   | POSITIONING #235-#242 | ~2028-01-05 |
+   | OI/BASIS #243-#248 | ~2028-07-01 |
+
+   Plus the one BANKED hypothesis slot from #249, which may be spent only on
+   post-freeze data or on a mechanism argued FIRST and then checked against
+   the map.
+
+   **This rule was written on a calm day to bind a restless one.**
+
 ## Research status — the architectural search is CLOSED
 
 **Six axes searched, zero survivors.** ROTATION (#187-#192), ALLOCATION
