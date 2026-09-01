@@ -311,11 +311,17 @@ empirical input governing inheritance contamination on this universe. It is
 not a constant: any future program reporting axis 4 on the tradable-26 must
 report rho-bar for its OWN window rather than quoting one project-wide figure.
 
-**THE BOARD IS SEALED.** Every search program is run and closed, the last
-descriptive construction on frozen data is complete, and its hypothesis slot
-is banked. **Nothing further can be learned from the frozen dataset.** The
-only paths forward are the six clocks above and, eventually, the banked slot
-on data that does not exist yet.
+**THE BOARD IS SEALED AGAINST RE-OPENING CLOSED AXES** -- which is the rule
+that matters, and is not the same as "no doors remain".
+
+**LEDGER CORRECTION (#251).** This section previously read "Nothing further
+can be learned from the frozen dataset." That was TRUE of every axis the
+project had SEARCHED -- price transformations, resolution, architecture,
+components, funding-at-daily -- and FALSE in general: exogenous macro/flow
+series had never been joined to the frozen basket at all. MACRO-OVERLAY
+(#251-#256) is the exception that proves the distinction, and it is
+admissible only because research rule 9's sentence is satisfiable: it rests
+on information never tested and re-opens no closed door.
 
 **Starting a new search means writing a new registration first.**
 

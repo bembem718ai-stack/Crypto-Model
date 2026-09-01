@@ -6146,3 +6146,324 @@ and this change does not create an exception.
   partial removal — each would be a new decision requiring its own record.
 - **Nothing here may be cited as evidence of anything.** Not the ablation
   numbers, not the simplification, not a subsequent good month.
+
+---
+
+# PRE-REGISTRATION — MACRO-OVERLAY PROGRAM (#251–#256)
+
+> **LOCKED 2026-09-01, approved as drafted with no amendments.** Research
+> rule 4 now applies to every constant below.
+>
+> **Two departures were explicitly endorsed and are noted as PRECEDENT:**
+> (1) a provenance claim not in the written record is recorded as
+> RECOLLECTION, never dressed as a citation; (2) where a partition already
+> exists, fixed by seed before any result, it is REUSED rather than
+> re-drawn — a new split invented later could be chosen to flatter.
+>
+> At lock time the overlay series did **not yet exist in this repository**.
+
+---
+
+## §0. THE RESTLESSNESS-RULE SENTENCE (research rule 9)
+
+> **This program rests on macro/flow information never tested (stablecoin
+> supply, rates); it does not re-open price-transformation,
+> per-ticker-information, or sparse-overlay doors.**
+
+Each clause is checkable against the record:
+
+- **Price-transformation** — every closed program derived its signal from
+  price or from a transform of price. Neither series here is a price.
+- **Per-ticker information** — #163's finding was that per-ticker records are
+  too thin. This program uses **one market-wide series applied to a POOLED
+  construction**, which is the opposite failure mode.
+- **Sparse overlays** — the overlay-unmeasurability law refuses overlays that
+  cannot reach 30 trades. §3 answers it with the measured base counts, by
+  arithmetic, before anything runs.
+
+---
+
+## §1. PROVENANCE — recorded honestly, including what is NOT in the record
+
+**The maintainer's account:** these series were considered in an early plan
+and deferred on replication grounds — one macro series cannot be replicated
+across tickers the way a per-ticker signal can.
+
+> **⚠ THAT DEFERRAL IS NOT IN THIS REPOSITORY'S WRITTEN RECORD.** Searching
+> `docs/cleanroom.md`, `docs/claims.md` and `CLAUDE.md` for *stablecoin*,
+> *DGS10*, *Fear & Greed*, *DefiLlama* and *FRED* returns nothing but USDC
+> appearing as a basket ticker. The deferral is recorded here as **the
+> maintainer's recollection, not as a citation**, because inventing a
+> reference to a note that does not exist would be exactly the kind of
+> tidying this project forbids.
+
+**What later answered the objection.** The basket program (#163–#166) built a
+**pooled** construction across the tradable-26. Pooling is what makes a
+single market-wide series testable at all: replication moves from
+*cross-ticker* to *cross-quartile within one pooled sample*. That design did
+not exist when the deferral was made.
+
+### The ledger correction
+
+`CLAUDE.md` currently states:
+
+> *"**THE BOARD IS SEALED.** … **Nothing further can be learned from the
+> frozen dataset.**"*
+
+**That is an overstatement and this registration corrects it.** It was true
+of every axis the project had *searched* — price transformations, resolution,
+architecture, components, funding-at-daily. It was not true in general:
+**exogenous macro/flow series had never been joined to the frozen basket at
+all.** The board was sealed against re-opening closed doors, which is the
+right rule; it was written as though no doors remained, which was wrong.
+
+On lock, `CLAUDE.md` is amended to say the board is sealed **against
+re-opening closed axes**, with this program named as the exception that
+proves the distinction.
+
+---
+
+## §2. DATA
+
+### 2.1 Base — the frozen basket
+
+`data/basket/*.csv.gz`, the **#167 tradable-26**, daily frames, already
+frozen. Construction: **pooled INC_BUY_ALL** (the incumbent's own
+BUY/STRONG_BUY days), scored through `research/harness.py` into
+`pipeline.evaluate_geometry_folds` with `LIVE_GEOMETRY` and 2bps fee + 2bps
+slippage per side — identical to #164.
+
+### 2.2 Overlay series — TO BE EXPORTED AND FROZEN BEFORE ANY RULE RUNS
+
+| series | source | endpoint | key |
+|---|---|---|---|
+| **(a) Stablecoin total supply** | DefiLlama | `https://stablecoins.llama.fi/stablecoincharts/all` | none |
+| **(b) DGS10** — 10-year Treasury constant maturity | FRED | `https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10` | none |
+
+**Fear & Greed is EXCLUDED and the exclusion is registered**, per the
+original deferral note's reasoning: the index is **constructed from price and
+volatility inputs**, so joining it to price-derived trades would be a
+partially circular test. It is not a macro/flow series and does not belong in
+this program.
+
+### 2.3 EXPORT AND FREEZE PLAN — executed before any rule is scored
+
+1. `research/export_macro.py` pulls both series **once**, full available
+   history, and writes:
+   - `data/macro/stablecoin_supply.csv` — `date, total_circulating_usd`
+   - `data/macro/dgs10.csv` — `date, dgs10`
+   - `data/macro/MANIFEST_macro.json` — per series: source URL, first date,
+     last date, row count, **sha256**, and the export timestamp.
+2. **The freeze is permanent for this program.** The series are never
+   re-pulled, never merged, never revised. If DefiLlama restates history
+   later, this program keeps the frozen copy and the sha256 proves which one
+   was used. *(DefiLlama's supply series is a reconstruction and can move;
+   FRED revises rarely but does revise.)*
+3. **Lockbox.** The frozen macro series are truncated at the basket's lockbox
+   boundary at analysis time, exactly as every other series is. **The lockbox
+   is never read.**
+4. **A gap census is reported before scoring** — missing days per series,
+   longest gap — and stated beside the results.
+
+### 2.4 Alignment — the standard no-lookahead broadcast
+
+> **A series value known at day D applies from D+1 onward.**
+
+Identical to the Step 3 lagged broadcast (#168–#170) and to #220–#234.
+
+**DGS10 needs one extra rule, fixed here.** FRED publishes business days
+only; crypto trades every day. **The last published value is carried forward
+across weekends and US holidays, then broadcast D+1.** No interpolation, no
+back-fill. A carried-forward value is the most recent *known* value, which is
+what a trader would have had.
+
+**Stablecoin supply is daily and needs no carry-forward**; any genuinely
+missing day is carried forward under the same rule and counted in the census.
+
+---
+
+## §3. THE OVERLAY-UNMEASURABILITY LAW, ANSWERED BY ARITHMETIC
+
+The law refuses any overlay that cannot reach `ex_best`'s floor of **≥3 folds
+× ≥10 trades = 30 trades**. Here are the **measured** base counts, from
+#164's recorded results (tradable-26 / INC_BUY_ALL):
+
+| window | pooled trades | pooled episodes |
+|---|---|---|
+| **DISCOVERY** | **1,678** | 496 |
+| **CONFIRMATION** | **2,414** | 661 |
+
+**A regime gate must retain 30 of those to stay measurable:**
+
+- DISCOVERY: **30 / 1,678 = 1.79%**
+- CONFIRMATION: **30 / 2,414 = 1.24%**
+
+**Every rule in §4 is a binary regime gate that is true on well over half its
+window by construction** (a sign condition, a tercile, a level-vs-mean). None
+is remotely near a 1.8% retention rate. **The law is satisfied by arithmetic,
+not by hope** — which is exactly what it demands, and exactly what #220–#234's
+seven unmeasurable overlays failed to demonstrate.
+
+**The quartile replication condition is the tighter constraint.** Each of the
+four quartiles must also clear 30 trades. Pooled quartiles are roughly
+1,678/4 ≈ 420 (DISCOVERY) and 2,414/4 ≈ 600 (CONFIRMATION) **before** gating,
+so a gate retaining ~7% keeps every quartile measurable — but quartiles are
+unequal and this is an approximation.
+
+> **Therefore the event-count precheck is MANDATORY and runs first**, per the
+> standing gate rule: confirmed-trade counts per quartile per window per
+> rule, computed from **signal definitions and calendar structure only, never
+> from returns**. Any rule below 30 in any quartile-window is marked
+> **UNMEASURABLE-BY-CONSTRUCTION and does not run.**
+>
+> **Bonferroni k stays at the registered value regardless** (the fixed-k gate
+> law): a gate removes chances at a false positive, it never cheapens the
+> remaining ones.
+
+---
+
+## §4. HYPOTHESES — six regime gates, every constant fixed
+
+Each is a **regime gate on pooled INC_BUY_ALL**: *the trade is taken **iff**
+the regime is true on its entry day.* No rule changes entry, exit, sizing or
+geometry — only whether the pooled trade is included.
+
+| # | rule | definition — all numbers final |
+|---|---|---|
+| **#251** | stablecoin expansion | Take the trade **iff** the **30-day change in total stablecoin supply is > 0**. *(Liquidity expanding.)* |
+| **#252** | stablecoin top tercile | Take **iff** the 30-day stablecoin growth rate is in the **top tercile of its trailing 365 days**. |
+| **#253** | stablecoin bottom tercile | Take **iff** it is in the **bottom tercile of its trailing 365 days**. *(Registered as the mirror of #252: if expansion helps, contraction should not.)* |
+| **#254** | rates easing | Take **iff** the **3-month change in DGS10 is < 0**. |
+| **#255** | rates below trend | Take **iff** the **DGS10 level is below its trailing 200-day mean**. |
+| **#256** | both easing | Take **iff** #251 **AND** #254 both hold. *(The conventional joint liquidity condition.)* |
+
+**Fixed definitions.** 30-day change = `x / x.shift(30) − 1` on the daily
+series. Tercile rank = `rolling(365).rank(pct=True)`, top = **≥ 2/3**, bottom
+= **≤ 1/3**, including today. 3-month change in DGS10 = `x − x.shift(63)`
+(63 carried-forward daily observations). 200-day mean = `rolling(200).mean()`.
+A day whose regime value is undefined (NaN, warm-up) **excludes the trade**
+and is counted. **Long side only.**
+
+**#253 is a control in hypothesis clothing and is counted as a test.** If
+both #252 and #253 pass, the result is exposure or regime persistence, not
+liquidity — and that reading is registered now.
+
+---
+
+## §5. EVALUATION
+
+**Windows:** BOTH, the basket program's own DISCOVERY and CONFIRMATION.
+**Folds:** 4 equal-duration splits per window.
+
+**Adjudicating null — named here:** **episode-matched placebo, 3,000 seeds**,
+per #167: draw the same NUMBER of runs with the same LENGTHS at random
+non-overlapping positions, same confirm rule. Independent-day placebos
+forbidden — macro regimes are persistent, so a scattered placebo is
+structurally lower-variance than what it benchmarks.
+
+**All four fidelity axes measured BEFORE any draw is scored**, with axis 3
+marked N/A (no exposure budget) and axis 4 quantified against the tradable-26
+ρ̄ measured in #249's M6 (**0.479–0.707, varying by year — report ρ̄ for this
+program's own windows, not one project-wide figure**).
+
+**The axis-4 caveat, verbatim:**
+
+> **THE FOUR AXES CERTIFY THE CENTRE, NOT THE TAIL.** Axis 4 compares the
+> null's distribution CENTRE against a matched random draw. It cannot say
+> whether the null is too NARROW or too WIDE — and every percentile pass
+> condition in this project is decided in the TAIL, where width is nearly
+> the whole story. So every percentile verdict this project has issued
+> carries an **UNCHARACTERIZED TAIL-WIDTH CAVEAT.** State it when citing
+> one.
+
+**Alternate null:** time-rotation requires `[24, T−24]` months, empty below
+48. Basket DISCOVERY and CONFIRMATION are both under that. **INFEASIBLE, and
+stated with the number rather than substituted.**
+
+**Bonferroni: k = 6** (the final registered test count) → α = 0.05/6 =
+**0.008333** → required percentile **99.1667**. p95 reported alongside from
+the same draws.
+
+---
+
+## §6. PASS RULES — #172 style, no partial credit
+
+On the single confirmation run, **on BOTH windows, all required**:
+
+1. **Pooled `net_all` > 0**, AND
+2. **Pooled `net_all` above the Bonferroni-adjusted placebo percentile
+   (99.1667th)**, AND
+3. **REPLICATION: `ex_best` positive in ALL FOUR registered ticker quartiles,
+   where defined.**
+
+**The quartiles are the ones already registered by H-basket-C** (seed
+20260827, fixed before any scoring, membership already public in this
+document):
+
+| quartile | members (∩ tradable-26) |
+|---|---|
+| Q1 | AAVE ALGO BTC LINK XRP |
+| Q2 | ATOM AVAX BNB DOGE ETC ETH VTHO |
+| Q3 | ADA BCH FET NEAR ONE SOL TRX XLM |
+| Q4 | DOT GALA LTC OP UNI VET |
+
+Reusing them is deliberate: they were fixed by seed before any basket result
+existed, they are already published, and **a new split invented now could be
+chosen to flatter.**
+
+**An undefined `ex_best` is UNMEASURABLE and CANNOT PASS** — the absence of a
+result, never a failure. **Single confirmation, no re-runs, no partial
+credit, no second look at a looser bar.** "Almost" is a failure, as it was
+for tradable-26 / INC_BUY_ALL at **0.001R**.
+
+---
+
+## §7. THE KNOWN WEAKNESS — stated up front, and binding anyway
+
+> **One macro series serves all 26 tickers. Quartile replication therefore
+> tests BREADTH OF EFFECT, not INDEPENDENCE.**
+
+Cross-ticker replication in earlier programs asked whether an effect appeared
+in *separately-derived* signals. Here every quartile sees **the identical
+regime series on the identical days**. If the regime coincides with a good
+period for crypto generally, all four quartiles go positive together —
+because they were all long the same market at the same time, not because the
+effect replicated.
+
+**This is strictly weaker than cross-ticker replication, and it is the best
+available for a market-wide series.** It is binding anyway:
+
+- A market-wide regime that helps only one quartile is *worse* evidence, not
+  better, so the condition still has teeth against a narrow fluke.
+- The episode-matched placebo draws from the same windows, so a regime that
+  is merely "a good stretch of market" competes against random stretches of
+  the same market.
+- **#253 is the sharper control:** if the mirror regime also passes, breadth
+  has told us nothing and the registration says so in advance.
+
+**No result from this program may be described as "replicated across
+tickers."** The permitted phrasing is **"positive in all four quartiles of a
+single pooled sample under one shared regime series."**
+
+---
+
+## §8. BUDGET AND CLOSURE
+
+- **This list is the whole program.** Six tests, one run, both windows.
+- **No rule added, edited or re-run.** No parameter tuned — every number is
+  in this document.
+- **No new macro hypothesis as a variation of a failed one.** A different
+  lookback, tercile boundary or series is a new program with its own
+  justification.
+- **Nothing here is promoted to the live path** regardless of outcome.
+- **This program does NOT inherit the registered-before-the-test-data-exists
+  property.** The basket frames exist and have been scored before. It rests
+  on the weaker guarantee: **the overlay series do not yet exist in this
+  repository, and every constant is fixed before they are exported.**
+
+**Reported whatever the outcome:** per rule and per window — pooled `n`,
+**episodes**, win%, `net_all`, `ex_best`, folds counted/positive, per-quartile
+`ex_best`, placebo p95 and p99.1667, observed percentile, all four
+fidelity-axis measurements with the axis-4 caveat attached, the gap census,
+the precheck's per-quartile trade counts, and the registered k beside the
+surviving count. Negatives get the same detail as positives.
