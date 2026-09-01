@@ -73,8 +73,21 @@ SHADOW_COLUMNS = [
     # pull; only the blend weights differ. See TWO ARMS above.
     "sq_final_score", "sq_decision", "sq_direction",
     "sq_target_price", "sq_stop_price", "sq_risk_reward",
+    # WHICH CONSTRUCTION PRODUCED THE sq_* COLUMNS ON THIS ROW. Arm 2
+    # mirrors the published path, and the published path CHANGED on
+    # 2026-09-01 (VIX regime removed), so this log spans two constructions.
+    # Recording it per row keeps the split legible instead of blurred: the
+    # first 100 rows are "squeeze+vix", every row after is "squeeze".
+    # #201 measured the difference as ONE BUY-tier day in 6.42 years, so the
+    # mixing is expected to be immaterial -- but "expected immaterial" is a
+    # claim a reader should be able to CHECK, which needs this column.
+    "sq_construction",
     "gate_decision", "ind_cache_date", "tradable", "guard_reason",
 ]
+
+# Value written into sq_construction. Change this in the SAME commit as any
+# change to arm 2's blend, and migrate the existing rows deliberately.
+SQ_CONSTRUCTION = "squeeze"
 
 # Each arm's columns, mapped onto the canonical names live_tools reads.
 # Resolution reuses live_tools.extract_episodes UNCHANGED -- an arm is
@@ -134,9 +147,26 @@ def score_shadow(ticker, now=None):
     step2 = {"step": 2, "gated_score": step1["initial_score"],
              "gate_decision": "UNGATED_SHADOW", "gate_multiplier": 1.0}
 
-    combined = pl.combine_and_decide(step2, step3)          # 0.6 / 0.4
-    squeeze = pl.combine_and_decide(step2, step3,           # 1.0 / 0.0
-                                    weight_pattern=1.0, weight_indicators=0.0)
+    # BOTH ARMS NAME THEIR CONSTRUCTION EXPLICITLY. Neither may ride on
+    # pipeline's defaults: those defaults MOVED on 2026-09-01, and an
+    # incumbent arm that silently followed them would have stopped being the
+    # incumbent on the same day the live path changed -- destroying the only
+    # thing that makes that change reversible. This call is the precondition
+    # named in the SIMPLIFICATION registration, section 2.
+    combined = pl.combine_and_decide(
+        step2, step3,
+        weight_pattern=pl.INCUMBENT_WEIGHT_PATTERN,
+        weight_indicators=pl.INCUMBENT_WEIGHT_INDICATORS,
+        use_vix_regime=pl.INCUMBENT_USE_VIX_REGIME)
+    # ARM 2 MIRRORS WHAT IS PUBLISHED, whatever that currently is. Its whole
+    # purpose is to shadow the shipped construction; if it drifted from the
+    # live path, SHADOW-EVAL would adjudicate a construction nobody ships,
+    # and the drift would compound with every future change.
+    squeeze = pl.combine_and_decide(
+        step2, step3,
+        weight_pattern=pl.PUBLISHED_WEIGHT_PATTERN,
+        weight_indicators=pl.PUBLISHED_WEIGHT_INDICATORS,
+        use_vix_regime=pl.PUBLISHED_USE_VIX_REGIME)
 
     # EXIT LEVELS ARE COMPUTED HERE, NOT READ OFF `combined`.
     #
@@ -189,6 +219,7 @@ def score_shadow(ticker, now=None):
         "sq_target_price": lvl(sq_exits, "target"),
         "sq_stop_price": lvl(sq_exits, "stop"),
         "sq_risk_reward": lvl(sq_exits, "risk_reward"),
+        "sq_construction": SQ_CONSTRUCTION,
         "gate_decision": step2["gate_decision"],
         "ind_cache_date": now.strftime("%Y-%m-%d"),
         "tradable": True,

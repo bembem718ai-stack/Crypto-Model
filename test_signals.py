@@ -43,6 +43,7 @@ import os
 import sys
 from datetime import datetime, timedelta, timezone
 
+import ast
 import pytest
 import pandas as pd
 import numpy as np
@@ -488,6 +489,10 @@ class TestPipelineEndToEndOffline:
         monkeypatch.setattr(um, "apply_indicator_step",
                             lambda *a, **k: _fake_step3(target_score, vix, ts=t3))
 
+    # Both constructions are exercised. The EXTREME_VIX rows below are
+    # INCUMBENT-only by nature: the published path (2026-09-01) withholds
+    # vix_level, so a panic cannot move a bar there -- which is the whole
+    # content of #201 and is asserted directly in TestPublishedConstruction.
     @pytest.mark.parametrize("target_score,vix,expected_direction", [
         (85, NORMAL_VIX, "STRONG_BUY"),
         (65, NORMAL_VIX, "BUY"),
@@ -495,11 +500,11 @@ class TestPipelineEndToEndOffline:
         (35, NORMAL_VIX, "SELL"),
         (10, NORMAL_VIX, "STRONG_SELL"),   # <-- the case you can't get on demand live
         (85, EXTREME_VIX, "STRONG_BUY"),
-        (25, EXTREME_VIX, "SELL"),
         (15, EXTREME_VIX, "STRONG_SELL"),
     ])
     def test_pipeline_emits_expected_direction(self, monkeypatch,
                                                target_score, vix, expected_direction):
+        """Labels that are the SAME under both constructions."""
         self._patch_steps(monkeypatch, float(target_score), vix)
         result = um.run_full_pipeline("BTC", verbose=False)
 
@@ -507,15 +512,40 @@ class TestPipelineEndToEndOffline:
         assert result["combined"]["final_score"] == pytest.approx(float(target_score))
         assert result["combined"]["direction"] == expected_direction
 
+    @pytest.mark.parametrize("target_score,expected_direction", [
+        (85, "STRONG_BUY"),
+        (25, "SELL"),          # panic bars: strong_sell 25->20, sell 40->30
+        (15, "STRONG_SELL"),
+    ])
+    def test_incumbent_pipeline_still_applies_the_panic_bars(
+            self, monkeypatch, target_score, expected_direction):
+        """The INCUMBENT construction, which shadow_basket keeps logging.
+
+        Retired from the published path, NOT from the codebase -- the
+        promotion/demotion question at SHADOW-EVAL needs it to keep working.
+        """
+        self._patch_steps(monkeypatch, float(target_score), EXTREME_VIX)
+        result = um.run_full_pipeline(
+            "BTC", verbose=False, run_step3=True,
+            weight_pattern=um.INCUMBENT_WEIGHT_PATTERN,
+            weight_indicators=um.INCUMBENT_WEIGHT_INDICATORS,
+            use_vix_regime=um.INCUMBENT_USE_VIX_REGIME)
+        assert result["combined"]["direction"] == expected_direction
+
     def test_extreme_fear_mode_threads_through_pipeline(self, monkeypatch):
         # final_score 42 in a panic: default -> WATCH, risk_off -> SELL.
         # Proves the flag reaches classify_direction from the orchestrator.
+        # INCUMBENT construction: the published path has no panic regime.
+        kw = dict(verbose=False, run_step3=True,
+                  weight_pattern=um.INCUMBENT_WEIGHT_PATTERN,
+                  weight_indicators=um.INCUMBENT_WEIGHT_INDICATORS,
+                  use_vix_regime=um.INCUMBENT_USE_VIX_REGIME)
         self._patch_steps(monkeypatch, 42.0, EXTREME_VIX)
-        default = um.run_full_pipeline("BTC", verbose=False)
+        default = um.run_full_pipeline("BTC", **kw)
         assert default["combined"]["direction"] == "WATCH"
 
         self._patch_steps(monkeypatch, 42.0, EXTREME_VIX)
-        risk_off = um.run_full_pipeline("BTC", verbose=False, extreme_fear_mode="risk_off")
+        risk_off = um.run_full_pipeline("BTC", extreme_fear_mode="risk_off", **kw)
         assert risk_off["combined"]["direction"] == "SELL"
 
     def test_pipeline_reports_all_three_steps_in_order(self, monkeypatch):
@@ -1184,8 +1214,17 @@ class TestLazySentiment:
         assert call is True
 
     def test_lazy_skips_only_below_cutoff(self):
-        assert um.should_call_sentiment(20.0, lazy=True)[0] is False
-        assert um.should_call_sentiment(40.0, lazy=True)[0] is True
+        # Cutoff is DERIVED, so it moved with the weights on 2026-09-01:
+        # (60 - 0.4*100)/0.6 = 33.3 incumbent, (60 - 0)/1.0 = 60 published.
+        # Asserted against the derivation, not against a frozen number.
+        cut = um.sentiment_call_cutoff()
+        assert um.should_call_sentiment(cut - 20.0, lazy=True)[0] is False
+        assert um.should_call_sentiment(cut + 20.0, lazy=True)[0] is True
+        # and under the incumbent weights the old numbers still hold
+        inc = dict(weight_pattern=um.INCUMBENT_WEIGHT_PATTERN,
+                   weight_indicators=um.INCUMBENT_WEIGHT_INDICATORS)
+        assert um.should_call_sentiment(20.0, lazy=True, **inc)[0] is False
+        assert um.should_call_sentiment(40.0, lazy=True, **inc)[0] is True
 
     def test_lazy_boundary_calls_at_cutoff(self):
         cutoff = um.sentiment_call_cutoff()
@@ -3221,17 +3260,45 @@ class TestLiveSentimentQuotaGating:
         assert um.sentiment_call_cutoff(70.0, 0.6, 0.4) > um.sentiment_call_cutoff(60.0, 0.6, 0.4)
         assert um.sentiment_call_cutoff(60.0, 0.8, 0.2) > um.sentiment_call_cutoff(60.0, 0.6, 0.4)
 
-    def test_cutoff_must_not_be_the_buy_bar(self):
+    def test_cutoff_must_not_be_the_buy_bar_under_the_incumbent(self):
         # A score of 50 is BELOW the buy bar but ABOVE the derived cutoff,
         # and the gate changes the outcome there. This is the test that
         # forbids "skip whenever initial_score < buy_bar".
+        #
+        # SCOPED TO THE INCUMBENT, because the premise is that indicators can
+        # lift a sub-bar pattern score over the line. At weight_indicators=0
+        # they cannot, and cutoff == buy_bar is then the CORRECT answer --
+        # see test_published_cutoff_equals_the_buy_bar_and_that_is_right.
+        inc = dict(weight_pattern=um.INCUMBENT_WEIGHT_PATTERN,
+                   weight_indicators=um.INCUMBENT_WEIGHT_INDICATORS,
+                   use_vix_regime=um.INCUMBENT_USE_VIX_REGIME)
         step3 = {"indicator_final_score": 100.0, "vix_level": 18.0}
-        undampened = um.combine_and_decide({"gated_score": 50.0}, step3)
-        vetoed = um.combine_and_decide({"gated_score": 25.0}, step3)   # 50 * 0.5
+        undampened = um.combine_and_decide({"gated_score": 50.0}, step3, **inc)
+        vetoed = um.combine_and_decide({"gated_score": 25.0}, step3, **inc)
         assert undampened["direction"] in ("BUY", "STRONG_BUY")
         assert vetoed["direction"] not in ("BUY", "STRONG_BUY"), (
             "if a VETO cannot flip this, the cutoff argument is wrong")
         assert 50.0 > um.sentiment_call_cutoff(60.0, 0.6, 0.4)
+
+    def test_published_cutoff_equals_the_buy_bar_and_that_is_right(self):
+        """Under 1.0/0.0 the derived cutoff collapses onto the buy bar.
+
+        That is not the bug the test above forbids. The forbidden move is
+        HARDCODING "skip below the buy bar"; here the same derivation
+        happens to land there, because indicators contribute nothing and a
+        pattern score below 60 cannot reach 60 no matter what they say.
+
+        The safety property still holds and is asserted: at and above the
+        bar the gate can still flip a BUY, so nothing is skipped that could
+        have mattered.
+        """
+        assert um.sentiment_call_cutoff() == pytest.approx(60.0)
+        step3 = {"indicator_final_score": 100.0, "vix_level": 18.0}
+        assert um.combine_and_decide({"gated_score": 60.0}, step3
+                                     )["direction"] in ("BUY", "STRONG_BUY")
+        assert um.combine_and_decide({"gated_score": 30.0}, step3
+                                     )["direction"] not in ("BUY", "STRONG_BUY")
+        assert um.should_call_sentiment(60.0, lazy=True)[0] is True
 
     def test_below_cutoff_skips_the_api_call_entirely(self, tmp_path):
         calls = []
@@ -4988,3 +5055,261 @@ class TestPublicationAuditWiring:
         called = {n.func.id for n in ast.walk(tree)
                   if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
         assert "check_publication_generators" in called
+
+
+# ======================================================================
+# THE PUBLISHED CONSTRUCTION — the 2026-09-01 simplification's contract
+#
+# These tests pin WHAT IS SHIPPED and WHAT IS STILL LOGGED. They make no
+# performance claim, and none may be read out of them: they assert that the
+# published path is squeeze-only with no VIX regime, that the incumbent
+# construction is still reachable and still produced by the shadow logger,
+# and that the tier FRAMING a subscriber sees did not move.
+# ======================================================================
+
+class TestPublishedConstruction:
+
+    def test_published_constants_are_squeeze_only_with_no_vix(self):
+        assert um.PUBLISHED_WEIGHT_PATTERN == 1.0
+        assert um.PUBLISHED_WEIGHT_INDICATORS == 0.0
+        assert um.PUBLISHED_USE_VIX_REGIME is False
+
+    def test_incumbent_constants_survive_for_the_shadow_arm(self):
+        assert um.INCUMBENT_WEIGHT_PATTERN == 0.6
+        assert um.INCUMBENT_WEIGHT_INDICATORS == 0.4
+        assert um.INCUMBENT_USE_VIX_REGIME is True
+
+    def test_defaults_are_the_published_construction(self):
+        out = um.combine_and_decide({"gated_score": 72.0},
+                                    {"indicator_final_score": 0.0,
+                                     "vix_level": 18.0})
+        assert out["weight_pattern"] == 1.0
+        assert out["weight_indicators"] == 0.0
+        assert out["use_vix_regime"] is False
+        # squeeze-only: the score IS the gated score
+        assert out["final_score"] == pytest.approx(72.0)
+
+    def test_zero_weight_does_not_propagate_a_missing_indicator_score(self):
+        """0.0 * nan is nan. With Step 3 skipped that would nan every score.
+
+        The trap that makes this worth a test: it does not raise, it
+        produces INSUFFICIENT_DATA on every ticker forever, and a log full
+        of INSUFFICIENT_DATA looks like a quiet market.
+        """
+        for missing in (None, float("nan")):
+            out = um.combine_and_decide({"gated_score": 72.0},
+                                        {"indicator_final_score": missing,
+                                         "vix_level": missing})
+            assert out["final_score"] == pytest.approx(72.0)
+            assert out["direction"] == "BUY"
+        # and with no such key at all
+        out = um.combine_and_decide({"gated_score": 72.0}, {})
+        assert out["final_score"] == pytest.approx(72.0)
+
+    def test_vix_regime_is_inert_on_the_published_path(self):
+        """#201, asserted as a property rather than quoted as a number."""
+        for score in (85.0, 72.0, 60.0, 50.0, 42.0, 25.0, 15.0):
+            calm = um.combine_and_decide({"gated_score": score},
+                                         {"vix_level": NORMAL_VIX})
+            panic = um.combine_and_decide({"gated_score": score},
+                                          {"vix_level": EXTREME_VIX})
+            assert calm["direction"] == panic["direction"], score
+            assert calm["decision"] == panic["decision"], score
+
+    def test_pipeline_skips_step3_and_nulls_its_columns(self, monkeypatch):
+        called = []
+        monkeypatch.setattr(um, "compute_initial_score",
+                            lambda *a, **k: _fake_step1(72.0))
+        monkeypatch.setattr(um, "apply_reddit_step",
+                            lambda *a, **k: _fake_step2(72.0))
+
+        def boom(*a, **k):
+            called.append(1)
+            raise AssertionError("published path must not call Step 3")
+
+        monkeypatch.setattr(um, "apply_indicator_step", boom)
+        result = um.run_full_pipeline("BTC", verbose=False)
+        assert not called
+        step3 = result["step3_indicators"]
+        assert step3["skipped"] is True
+        assert step3["indicator_final_score"] is None
+        assert step3["vix_level"] is None
+        assert result["combined"]["final_score"] == pytest.approx(72.0)
+        assert result["combined"]["direction"] == "BUY"
+
+    def test_short_trend_filter_cannot_fire_with_step3_skipped(self, monkeypatch):
+        """§3's disclosed cost, asserted so it stays a KNOWN cost.
+
+        below_trend_sma is None rather than False, so the filter's
+        `is False` test cannot match and a SELL is logged as scored.
+        Shorts are never published, so no published signal changes.
+        """
+        monkeypatch.setattr(um, "compute_initial_score",
+                            lambda *a, **k: _fake_step1(30.0))
+        monkeypatch.setattr(um, "apply_reddit_step",
+                            lambda *a, **k: _fake_step2(30.0))
+        result = um.run_full_pipeline("BTC", verbose=False)
+        assert result["combined"]["direction"] == "SELL"
+        assert "trend_filter_note" not in result["combined"]
+        assert result["step3_indicators"]["below_trend_sma"] is None
+
+    def test_ml_requires_step3_to_have_run(self, monkeypatch):
+        monkeypatch.setattr(um, "compute_initial_score",
+                            lambda *a, **k: _fake_step1(72.0))
+        monkeypatch.setattr(um, "apply_reddit_step",
+                            lambda *a, **k: _fake_step2(72.0))
+        with pytest.raises(ValueError, match="run_step3"):
+            um.run_full_pipeline("BTC", verbose=False, use_ml=True)
+        with pytest.raises(ValueError, match="run_step3"):
+            um.run_full_pipeline("BTC", verbose=False, ml_weight=0.5, use_ml=True)
+
+    # ---- the reversibility precondition -----------------------------
+    def test_shadow_logger_names_both_constructions_explicitly(self):
+        """SIMPLIFICATION §2. If the incumbent arm rode on pipeline's
+        defaults it would have silently BECOME squeeze-only on 2026-09-01,
+        and the change would be irreversible while looking reversible."""
+        src = open("shadow_basket.py", encoding="utf-8").read()
+        for name in ("INCUMBENT_WEIGHT_PATTERN", "INCUMBENT_WEIGHT_INDICATORS",
+                     "INCUMBENT_USE_VIX_REGIME", "PUBLISHED_WEIGHT_PATTERN",
+                     "PUBLISHED_WEIGHT_INDICATORS", "PUBLISHED_USE_VIX_REGIME"):
+            assert name in src, "shadow arm does not name " + name
+
+        tree = ast.parse(src)
+        calls = [n for n in ast.walk(tree)
+                 if isinstance(n, ast.Call)
+                 and isinstance(n.func, ast.Attribute)
+                 and n.func.attr == "combine_and_decide"]
+        assert len(calls) == 2, "expected exactly two arms"
+        for c in calls:
+            kw = {k.arg for k in c.keywords}
+            assert {"weight_pattern", "weight_indicators",
+                    "use_vix_regime"} <= kw, "an arm relies on defaults"
+
+    def test_shadow_logger_still_calls_step3(self):
+        """The incumbent arm needs a real indicator score, so the shadow
+        path keeps the Yahoo dependency the published path dropped."""
+        src = open("shadow_basket.py", encoding="utf-8").read()
+        assert "apply_indicator_step" in src
+
+    def test_shadow_log_records_which_construction_made_arm_two(self):
+        import importlib
+        sb = importlib.import_module("shadow_basket")
+        assert "sq_construction" in sb.SHADOW_COLUMNS
+        assert sb.SQ_CONSTRUCTION == "squeeze"
+        import csv
+        with open("shadow_log.csv", encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
+        assert rows, "shadow log is empty"
+        assert all(r["sq_construction"] in ("squeeze", "squeeze+vix")
+                   for r in rows)
+        # the pre-change rows must still say so — the split stays legible
+        assert any(r["sq_construction"] == "squeeze+vix" for r in rows)
+
+    # ---- retired columns, not deleted ones ---------------------------
+    def test_retired_columns_stay_in_the_log_schema(self):
+        import importlib
+        lt = importlib.import_module("live_tools")
+        assert "indicator_final_score" in lt.LOG_COLUMNS
+        assert "vix_level" in lt.LOG_COLUMNS
+
+    # ---- claims.md carries the change, and no new claim -------------
+    def test_claims_md_discloses_the_change_and_the_short_split(self):
+        c = open("docs/claims.md", encoding="utf-8").read()
+        assert "simplified on 2026-09-01" in c
+        assert "NO PERFORMANCE CLAIM IS MADE" in c
+        assert "SHORT row spans two constructions" in c
+        assert "ZERO supported edge claims" in c
+
+
+class TestTierFramingIsUnchangedByTheSimplification:
+    """GOLDEN. The subscriber-visible framing of BUY and STRONG_BUY must
+    not have moved. The publication path never read Step 3, so nothing
+    here SHOULD change -- these tests are what makes that checkable rather
+    than assumed."""
+
+    def _pub(self):
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        return importlib.import_module("publish")
+
+    def _ep(self, **kw):
+        base = dict(episode_id="BTC_20260801T000000", ticker="BTC", side="long",
+                    entry_time_utc="2026-08-01T00:00:00", entry_direction="BUY",
+                    peak_direction="BUY", entry_price=78420.0,
+                    target_price=80910.0, stop_price=77175.0, entry_score=61.3,
+                    atr=830.0, status="open", outcome=None, pnl_r=None,
+                    days_held=None, exit_date=None)
+        base.update(kw)
+        return base
+
+    def _rec(self):
+        return {"long_n": 8, "long_wins": 3, "long_losses": 5, "long_net_r": 1.0,
+                "all_n": 19, "all_wins": 3, "all_losses": 16, "all_net_r": -10.0,
+                "short_n": 11, "short_wins": 0, "short_net_r": -11.0,
+                "long_streak": 3, "all_streak": 8, "strong_buy_log_rows": 8}
+
+    def test_publication_path_never_reads_step3_quantities(self):
+        src = open("research/publish.py", encoding="utf-8").read()
+        for q in ("indicator_final_score", "vix_level", "technical_score",
+                  "macro_multiplier"):
+            assert q not in src, "publication text depends on " + q
+
+    def test_buy_framing_is_byte_for_byte_what_it_was(self):
+        pub = self._pub()
+        t = pub.open_alert(self._ep(), self._rec())
+        assert "BTC — BUY" in t
+        assert "This is a research signal, published as-is and tracked publicly." in t
+        assert "That is not enough trades to establish an edge, in either direction." in t
+        assert "No claim is made that this trade will work." in t
+        assert "8 closed long episodes, 3 target / 5 stop, +1.00R net" in t
+        assert "NOT a validated edge" not in t
+
+    def test_strong_buy_framing_is_byte_for_byte_what_it_was(self):
+        pub = self._pub()
+        t = pub.open_alert(self._ep(entry_direction="STRONG_BUY",
+                                    peak_direction="STRONG_BUY"), self._rec())
+        assert "BTC — STRONG_BUY" in t
+        assert "STRONG_BUY is the model's rarest tier and it is NOT a validated edge." in t
+        assert "The wider target is a geometry choice, not a confidence measurement." in t
+
+    def test_no_tier_text_mentions_the_removed_components(self):
+        pub = self._pub()
+        texts = [pub.open_alert(self._ep(), self._rec()),
+                 pub.open_alert(self._ep(entry_direction="STRONG_BUY"), self._rec()),
+                 pub.transparency_post(self._rec(), "2026-09")]
+        for t in texts:
+            low = t.lower()
+            for gone in ("vix", "indicator blend", "rsi", "macd"):
+                assert gone not in low, "tier text names a removed component: " + gone
+
+    def test_simplification_adds_no_performance_claim_to_any_post(self):
+        """No post may advertise the construction change, in any form.
+
+        BANS CLAIM FORMS, NOT WORDS. "improved" appears legitimately in the
+        transparency post, which explains that a choice would be
+        indefensible "*because* it improved the number". Banning the
+        substring would ban the honest disclosure -- the same mistake as
+        banning "financial advice" in a footer that says "Not financial
+        advice".
+        """
+        pub = self._pub()
+        texts = [pub.open_alert(self._ep(), self._rec()),
+                 pub.open_alert(self._ep(entry_direction="STRONG_BUY"), self._rec()),
+                 pub.transparency_post(self._rec(), "2026-09")]
+        forms = ("simplified", "simplification", "new model", "updated model",
+                 "improved model", "better model", "now stronger",
+                 "upgrade", "upgraded", "we removed", "streamlined",
+                 "more accurate", "more reliable")
+        for t in texts:
+            low = t.lower()
+            for banned in forms:
+                assert banned not in low, "a post makes a change claim: " + banned
+
+    def test_the_word_ban_does_not_catch_the_honest_disclosure(self):
+        """Guards the test above against being tightened into nonsense."""
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        assert "improved the number" in t, (
+            "the anti-cherry-picking disclosure disappeared from the post")

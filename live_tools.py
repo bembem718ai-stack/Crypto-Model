@@ -571,6 +571,19 @@ def main_monitor():
 DEFAULT_LOG = "signal_log.csv"
 
 LOG_COLUMNS = [
+    # RETIRED COLUMNS -- read the note before deleting either of them.
+    #
+    # `indicator_final_score` and `vix_level` are NULL on every row written
+    # from 2026-09-01, when Step 3 and the VIX regime were removed from the
+    # published construction (docs/cleanroom.md, SIMPLIFICATION registration;
+    # grounds #198 and #201; NO PERFORMANCE CLAIM IS MADE).
+    #
+    # THE COLUMNS STAY. 1,789 earlier rows carry real values, and dropping
+    # the columns would make those rows unreadable by every consumer that
+    # expects this header -- including append_ping_to_log's own migration
+    # path. A null in a kept column says "not computed on this row"; a
+    # missing column says nothing at all. Reverting the simplification
+    # refills them with no schema change.
     "timestamp_utc", "ticker", "price", "initial_score", "gated_score",
     "indicator_final_score", "final_score", "decision", "direction",
     "vix_level", "gate_decision", "gate_multiplier",

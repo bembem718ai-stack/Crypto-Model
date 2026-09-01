@@ -177,6 +177,22 @@ tickers; `INC_BUY_ALL` on CONFIRMATION missing the placebo p95 by 0.001R).
 
 ---
 
+### Construction change — 2026-09-01
+
+> **The published construction was simplified on 2026-09-01 on ablation
+> grounds: Step 3 (the indicator blend) and the VIX extreme-fear regime were
+> removed. NO PERFORMANCE CLAIM IS MADE.** Both constructions remain publicly
+> logged (`shadow_log.csv`, arms 1 and 2); adjudication is SHADOW-EVAL's at 30
+> pooled closed episodes and nowhere else.
+
+Grounds are #198 (Step 3 measured harmful) and #201 (the VIX regime measured
+inert on the long side). **Neither is evidence that what remains works** —
+#203 took squeeze-only to a registered bar and FAILED. This is a
+simplification of a construction with no supported edge claim either way.
+
+**No SUPPORTED entry was added, edited or removed by this change, and the
+project still holds ZERO supported edge claims.**
+
 ## 2. NOT SUPPORTED
 
 Claims the project has been tempted to make that the record does not back. For
@@ -413,6 +429,21 @@ one of them describes what a follower would have traded.
 | **LONG (published)** | **8** | 3 | 5 | **37.5%** | **+1.00R** | 3 |
 | SHORT (logged, not published) | 11 | 0 | 11 | 0.0% | −11.00R | 11 |
 | ALL | 19 | 3 | 16 | 15.8% | −10.00R | 8 |
+
+> **DISCLOSURE — the SHORT row spans two constructions from 2026-09-01.**
+> The short trend filter (SELL downgraded to WATCH when price is above its
+> 50-day SMA) lived in Step 3. With Step 3 removed from the published path it
+> no longer fires, so short rows logged from 2026-09-01 are produced by a
+> **different construction** from the one that produced the 0-for-11 above.
+>
+> No published signal changes — shorts are never published (`--long-only`).
+> But this table quotes the logged short record, so from that date the SHORT
+> row **mixes two constructions** and the ALL row inherits the mix. The LONG
+> row is unaffected: the filter only ever touched SELL/STRONG_SELL.
+>
+> Recorded here as a **known cost of the simplification, decided in advance**,
+> not as something discovered later. Any future citation of the short record
+> must state which side of 2026-09-01 it is drawn from.
 
 ### Which number is *your* number
 

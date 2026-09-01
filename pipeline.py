@@ -133,8 +133,50 @@ def compute_initial_score(ticker: str, interval: str = "4h", klines_limit: int =
 # nothing) is the default saving instead.
 
 
-def sentiment_call_cutoff(buy_bar: float = 60.0, weight_pattern: float = 0.6,
-                           weight_indicators: float = 0.4,
+# ======================================================================
+# THE PUBLISHED CONSTRUCTION — simplified 2026-09-01 on ablation grounds
+# ======================================================================
+# Registered in docs/cleanroom.md as an ENGINEERING change, explicitly
+# PERFORMANCE-SILENT. NO PERFORMANCE CLAIM IS MADE OR MAY BE QUOTED.
+#
+# GROUNDS, both already in the record:
+#   #198  Step 3 (the indicator blend) is measured HARMFUL. Removing it
+#         improved BTC INC_BUY_ALL on BOTH windows (+0.175R / +0.119R),
+#         positive at 100 of 100 window starts.
+#   #201  The VIX regime is UNEXERCISED BY CONSTRUCTION. Removing it moved
+#         expectancy +0.000R on both windows, identically zero at all 50
+#         rolling starts each. VIX >= 35 on 90 days changing 35 labels --
+#         but BUY-tier membership changed on ONE day in 6.42 years, and
+#         that day was unconfirmed, so it produced no trade. Every other
+#         change was SELL-side, which the published long-only path never
+#         trades.
+#
+# WHAT THESE GROUNDS DO NOT ESTABLISH. #203 took squeeze-only to a real bar
+# and FAILED (68th and 91.5th placebo percentile against a p95 bar).
+# SQUEEZE-ONLY IS NOT A VALIDATED EDGE AND THIS DOES NOT MAKE IT ONE. This
+# simplifies a construction with no supported edge claim either way, because
+# one component was measured to subtract and another measured to do nothing.
+#
+# ADJUDICATION IS SHADOW-EVAL'S, at 30 pooled closed episodes, and nowhere
+# else. Both constructions keep logging (shadow_basket.py) so the change
+# stays reversible -- that is a PRECONDITION, not a consequence.
+PUBLISHED_WEIGHT_PATTERN = 1.0
+PUBLISHED_WEIGHT_INDICATORS = 0.0
+PUBLISHED_USE_VIX_REGIME = False
+
+# The pre-2026-09-01 construction. Kept because the shadow logger's
+# incumbent arm MUST keep producing it: if it stopped, the promotion /
+# demotion question would become unanswerable the moment the live path
+# changed, and a reversible change would become an irreversible one wearing
+# its clothes. Do not "clean these up".
+INCUMBENT_WEIGHT_PATTERN = 0.6
+INCUMBENT_WEIGHT_INDICATORS = 0.4
+INCUMBENT_USE_VIX_REGIME = True
+
+
+def sentiment_call_cutoff(buy_bar: float = 60.0,
+                           weight_pattern: float = PUBLISHED_WEIGHT_PATTERN,
+                           weight_indicators: float = PUBLISHED_WEIGHT_INDICATORS,
                            max_dampening: float = 0.5) -> float:
     """Step 1 score below which the sentiment gate cannot change a BUY.
     Returns 0.0 (never skip) if the weights make the bound meaningless."""
@@ -145,8 +187,9 @@ def sentiment_call_cutoff(buy_bar: float = 60.0, weight_pattern: float = 0.6,
 
 
 def should_call_sentiment(initial_score: float, lazy: bool = False,
-                           buy_bar: float = 60.0, weight_pattern: float = 0.6,
-                           weight_indicators: float = 0.4,
+                           buy_bar: float = 60.0,
+                           weight_pattern: float = PUBLISHED_WEIGHT_PATTERN,
+                           weight_indicators: float = PUBLISHED_WEIGHT_INDICATORS,
                            max_dampening: float = 0.5) -> tuple:
     """Returns (should_call, reason). With lazy=False always calls."""
     if not lazy:
@@ -445,24 +488,39 @@ def classify_direction(final_score: float, vix_level: float,
 
 
 def combine_and_decide(step2_result: dict, step3_result: dict,
-                        weight_pattern: float = 0.6, weight_indicators: float = 0.4,
+                        weight_pattern: float = PUBLISHED_WEIGHT_PATTERN,
+                        weight_indicators: float = PUBLISHED_WEIGHT_INDICATORS,
                         extreme_fear_mode: str = "symmetric",
+                        use_vix_regime: bool = PUBLISHED_USE_VIX_REGIME,
                         ml_weight: float = 0.0, buy_bar: float = 60,
                         sell_bar: float = 40, ml_veto: float = 25.0,
                         ml_confirm: float = 55.0) -> dict:
     """
     Blends the pattern+sentiment score (Steps 1-2) with the indicator
-    score (Step 3). Default weighting favors the pattern side (0.6) over
-    indicators (0.4) — this reflects THIS SESSION'S walk-forward finding
-    that squeeze was more consistent than the RSI/MACD/momentum-style
-    indicators, not a universal truth. Change these weights freely once
-    you've validated your own numbers; they're deliberately exposed as
-    parameters, not hardcoded.
+    score (Step 3).
+
+    DEFAULTS ARE THE PUBLISHED CONSTRUCTION: 1.0 / 0.0 with the VIX regime
+    OFF (see the PUBLISHED_* constants above and docs/cleanroom.md's
+    SIMPLIFICATION registration). Callers that need the pre-2026-09-01
+    incumbent -- shadow_basket.py's first arm, and only it -- pass the
+    INCUMBENT_* constants EXPLICITLY. It is deliberate that neither
+    construction is reachable by accident.
+
+    `use_vix_regime=False` withholds vix_level from the two labellers
+    rather than editing their thresholds, so signal_engines._decide_row and
+    classify_direction are untouched and the regime is one flag away from
+    coming back.
     """
     gated_score = step2_result["gated_score"]
-    indicator_score = step3_result["indicator_final_score"]
+    indicator_score = step3_result.get("indicator_final_score")
 
-    base_score = weight_pattern * gated_score + weight_indicators * indicator_score
+    # A ZERO WEIGHT MUST NOT MULTIPLY: 0.0 * nan is nan, and with Step 3
+    # skipped indicator_score is legitimately None/nan on every new row.
+    # Multiplying would turn every published score into nan.
+    if weight_indicators == 0:
+        base_score = weight_pattern * gated_score
+    else:
+        base_score = weight_pattern * gated_score + weight_indicators * indicator_score
     base_score = max(0.0, min(100.0, base_score))
 
     # --- ML as a CONFIDENCE SCALER (not an average) --------------------
@@ -499,7 +557,9 @@ def combine_and_decide(step2_result: dict, step3_result: dict,
         final_score = 50.0 + deviation * multiplier
         ml_applied = True
     final_score = max(0.0, min(100.0, final_score))
-    vix_level = step3_result["vix_level"]
+    # Withheld, not overridden, when the regime is off — nan takes both
+    # labellers down their normal-bar path with no edit to either.
+    vix_level = step3_result.get("vix_level") if use_vix_regime else float("nan")
 
     # entry_point_model2's own entry-only threshold logic — unchanged,
     # so "BUY"/"WATCH"/"AVOID" mean exactly the same thing here as
@@ -526,8 +586,11 @@ def combine_and_decide(step2_result: dict, step3_result: dict,
         "ml_confirm": ml_confirm,
         "weight_pattern": weight_pattern,
         "weight_indicators": weight_indicators,
+        "use_vix_regime": use_vix_regime,
         "gated_score_contribution": round(gated_score * weight_pattern, 2),
-        "indicator_score_contribution": round(indicator_score * weight_indicators, 2),
+        "indicator_score_contribution": (
+            0.0 if weight_indicators == 0
+            else round(indicator_score * weight_indicators, 2)),
     }
 
 
@@ -537,7 +600,10 @@ def combine_and_decide(step2_result: dict, step3_result: dict,
 
 def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500,
                        daily_period: str = "2y", subreddits: list = None,
-                       weight_pattern: float = 0.6, weight_indicators: float = 0.4,
+                       weight_pattern: float = PUBLISHED_WEIGHT_PATTERN,
+                       weight_indicators: float = PUBLISHED_WEIGHT_INDICATORS,
+                       use_vix_regime: bool = PUBLISHED_USE_VIX_REGIME,
+                       run_step3: bool = False,
                        extreme_fear_mode: str = "symmetric",
                        stop_mult: float = 1.5, target_mult: float = 3.0,
                        use_ml: bool = False, ml_weight: float = 0.0,
@@ -548,8 +614,25 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
                        lazy_sentiment: bool = False,
                        verbose: bool = True) -> dict:
     """
-    Runs Step 1 -> Step 2 -> Step 3 -> combine, in that exact order,
-    every time. The order is enforced two ways:
+    Runs Step 1 -> Step 2 -> (Step 3) -> combine, in that exact order.
+
+    STEP 3 IS OFF IN THE PUBLISHED PATH as of 2026-09-01 (`run_step3=False`,
+    see the PUBLISHED_* constants). It is SKIPPED, not weighted to zero:
+    skipping is what actually drops the Yahoo/macro dependency and the
+    latency that came with it. The function and its callers all remain, and
+    shadow_basket.py still calls apply_indicator_step every day, so the
+    incumbent construction keeps accruing and this stays reversible.
+
+    Consequences, recorded because they touch a published document:
+      * `indicator_final_score` and `vix_level` are None on new rows.
+      * THE SHORT TREND FILTER DISAPPEARS from published short rows -- it
+        reads step3["below_trend_sma"], which is now None rather than False,
+        so it cannot fire. Shorts are never published, so no published
+        signal changes; but the LOGGED short record becomes a different
+        construction from the one that produced the existing 0-for-11.
+        Disclosed in docs/claims.md, not left to blur.
+
+    The order is enforced two ways:
       1. Structurally: each step function requires the previous step's
          result dict as an argument, so you can't call Step 3 without
          having already produced a real Step 2 result.
@@ -583,12 +666,32 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
         print(f"  Gate: {step2['gate_decision']} (x{step2['gate_multiplier']}) — {step2['gate_reason']}")
         print(f"  {step2['score_before_reddit']} -> {step2['gated_score']} after Reddit gate")
 
-    if verbose:
-        print("\n[STEP 3/3] Indicators/indexes (technical + macro)...")
-    step3 = apply_indicator_step(ticker, step2, period=daily_period, use_ml=use_ml,
-                                 trend_sma_period=trend_sma_period)
-    step_log.append(step3)
-    if verbose:
+    if not run_step3:
+        # RETIRED FROM THE PUBLISHED PATH 2026-09-01 (#198 harmful, #201
+        # inert). Not appended to step_log: the log records steps that RAN.
+        # The stub carries the keys downstream consumers read, all null, so
+        # live_tools' logging and plotting degrade to blank rather than
+        # KeyError.
+        step3 = {"step": 3, "skipped": True,
+                 "skipped_reason": "Step 3 retired from the published path "
+                                   "2026-09-01 (docs/cleanroom.md)",
+                 "indicator_final_score": None, "vix_level": None,
+                 "technical_score": None, "macro_multiplier": None,
+                 "below_trend_sma": None, "trend_sma": None,
+                 "trend_sma_period": trend_sma_period,
+                 "ai_confidence_score": None, "ml_ok": False,
+                 "ml_enabled": False, "ml_accuracy": None}
+        if verbose:
+            print("\n[STEP 3] SKIPPED — retired from the published path "
+                  "2026-09-01. No performance claim is made.")
+    else:
+        if verbose:
+            print("\n[STEP 3/3] Indicators/indexes (technical + macro)...")
+        step3 = apply_indicator_step(ticker, step2, period=daily_period,
+                                     use_ml=use_ml,
+                                     trend_sma_period=trend_sma_period)
+        step_log.append(step3)
+    if verbose and run_step3:
         print(f"  technical_score={step3['technical_score']:.1f}  "
               f"macro_multiplier={step3['macro_multiplier']:.2f}  "
               f"-> indicator_final_score={step3['indicator_final_score']:.1f}")
@@ -610,8 +713,13 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
                 print(f"  ML confidence: unavailable ({step3.get('ml_error', 'training failed')})")
 
     # --- Enforce the order actually happened correctly ---
-    assert [s["step"] for s in step_log] == [1, 2, 3], \
-        f"Step order violated! Got {[s['step'] for s in step_log]}, expected [1, 2, 3]"
+    # The expected list follows what was ASKED to run. Asserting [1,2,3]
+    # against a skipped Step 3 would either fail honest runs or, if a stub
+    # were pushed into step_log to satisfy it, assert an ordering over a
+    # step that never happened. Neither is worth having.
+    expected_steps = [1, 2, 3] if run_step3 else [1, 2]
+    assert [s["step"] for s in step_log] == expected_steps, \
+        f"Step order violated! Got {[s['step'] for s in step_log]}, expected {expected_steps}"
     timestamps = [s["timestamp"] for s in step_log]
     assert timestamps == sorted(timestamps), \
         "Step timestamps are not strictly increasing — steps ran out of order!"
@@ -620,8 +728,17 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
     if ml_weight and ml_weight > 0 and not use_ml:
         raise ValueError("ml_weight > 0 requires use_ml=True (the ML score must be "
                          "computed before it can be blended into the final score).")
+    # The ML score is produced BY Step 3. Asking to blend it while Step 3 is
+    # skipped is a contradiction, and silently ignoring it would be worse.
+    if ml_weight and ml_weight > 0 and not run_step3:
+        raise ValueError("ml_weight > 0 requires run_step3=True (the ML score is "
+                         "produced by Step 3, which the published path skips).")
+    if use_ml and not run_step3:
+        raise ValueError("use_ml=True requires run_step3=True (the ML score is "
+                         "produced by Step 3, which the published path skips).")
     combined = combine_and_decide(step2, step3, weight_pattern=weight_pattern,
                                    weight_indicators=weight_indicators,
+                                   use_vix_regime=use_vix_regime,
                                    extreme_fear_mode=extreme_fear_mode,
                                    ml_weight=ml_weight, buy_bar=buy_bar,
                                    sell_bar=sell_bar, ml_veto=ml_veto,
@@ -658,9 +775,13 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
 
     if verbose:
         print(f"\n{'-' * 70}")
-        print(f"  COMBINED: {combined['gated_score_contribution']} (pattern+reddit, "
-              f"weight={weight_pattern}) + {combined['indicator_score_contribution']} "
-              f"(indicators, weight={weight_indicators})")
+        if run_step3:
+            print(f"  COMBINED: {combined['gated_score_contribution']} (pattern+reddit, "
+                  f"weight={weight_pattern}) + {combined['indicator_score_contribution']} "
+                  f"(indicators, weight={weight_indicators})")
+        else:
+            print(f"  COMBINED: {combined['gated_score_contribution']} "
+                  f"(pattern+reddit, weight={weight_pattern}); Step 3 retired")
         if combined.get("ml_applied"):
             _mlc = step3.get('ai_confidence_score', 0)
             _killed = combined['final_score'] < combined['base_score'] - 5 if combined['base_score'] > 50 else False
