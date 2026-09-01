@@ -5443,3 +5443,341 @@ credit, no variations.
 venue, on data that does not yet exist.
 
 `docs/claims.md` is unchanged and still holds **zero supported edge claims**.
+
+---
+
+# PRE-REGISTRATION — POSITIONING (#235–#242) and OI/BASIS (#243–#248)
+
+> **LOCKED 2026-09-01, approved as drafted with no amendments.** Research
+> rule 4 now applies to every constant below: no parameter, threshold,
+> control or pass condition may change on the basis of a result.
+>
+> **Both programs are DORMANT.** Neither may run before its own measured-span
+> trigger, and neither trigger can fire before 2028.
+
+---
+
+## §0. THE MIXED-DEPTH DECISION — made now
+
+The two sources have **different clocks**. OKX rubik arrived with **180 days
+already banked** (its archive reaches back to 2026-03-05, six months before
+collection started); Kraken tickers has **zero banked** and begins at
+2026-09-01. Pooling them into one program would force a single fold grid,
+and the youngest source would govern.
+
+> **DECISION: SEPARATE PROGRAMS — own Bonferroni, own trigger, own windows.**
+>
+> **Why, in one sentence:** pooling would make the older source wait six
+> months for the younger and discard banked days that cannot be re-bought,
+> for no statistical gain, because the two measure different mechanism
+> classes and share no hypothesis.
+
+Consequences, stated so neither is discovered later:
+
+- **Neither program's result may be cited as confirmation of the other.**
+  They are separate families with separate corrections, not two windows on
+  one claim.
+- **Running A first cannot inform B.** B's constants are fixed in this
+  document, before A has produced anything.
+
+---
+
+## §1. SHARED CLAUSES — identical in both programs
+
+### 1.1 The event-count precheck — A GATE, NOT A PREVIEW
+
+Both programs run a precheck **before any scoring**, whose entire output is
+a gate.
+
+**What it computes.** For every hypothesis, per ticker, per window: the
+number of **confirmed trade days** the rule's own definition produces —
+derived from the **signal definitions and the calendar structure ONLY**.
+
+**What it may touch:** the collected positioning series, the daily calendar,
+the eligibility mask, `confirm_days = 2`, and the fold boundaries.
+
+**What it may NOT touch:** prices, returns, `pnl_r`, `pnl_r_net`, exit
+levels, or any join to the incumbent's outcome data. **No return series is
+loaded.** If implementing it requires a price column, the implementation is
+wrong.
+
+**The gate:**
+
+> A hypothesis producing **fewer than 30 confirmed trades per ticker per
+> window** (the `ex_best` floor: ≥3 folds × ≥10 trades) is marked
+> **UNMEASURABLE-BY-CONSTRUCTION** and **NEVER RUNS.** It is reported as
+> such, with its counts, and it is not scored, not placebo-drawn, and not
+> assigned a verdict.
+
+**This is a gate, not a preview.** Its output is binary per hypothesis:
+runs, or does not. It produces no expectancy, no ranking, no ordering, and
+nothing from it may inform how a surviving hypothesis is scored.
+
+**The correction does NOT shrink when the gate removes hypotheses.**
+Bonferroni uses the **registered k below, unchanged**, however many survive.
+Removing an unmeasurable hypothesis must never loosen the bar for the
+survivors, and this clause exists so that it cannot.
+
+*Origin: #220–#234 measured overlays at a median of ONE trade per ticker per
+window, 2 of 42 cells reaching 30. Seven of its fifteen tests were
+unmeasurable before the first trade was scored and still consumed correction
+budget. This gate is that lesson made procedural.*
+
+### 1.2 The adjudicating null — NAMED NOW
+
+**Episode-matched placebo, 3,000 seeds**, per the #167 construction: per
+ticker, take the observed run-lengths of consecutive event days, draw the
+same NUMBER of runs with the same LENGTHS at random non-overlapping start
+positions in the same window, apply the same confirm rule. Independent-day
+placebos are **forbidden** — positioning regimes are persistent, so a
+scattered placebo is structurally lower-variance than what it benchmarks.
+
+**All four fidelity axes are measured before any draw is scored**, with axis
+3 marked N/A (an event series has no exposure budget) and axis 4 quantified.
+
+**The axis-4 caveat, carried verbatim from the standing methodology:**
+
+> **THE FOUR AXES CERTIFY THE CENTRE, NOT THE TAIL.** Axis 4 compares the
+> null's distribution CENTRE against a matched random draw. It cannot say
+> whether the null is too NARROW or too WIDE — and every percentile pass
+> condition in this project is decided in the TAIL, where width is nearly
+> the whole story. So every percentile verdict this project has issued
+> carries an **UNCHARACTERIZED TAIL-WIDTH CAVEAT.** State it when citing
+> one.
+
+**Alternate null family: time-rotation is INFEASIBLE at these windows and is
+not substituted.** It requires a circular shift drawn from `[24 months,
+T − 24 months]`, which is empty for any window under 48 months. Both
+programs run a **12-month usable window** split into DISCOVERY and
+CONFIRMATION, so every window here is far below the bound. Stated with the
+number that makes it infeasible, per standing law, rather than quietly
+replaced with something that would run.
+
+### 1.3 Window construction
+
+**22 months of measured span = 6 lockbox + 4 burn-in + 12 usable.** The
+lockbox is the last 6 months of whatever the archive holds at trigger time.
+The usable remainder splits DISCOVERY / CONFIRMATION at the project standard
+`DISCOVERY_FRAC = 0.55`. Folds are **4 equal-duration time splits** per
+window.
+
+### 1.4 Standing rules inherited unchanged
+
+`ex_best` requires ≥3 folds of ≥10 trades; **undefined `ex_best` is
+UNMEASURABLE and CANNOT PASS** — the absence of a result, never a failure.
+Scoring through `research/harness.py` into
+`pipeline.evaluate_geometry_folds` with `LIVE_GEOMETRY`, 2 bps fee + 2 bps
+slippage per side. **Long side only.** Single confirmation, no re-runs, no
+partial credit, no looser bar. Negatives reported with the same detail as
+positives.
+
+**STANDALONE ONLY. No overlays in either program** — excluded by the
+overlay-unmeasurability law rather than spending correction budget on tests
+that cannot produce a result.
+
+### 1.5 Alignment — the no-lookahead rule
+
+A positioning value stamped at or before day **D**'s last observation is
+known at D's daily close. A rule firing on day D is a daily BUY event on D,
+which the harness labels on D and D+1, confirms at D+1 under
+`confirm_days = 2`, and enters at the close of D+1. Identical to the Step 3
+lagged broadcast and to #220–#234.
+
+---
+
+# PROGRAM A — POSITIONING (#235–#242), OKX rubik
+
+> **LOCKED and DORMANT.** Trigger ~2028-01-05.
+
+## A1. Data
+
+`data/derivatives/okx_rubik.csv`, currencies **BTC / ETH / SOL**, columns
+`long_short_ratio`, `taker_buy_vol`, `taker_sell_vol`, `open_interest`,
+`volume`.
+
+**These are OKX's OWN published 1D buckets, stamped 16:00 UTC** — a
+venue-computed daily series, **not** a sample we take. The snapshot caveat
+in DRAFT B does **not** apply to this program, and the two must not be
+described in the same terms.
+
+**Window: a hard 180 days, verified not assumed.** `after=<2020>` returns
+the same 180 rows; `begin=<2020>` returns zero. Nothing older is
+back-fillable at any price. Collection re-pulls the full window daily and
+merge-dedupes on `(symbol, timestamp)` with existing rows winning.
+
+## A2. Trigger — measured span on THIS source
+
+> **Runnable when `okx_rubik.csv` spans ≥ 22 months for all three currencies**,
+> measured `max(timestamp) − min(timestamp)` per currency.
+
+| quantity | value |
+|---|---|
+| archive earliest (all three) | **2026-03-05** |
+| banked at first collection | **179 days**, free |
+| **expected trigger** | **2028-01-05** |
+
+**Its clock started six months before ours.** The 180 banked days are why
+this program triggers roughly six months ahead of DRAFT B, and they are the
+concrete reason the sources were not pooled.
+
+**The trigger is on measured span, not the calendar date.** If the collector
+misses days the date slips and the span condition still governs.
+
+## A3. Hypotheses — #235–#242, 8 rules, standalone only, every constant fixed
+
+Definitions are conventional positioning constructions. **None may be
+changed.**
+
+| # | rule | definition |
+|---|---|---|
+| **#235** P1 | crowded long | BUY when the trailing **30-day percentile rank** of `long_short_ratio` is **≥ 90** *(contrarian: the crowd is long)* |
+| **#236** P2 | crowded short | BUY when that percentile rank is **≤ 10** |
+| **#237** P3 | taker capitulation | BUY when the 30-day percentile rank of **taker sell share** = `taker_sell_vol / (taker_buy_vol + taker_sell_vol)` is **≥ 90** |
+| **#238** P4 | OI unwind | BUY when the **7-day change in OKX's published 1D `open_interest`** is **≤ −10%** |
+| **#239** P5 | OI build | BUY when that 7-day change is **≥ +10%** |
+| **#240** P6 | ratio z-score | BUY when the **30-day z-score** of `long_short_ratio` is **≤ −2.0** |
+| **#241** P7 | put/call extreme | BUY when the 30-day percentile rank of the OKX option **put/call OI ratio** is **≥ 90** |
+| **#242** P8 | divergence | BUY when `open_interest` rises **≥ 5%** over 7 days **AND** `long_short_ratio` falls over the same 7 days |
+
+**Fixed definitions.** Percentile rank = `rolling(30).rank(pct=True) * 100`
+including today. Z-score = `(x − rolling_30_mean) / rolling_30_std(ddof=0)`,
+including today; NaN days do not fire. 7-day change = `x / x.shift(7) − 1`
+on the daily series. A day missing any input is **excluded** from every rule
+and from every lookback, and the count of excluded days is reported per
+currency.
+
+**#241 (P7) depends on a shorter series.** The OKX put/call OI ratio window measured
+**~72 days**, not 180, so P7's usable history is shorter than P1–P6's. It is
+**expected to be the first hypothesis the §1.1 gate removes**, and that is
+recorded now rather than discovered at trigger time.
+
+## A4. Bonferroni
+
+**8 registered tests** → alpha = 0.05 / 8 = **0.00625** → required percentile
+**99.375**. 3,000 seeds put ~19 draws above it; p95 reported alongside from
+the same draws.
+
+**k stays 8 regardless of how many survive the §1.1 gate.**
+
+## A5. Pass conditions
+
+On the single confirmation run, **both required**:
+
+1. **`ex_best` > 0 on ALL THREE currencies**, and defined on all three.
+2. **Pooled `net_all` above the Bonferroni-adjusted placebo percentile
+   (99.375th).**
+
+## A6. Reported whatever the outcome
+
+Per test and per currency: `n`, **episodes**, win%, `net_all`, `ex_best`,
+folds counted/positive, placebo p95 and p99.375, the observed percentile,
+all four fidelity-axis measurements with the axis-4 caveat attached, days
+excluded per currency, and the §1.1 gate table with every hypothesis's
+confirmed-trade counts.
+
+---
+
+# PROGRAM B — OPEN INTEREST & BASIS (#243–#248), Kraken tickers
+
+> **LOCKED and DORMANT.** Trigger ~2028-07-01.
+
+## B1. Data — and the snapshot caveat that governs every OI clause
+
+`data/derivatives/kraken_tickers.csv`, symbols **PF_XBTUSD / PF_ETHUSD /
+PF_SOLUSD** (all ~294 instruments are stored; only these three are used
+here).
+
+> **EVERY ROW IS A ONCE-DAILY POINT SNAPSHOT taken at collector run time —
+> nominally ~05:20 UTC via `derivs-collect.yml`. It is NOT a daily mean,
+> close, median or VWAP of anything.**
+
+The merge key is the snapshot **day**; the true instant is preserved in
+`observed_utc`. The endpoint is **current-only** — there is no history and
+no public archive — so what is not sampled is gone, and a daily average of
+these quantities **cannot be recovered from this file at any later date**.
+
+**Consequently every hypothesis below is worded against "the ~05:20 UTC
+snapshot" and never against "daily OI".** If a future write-up describes any
+result here as a statement about daily open interest, it is misdescribing
+the data.
+
+## B2. Trigger — measured span on THIS source
+
+> **Runnable when `kraken_tickers.csv` spans ≥ 22 months for all three
+> symbols**, measured `max(timestamp) − min(timestamp)` per symbol.
+
+| quantity | value |
+|---|---|
+| archive earliest | **2026-09-01** |
+| banked at first collection | **0 days** — current-only, nothing to bank |
+| **expected trigger** | **2028-07-01** |
+
+**Six months later than DRAFT A**, because this source had nothing to
+backfill. That gap is the whole content of the §0 decision.
+
+## B3. Hypotheses — #243–#248, 6 rules, standalone only, every constant fixed
+
+**Basis** = `(markPrice − indexPrice) / indexPrice`, computed **from the
+~05:20 UTC snapshot**.
+
+| # | rule | definition |
+|---|---|---|
+| **#243** B1 | basis extreme low | BUY when the trailing **30-day percentile rank** of the **snapshot basis** is **≤ 10** |
+| **#244** B2 | basis extreme high | BUY when that percentile rank is **≥ 90** *(contrarian)* |
+| **#245** B3 | basis sign flip | BUY on the first day the **snapshot basis** is **> 0** after **≥ 5 consecutive daily snapshots < 0** |
+| **#246** B4 | OI unwind | BUY when the 7-day change in **the ~05:20 UTC `openInterest` snapshot** is **≤ −10%** |
+| **#247** B5 | OI + basis divergence | BUY when **the ~05:20 UTC `openInterest` snapshot** falls **≥ 5%** over 7 days **AND** the snapshot-basis 30-day percentile rank is **≤ 25** |
+| **#248** B6 | predicted-funding extreme | BUY when the 30-day percentile rank of **the snapshot `fundingRatePrediction`** is **≤ 10** |
+
+**Fixed definitions.** Percentile rank, z-score and 7-day change
+constructions identical to DRAFT A §A3. A day with **no snapshot** is
+excluded from every rule and every lookback, and the excluded count is
+reported per symbol. **Consecutive-snapshot counts (B3) have no gap
+tolerance:** a missing day **breaks** the run, because an inferred run
+across a collection gap is not an observed run.
+
+## B4. Bonferroni
+
+**6 registered tests** → alpha = 0.05 / 6 = **0.008333** → required
+percentile **99.1667**. **k stays 6 regardless of gate survivors.**
+
+## B5. Pass conditions
+
+Identical to DRAFT A §A5: `ex_best` > 0 on all three symbols **AND** pooled
+`net_all` above the 99.1667th placebo percentile, both windows.
+
+## B6. Known weaknesses, recorded before collection matures
+
+1. **Sampling, not averaging.** Stated above and repeated here because it is
+   the program's central limitation: one observation per day of a
+   continuously varying quantity. Aggregation noise is real and
+   uncharacterised, and cannot be estimated from this file.
+2. **A missed day is a hole, not a delay.** Unlike every rolling-window
+   source, there is no next-run self-heal. B3's no-gap-tolerance rule makes
+   that cost explicit rather than hiding it.
+3. **`fundingRatePrediction` is a venue forecast, not a realised rate.** B6
+   tests the venue's own published expectation, which is a different object
+   from the settled funding in `kraken_funding.csv`, and results must not be
+   compared across the two as though they measured the same thing.
+
+---
+
+## §2. BUDGET AND CLOSURE — both programs
+
+- **These lists are the whole programs.** A: #235–#242, 8 rules. B: #243–#248, 6 rules. No
+  additions, no variations of a failed rule, no re-runs, no second look at a
+  looser bar.
+- **No parameter may be tuned.** Every number is in this document.
+- **Nothing here is promoted to the live path.** There is no positioning
+  live path and none is proposed.
+- **Both inherit the strongest property this project can confer —
+  REGISTERED BEFORE THE DATA EXISTS.** Only #172–#186 currently holds it;
+  #220–#234 explicitly could not claim it. The usable windows of both
+  programs do not yet exist anywhere: A's beyond 180 days back, B's at all.
+  **Tuning to the test set is impossible by construction, not by
+  discipline** — there is nothing to tune against.
+- **One honest limit on that claim:** 180 days of A's eventual burn-in
+  already exist on disk today. They fall inside the **burn-in**, not the
+  usable window, and no rule is scored on them — but the claim is
+  "registered before the *test* data exists", and that is the precise form
+  it should be quoted in.

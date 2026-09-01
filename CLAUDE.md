@@ -233,14 +233,32 @@ pp/yr on equities DISCOVERY vs the permutation null's +2.48) but NOT
 persistence inheritance (+2.16 on CONFIRMATION). It is available with that
 weakness attached.
 
-**THE BOARD IS CLEAR.** Every search program this project has registered is
-run and closed: the crypto grid, the basket programs, the architectural
-search (#187-#203), EQUITIES (#204-#216) and NULL-CALIBRATION (#217-#219).
-**SHADOW-EVAL and FUNDING are the only open programs, and both are
-calendar-gated** -- SHADOW-EVAL until 30 pooled closed episodes accrue,
-FUNDING until ~2027-06-27. Neither may be inspected before its gate. There
-is no research work in flight, and starting a new search means writing a new
-registration first.
+**EVERY SEARCH PROGRAM IS RUN AND CLOSED**: the crypto grid, the basket
+programs, the architectural search (#187-#203), EQUITIES (#204-#216),
+NULL-CALIBRATION (#217-#219) and BINANCE FUNDING (#220-#234).
+
+**THE STRATEGY IS NOW FORWARD COLLECTION, AND SIX CLOCKS ARE RUNNING.**
+Nothing is in flight; everything open is calendar-gated and may not be
+inspected before its gate.
+
+| clock | gate | what it is |
+|---|---|---|
+| **SHADOW-EVAL** | 30 pooled closed episodes | incumbent + squeeze-only arms accruing forward |
+| **LIVE RECORD** | continuous | `signal_outcomes.csv`, the only real out-of-sample money-path |
+| **FUNDING #172-#186** | span >=22 mo, **~2027-06-27** | SEALED, unmodified, Kraken venue |
+| **POSITIONING #235-#242** | span >=22 mo, **~2028-01-05** | OKX rubik; 179 days banked free at first collection |
+| **OI/BASIS #243-#248** | span >=22 mo, **~2028-07-01** | Kraken tickers; CURRENT-ONLY, zero banked |
+| **(data) six collector sources** | daily | the archives all five of the above eventually read |
+
+**#235-#248 hold the registered-before-the-test-data-exists property**, which
+only #172-#186 previously had and which #220-#234 explicitly could not claim.
+Their usable windows do not exist anywhere yet -- A's beyond 180 days back,
+B's at all -- so tuning to the test set is impossible by construction rather
+than by discipline. Quote it in its precise form: registered before the TEST
+data exists. (180 days of A's eventual BURN-IN are already on disk; no rule
+is scored on them.)
+
+**Starting a new search means writing a new registration first.**
 
 **EQUITIES (#204-#216) is closed: all six FAIL, the fail/fail cell.** The
 ladder did NOT certify the most replicated anomaly in the equities
@@ -334,6 +352,31 @@ residual and say which side it favours.
    axis would be a methods program with its own registration; inventing one
    after a batch of tail-comparison failures is the move research rule 4
    forbids, so the gap is recorded rather than quietly patched.
+
+### The fixed-k gate law — a gate removes chances, never cheapens them
+
+An **event-count gate** may sit in front of a program: count the confirmed
+trades a hypothesis produces from its own definition and the calendar
+STRUCTURE ONLY -- never from returns -- and refuse to run any hypothesis
+below the ex_best floor of >=30 trades per ticker per window, marking it
+UNMEASURABLE-BY-CONSTRUCTION.
+
+> **THE BONFERRONI k STAYS AT THE REGISTERED VALUE, however many hypotheses
+> the gate removes.**
+
+The reason is the whole point of the correction. k counts **opportunities
+for a false positive**, and registering N hypotheses creates N of them. A
+gate that removes some before scoring reduces how many chances are TAKEN; it
+does not retroactively reduce how many were CREATED, and it tells you
+nothing about the survivors. Shrinking k after a gate would mean a program
+could loosen its own bar by including hypotheses it expected to fail --
+paying nothing for them and being rewarded with an easier threshold for the
+rest.
+
+**So a gate can only ever remove chances at a false positive. It can never
+cheapen the remaining ones.** State the registered k, the surviving count,
+and the gate's per-hypothesis trade counts side by side, so the difference
+is visible rather than absorbed.
 
 ### Overlay unmeasurability — refuse at registration, not after
 
