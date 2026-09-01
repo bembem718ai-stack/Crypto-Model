@@ -11,6 +11,13 @@ name: Derivatives Collect
 # window. Binance Vision is different in kind: a STATIC monthly archive
 # back to 2020-01, so the daily run only asks it for the last two months.
 #
+# TWO SOURCES BREAK THAT RULE AND ARE THE REASON THIS JOB MATTERS DAILY:
+# kraken_tickers and the Deribit option chain are CURRENT-ONLY. They have no
+# window at all, so a day not sampled is simply gone -- there is nothing to
+# re-fetch it from. collect_derivs.SOURCE_WINDOWS states, per source, what a
+# missed day costs, and audit.py quotes it in its staleness failures so an
+# outage gets priced instead of guessed at.
+#
 # COMPLETELY INDEPENDENT OF signal-check.yml. Different concurrency group,
 # different schedule, and it only ever `git add`s data/derivatives/. It must
 # never queue behind the signal check, block it, or touch its files. It

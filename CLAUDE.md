@@ -9,7 +9,7 @@ Repo is PUBLIC: `bembem718ai-stack/Crypto-Model`.
 $py = "C:\Users\gubby\AppData\Local\Programs\Python\Python312\python.exe"
 $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 
-& $py -m pytest test_signals.py -q        # 512 passed + 1 skipped, must stay green
+& $py -m pytest test_signals.py -q        # 526 passed + 1 skipped, must stay green
 & $py audit.py --offline                  # structural health, seconds, no network
 & $py audit.py BTC ETH SOL --years 4      # full audit, 10-40 min
 & $py pipeline.py run BTC                 # live signal — COSTS 1 ADANOS REQUEST
@@ -31,20 +31,30 @@ Four core files plus the audit, and two directories that support research:
   classification, backtests, position sizing, robustness validation.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 512 tests covering all decision logic.
+- `test_signals.py` — 526 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
 - `data/` — the frozen offline dataset: ~5y of Binance.US 4h bars plus the
   incumbent's daily frame per ticker (BTC/ETH/SOL), with `MANIFEST.json`
   recording bar counts, last bar, and the direction mix. Written by
   `export_data.py` (`BINANCE_REGION=US`). Research reads these files
   instead of the network, so a result can be re-run bit-for-bit later.
-- `data/derivatives/` — funding-rate and open-interest history collected
-  daily by `research/collect_derivs.py` (`derivs-collect.yml`): Kraken
-  Futures funding, OKX funding, OKX daily OI. Every run re-pulls the venue's
-  FULL rolling window and MERGES on `(symbol, timestamp)` — idempotent, so a
-  missed run self-heals and existing rows win on a collision. DATA ONLY: no
-  hypothesis, and it supports none until ~1 year of depth accumulates. See
-  the derivatives provenance note in `docs/cleanroom.md`.
+- `data/derivatives/` — positioning and funding history collected daily by
+  `research/collect_derivs.py` (`derivs-collect.yml`). SIX sources: Kraken
+  funding, **Kraken tickers** (OI / mark / index / predicted funding, all
+  ~294 instruments in one call), OKX funding, OKX daily OI, **OKX rubik**
+  (long-short ratio, taker volume, OI-volume), and **Deribit options**
+  (BTC/ETH chain aggregate + BTC/ETH/SOL realised-vol series). Every run
+  re-pulls the FULL available window and MERGES on `(symbol, timestamp)` —
+  idempotent, existing rows win, revisions counted. Plus
+  `binance_funding.csv` from `collect_binance_vision.py` (static archive).
+  DATA ONLY: no hypothesis, nothing scored.
+
+  **`collect_derivs.SOURCE_WINDOWS` states, per source, the window and what
+  a missed day COSTS**, and `audit.py` quotes it in staleness failures so an
+  outage is priced rather than guessed at. Two sources are **CURRENT-ONLY**
+  — `kraken_tickers` and the Deribit chain — meaning a day not sampled is
+  simply gone, with no window to recover it from. Those rows are point
+  SNAPSHOTS at workflow time and are **never a daily mean**.
 - `shadow_log.csv` / `shadow_outcomes.csv` — the SHADOW basket: the
   incumbent scored hourly across the #167 tradable-26, logged and NEVER
   published. Separate file, no alerts, no charts, zero Adanos (ungated —

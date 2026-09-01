@@ -3891,41 +3891,79 @@ class TestSentimentCacheHygiene:
 # subject is unrecoverable, which is why the threshold is 3 days and not a
 # week.
 class TestCollectorStaleness:
+    """The staleness check now covers EVERY derivatives source, not just
+    kraken_funding, and each failure quotes what a missed day costs for that
+    source specifically. The thresholds these tests pin are unchanged."""
 
     def _audit(self):
         import importlib
         return importlib.import_module("audit")
 
-    def _write(self, tmp_path, days_old):
-        p = tmp_path / "kraken_funding.csv"
+    def _write(self, tmp_path, days_old, name="kraken_funding"):
+        """Write one source file into a directory and return the DIRECTORY."""
+        p = tmp_path / ("%s.csv" % name)
         ts = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=days_old)
         pd.DataFrame({"symbol": ["PF_XBTUSD"],
                       "timestamp": [ts.strftime("%Y-%m-%dT%H:%M:%SZ")],
                       "funding_rate": [1.0],
                       "relative_funding_rate": [1e-5]}).to_csv(p, index=False)
-        return str(p)
+        return str(tmp_path)
+
+    def _rec(self, a, source="kraken_funding"):
+        want = "Derivatives current: %s" % source
+        hits = [r for r in a._results if r["name"] == want]
+        assert hits, f"no record for {source}"
+        return hits[-1]
 
     def test_fresh_collector_passes(self, tmp_path):
         a = self._audit(); a._results.clear()
         a.check_derivatives_collector(self._write(tmp_path, 0.5))
-        assert a._results[-1]["status"] == a.PASS
+        assert self._rec(a)["status"] == a.PASS
 
     def test_two_days_stale_still_passes(self, tmp_path):
         a = self._audit(); a._results.clear()
         a.check_derivatives_collector(self._write(tmp_path, 2))
-        assert a._results[-1]["status"] == a.PASS
+        assert self._rec(a)["status"] == a.PASS
 
     def test_over_three_days_fails(self, tmp_path):
         a = self._audit(); a._results.clear()
         a.check_derivatives_collector(self._write(tmp_path, 4))
-        assert a._results[-1]["status"] == a.FAIL
-        assert "cannot be re-fetched" in a._results[-1]["detail"].lower()
+        r = self._rec(a)
+        assert r["status"] == a.FAIL
+        assert "cannot be re-fetched" in r["detail"].lower()
+
+    def test_failure_states_what_a_missed_day_costs(self, tmp_path):
+        # The point of the per-source table: an outage must be priceable.
+        a = self._audit(); a._results.clear()
+        a.check_derivatives_collector(self._write(tmp_path, 4))
+        r = self._rec(a)
+        assert "1/365" in r["detail"], "cost of a missed day not quoted"
+        assert r["evidence"]["window"] and r["evidence"]["cost_of_a_missed_day"]
+
+    def test_current_only_source_says_the_day_is_gone(self, tmp_path):
+        # kraken_tickers has NO window; its failure must not read like a
+        # rolling-window one.
+        a = self._audit(); a._results.clear()
+        a.check_derivatives_collector(self._write(tmp_path, 4, "kraken_tickers"))
+        r = self._rec(a, "kraken_tickers")
+        assert r["status"] == a.FAIL
+        assert "whole day" in r["detail"].lower()
 
     def test_missing_file_is_skip_not_pass(self, tmp_path):
         # Never a silent PASS: the audit's own design rule.
         a = self._audit(); a._results.clear()
-        a.check_derivatives_collector(str(tmp_path / "nope.csv"))
-        assert a._results[-1]["status"] == a.SKIP
+        a.check_derivatives_collector(str(tmp_path))
+        assert all(r["status"] == a.SKIP for r in a._results)
+
+    def test_every_source_is_checked(self, tmp_path):
+        a = self._audit(); a._results.clear()
+        import importlib, sys as _s, os as _o
+        rd = _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), "research")
+        if rd not in _s.path:
+            _s.path.insert(0, rd)
+        cd = importlib.import_module("collect_derivs")
+        a.check_derivatives_collector(str(tmp_path))
+        assert len(a._results) == len(cd.SOURCE_WINDOWS)
 
     def test_threshold_is_three_days(self):
         assert self._audit().DERIVS_STALE_DAYS == 3
@@ -4632,3 +4670,132 @@ class TestAllocationScaleShuffle:
         px = pd.DataFrame({"A": np.arange(30.0) + 1}, index=idx)
         W = pd.DataFrame({"A": np.ones(30)}, index=idx)
         assert al.held_nonexistent_weight(W, px) == 0.0
+
+
+# ======================================================================
+# NEW DERIVATIVES SOURCES — kraken_tickers / okx_rubik / deribit_options
+# ======================================================================
+# Same merge-test style as TestDerivativesMerge: the pure parts are tested
+# without network. These three sources are the reason the daily job matters:
+# two of them are CURRENT-ONLY, so a day not sampled is gone with no window
+# to recover it from.
+class TestNewDerivativeSources:
+
+    def _cd(self):
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        return importlib.import_module("collect_derivs")
+
+    # ---- registration in the shared pattern ---------------------------
+    def test_all_three_sources_are_registered(self):
+        cd = self._cd()
+        names = [n for n, _ in cd.SOURCES]
+        for s in ("kraken_tickers", "okx_rubik", "deribit_options"):
+            assert s in names, f"{s} not wired into SOURCES"
+
+    def test_every_source_documents_its_window_and_outage_cost(self):
+        # A future outage must be priceable. Every source states its window
+        # AND what a missed day costs.
+        cd = self._cd()
+        for name, _ in cd.SOURCES:
+            assert name in cd.SOURCE_WINDOWS, f"{name} has no window documented"
+            window, cost = cd.SOURCE_WINDOWS[name]
+            assert window and cost
+
+    def test_current_only_sources_say_the_day_is_simply_gone(self):
+        # The distinction that makes daily collection urgent rather than
+        # merely tidy.
+        cd = self._cd()
+        for name in ("kraken_tickers", "deribit_options"):
+            window, cost = cd.SOURCE_WINDOWS[name]
+            assert "CURRENT-ONLY" in window
+            assert "whole day" in cost
+
+    # ---- kraken tickers: snapshot semantics ---------------------------
+    def test_ticker_snapshot_keys_on_the_DAY_not_the_instant(self):
+        # Re-running inside one day must be idempotent, so the merge key is
+        # the snapshot DAY; the true instant is kept separately.
+        cd = self._cd()
+        rows = [{"symbol": "PF_XBTUSD", "timestamp": "2026-09-01T00:00:00Z",
+                 "observed_utc": "2026-09-01T05:20:00Z", "openInterest": 100.0},
+                {"symbol": "PF_XBTUSD", "timestamp": "2026-09-01T00:00:00Z",
+                 "observed_utc": "2026-09-01T17:20:00Z", "openInterest": 999.0}]
+        a = pd.DataFrame(rows[:1])
+        b = pd.DataFrame(rows[1:])
+        merged, added, coll = cd.merge_rows(a, b)
+        assert len(merged) == 1 and added == 0
+        assert coll == 1, "a differing second snapshot must be COUNTED"
+        assert float(merged.iloc[0]["openInterest"]) == 100.0, "disk must win"
+
+    def test_ticker_fields_include_the_positioning_quantities(self):
+        cd = self._cd()
+        for f in ("openInterest", "markPrice", "indexPrice",
+                  "fundingRatePrediction"):
+            assert f in cd.TICKER_FIELDS
+
+    # ---- okx rubik: wide shape keeps the key unique -------------------
+    def test_rubik_is_wide_so_the_merge_key_stays_unique(self):
+        # Long format would put three metrics on one (symbol, timestamp) and
+        # collide. Wide keeps one row per currency-day.
+        cd = self._cd()
+        df = pd.DataFrame([
+            {"symbol": "BTC", "timestamp": "2026-08-31T16:00:00Z",
+             "long_short_ratio": "1.06", "taker_buy_vol": "3.4",
+             "taker_sell_vol": "3.5", "open_interest": "2.8", "volume": "6.9"}])
+        assert not df.duplicated(subset=cd.KEY).any()
+        merged, added, _ = cd.merge_rows(None, df)
+        assert len(merged) == 1 and added == 1
+
+    def test_rubik_merge_is_idempotent(self):
+        cd = self._cd()
+        df = pd.DataFrame([
+            {"symbol": "ETH", "timestamp": "2026-08-30T16:00:00Z",
+             "long_short_ratio": "0.9"},
+            {"symbol": "ETH", "timestamp": "2026-08-31T16:00:00Z",
+             "long_short_ratio": "1.1"}])
+        once, a1, _ = cd.merge_rows(None, df)
+        twice, a2, coll = cd.merge_rows(once, df)
+        assert len(once) == len(twice) == 2
+        assert a1 == 2 and a2 == 0 and coll == 0
+
+    # ---- deribit: two series in one file, keys must not collide -------
+    def test_deribit_symbol_suffix_separates_the_two_series(self):
+        # <CCY>-OPTIONS is a daily chain snapshot; <CCY>-HISTVOL is an
+        # hourly rolling series. Without the suffix they would collide on
+        # (symbol, timestamp) at midnight.
+        cd = self._cd()
+        df = pd.DataFrame([
+            {"symbol": "BTC-OPTIONS", "timestamp": "2026-09-01T00:00:00Z",
+             "put_call_oi_ratio": 0.8},
+            {"symbol": "BTC-HISTVOL", "timestamp": "2026-09-01T00:00:00Z",
+             "historical_volatility": 42.0}])
+        assert not df.duplicated(subset=cd.KEY).any()
+        merged, added, _ = cd.merge_rows(None, df)
+        assert len(merged) == 2 and added == 2
+
+    def test_deribit_option_currencies_exclude_SOL_and_histvol_does_not(self):
+        # MEASURED coverage fact 2026-09-01: Deribit lists SOL as SPOT only,
+        # zero options and zero futures. Its hist-vol IS served but is
+        # REALISED vol from spot, not options-implied.
+        cd = self._cd()
+        assert "SOL" not in cd.DERIBIT_OPT_CCYS
+        assert "SOL" in cd.DERIBIT_HV_CCYS
+        assert set(cd.DERIBIT_OPT_CCYS) == {"BTC", "ETH"}
+
+    def test_option_kind_parsed_from_the_instrument_name(self):
+        cd = self._cd()
+        assert cd._opt_kind("BTC-1SEP26-85000-C") == "C"
+        assert cd._opt_kind("ETH-26DEC26-4000-P") == "P"
+        assert cd._opt_kind("") == ""
+
+    # ---- audit wiring -------------------------------------------------
+    def test_audit_checks_every_source_not_just_kraken_funding(self):
+        import importlib
+        a = importlib.import_module("audit")
+        cd = self._cd()
+        res = a.check_derivatives_collector()
+        assert isinstance(res, list)
+        assert len(res) == len(cd.SOURCE_WINDOWS), (
+            "audit must check every documented source")

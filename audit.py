@@ -607,39 +607,69 @@ def check_sentiment_gate_errors(path="signal_log.csv"):
 DERIVS_STALE_DAYS = 3
 
 
-def check_derivatives_collector(path="data/derivatives/kraken_funding.csv"):
-    """Has the derivatives collector run recently enough?
-
-    THIS ONE IS DIFFERENT FROM EVERY OTHER STALENESS CHECK HERE. A stale
-    signal log is recoverable -- the next run writes a fresh row and nothing
-    is lost. A stale derivatives collector is NOT: Kraken serves a 1-year
-    ROLLING window, so a day not collected falls off the venue permanently
-    and is gone from the FUNDING program's eventual test sample forever.
-    There is no backfill. Hence 3 days, not a week.
-    """
-    if not os.path.exists(path):
-        return record("C. Deployment", "Derivatives collector is current", SKIP,
-                      f"{path} not found (collector may not have run yet)")
+def _derivs_windows():
+    """Per-source window + what a missed day costs, from the collector."""
     try:
-        df = pd.read_csv(path)
-        last = pd.to_datetime(df["timestamp"], errors="coerce", utc=True).max()
-    except Exception as e:
-        return record("C. Deployment", "Derivatives collector is current", SKIP,
-                      f"unreadable: {type(e).__name__}")
-    if pd.isna(last):
-        return record("C. Deployment", "Derivatives collector is current",
-                      INSUFFICIENT, "no parseable timestamps")
-    age_d = (pd.Timestamp.now(tz="UTC") - last).total_seconds() / 86400.0
-    ev = {"newest_row": str(last), "age_days": round(age_d, 2),
-          "threshold_days": DERIVS_STALE_DAYS}
-    if age_d <= DERIVS_STALE_DAYS:
-        return record("C. Deployment", "Derivatives collector is current", PASS,
-                      f"newest row {age_d:.1f}d old", ev)
-    return record("C. Deployment", "Derivatives collector is current", FAIL,
-                  f"newest row {age_d:.1f}d old (> {DERIVS_STALE_DAYS}d) — every "
-                  f"missed day is test data that CANNOT be re-fetched: Kraken "
-                  f"serves a 1-year rolling window and drops what we did not "
-                  f"collect", ev)
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        import collect_derivs
+        return collect_derivs.SOURCE_WINDOWS
+    except Exception:                                  # noqa: BLE001
+        return {"kraken_funding": ("~365-day rolling", "1/365 of the archive")}
+
+
+def check_derivatives_collector(out_dir="data/derivatives"):
+    """Is EVERY derivatives source current?
+
+    THIS IS DIFFERENT FROM EVERY OTHER STALENESS CHECK HERE. A stale signal
+    log is recoverable -- the next run writes a fresh row and nothing is
+    lost. A stale derivatives collector is NOT: these are rolling windows and
+    current-only snapshots, so a day not collected falls off the venue
+    permanently. There is no backfill at any price. Hence 3 days, not a week.
+
+    Each source is checked separately and its failure message states WHAT A
+    MISSED DAY COSTS for that source specifically, because the sources are
+    not equally urgent: kraken_tickers is a current-only snapshot where a
+    missed day is simply gone, while okx_rubik loses 1/180th. A future
+    outage should be priced, not guessed at.
+    """
+    windows = _derivs_windows()
+    results = []
+    for name in sorted(windows):
+        path = os.path.join(out_dir, "%s.csv" % name)
+        label = "Derivatives current: %s" % name
+        if not os.path.exists(path):
+            results.append(record("C. Deployment", label, SKIP,
+                                  f"{path} not found (source may not have run yet)"))
+            continue
+        try:
+            df = pd.read_csv(path)
+            last = pd.to_datetime(df["timestamp"], errors="coerce",
+                                  utc=True, format="mixed").max()
+        except Exception as e:                          # noqa: BLE001
+            results.append(record("C. Deployment", label, SKIP,
+                                  f"unreadable: {type(e).__name__}"))
+            continue
+        if pd.isna(last):
+            results.append(record("C. Deployment", label, INSUFFICIENT,
+                                  "no parseable timestamps"))
+            continue
+        window, cost = windows[name]
+        age_d = (pd.Timestamp.now(tz="UTC") - last).total_seconds() / 86400.0
+        ev = {"newest_row": str(last), "age_days": round(age_d, 2),
+              "threshold_days": DERIVS_STALE_DAYS, "rows": int(len(df)),
+              "window": window, "cost_of_a_missed_day": cost}
+        if age_d <= DERIVS_STALE_DAYS:
+            results.append(record("C. Deployment", label, PASS,
+                                  f"newest row {age_d:.1f}d old ({window})", ev))
+        else:
+            results.append(record("C. Deployment", label, FAIL,
+                                  f"newest row {age_d:.1f}d old (> "
+                                  f"{DERIVS_STALE_DAYS}d). Window: {window}. "
+                                  f"Each missed day costs {cost} and CANNOT be "
+                                  f"re-fetched.", ev))
+    return results
 
 
 def check_adanos_accounting():
