@@ -6006,3 +6006,143 @@ map confers, on a hypothesis with no mechanism behind it.
   program. The project holds **zero supported edge claims**.
 - **No measurement here may be re-cut.** A ninth measurement, a different
   lag range, another tercile split: each is a new registration.
+
+---
+
+# REGISTRATION — SIMPLIFICATION & HARDENING PASS
+
+> **ENGINEERING CHANGE. EXPLICITLY PERFORMANCE-SILENT.**
+>
+> **This registration makes no claim that the simplified model is better.**
+> Not "expected to improve", not "should reduce drag", not "cleaner and
+> therefore stronger". **No performance claim of any kind is made, implied,
+> or may be quoted from this document.**
+>
+> **Adjudication belongs to SHADOW-EVAL's registered checkpoint at 30 pooled
+> closed episodes, and nowhere else.** That checkpoint was registered before
+> this change was contemplated and is not amended by it.
+
+## Grounds — measured, and cited
+
+Two ablation findings, both already in this record:
+
+**#198 — Step 3 is measured HARMFUL.** Removing the indicator blend improved
+BTC INC_BUY_ALL on **both** windows (+0.175R DISCOVERY, +0.119R CONFIRMATION)
+and was positive at **100 of 100** window starts. It is the only ABLATION rung
+that cleared the registered epsilon, and it cleared it by showing the
+component **subtracts**.
+
+**#201 — the VIX regime is UNEXERCISED BY CONSTRUCTION.** Removing it changed
+expectancy by **+0.000R on both windows**, identically zero at all 50 rolling
+starts in each. Not because it is dormant: VIX ≥ 35 on 80 DISCOVERY days and
+10 CONFIRMATION days, changing 35 labels — but **BUY-tier membership changed
+on exactly ONE day in 6.42 years** (2020-06-21), and that day was unconfirmed
+so it produced no trade. Every other change was on the SELL side, which the
+published long-only path never trades.
+
+**What these grounds do NOT establish.** #198 says the component subtracts
+*relative to the incumbent*; **#203 then took squeeze-only to a real bar and
+FAILED** — pooled net at the 68th and 91.5th placebo percentile against a p95
+bar. **Squeeze-only is not a validated edge and this change does not make it
+one.** It is a simplification of a construction that has no supported edge
+claim either way, on the grounds that one of its components was measured to
+subtract and another was measured to do nothing.
+
+## 1. THE CHANGE — published construction only
+
+**Removed from the PUBLISHED signal computation:**
+
+- **Step 3, the indicator blend.** `weight_pattern` 0.6 → **1.0**,
+  `weight_indicators` 0.4 → **0.0**. The published construction becomes
+  **squeeze-only**.
+- **The VIX extreme-fear regime.** Direction bars are fixed at 75/60/40/25
+  with no panic shift.
+
+**Explicitly NOT removed:**
+
+- `confirm_days = 2`, `LIVE_GEOMETRY` (4h ATR, stop 1.5, target 3.0, 15-day
+  hold, SMA 50), conviction scaling, the sentiment gate, the tradability
+  filter, the cost floor, the publication guards, long-only.
+- **Step 3 itself, from the codebase.** It remains, and the shadow logger
+  keeps calling it — see §2.
+
+## 2. THE OLD MODEL STAYS FULLY TRACKED — the condition that makes this reversible
+
+`shadow_basket.py` already logs **both** constructions per ticker-day:
+`decision`/`direction` for the incumbent 0.6/0.4 blend, and
+`sq_decision`/`sq_direction` for squeeze-only, each with its own exit levels.
+
+> **The incumbent-blend arm MUST keep logging. Verifying that is a
+> precondition of this change, not a consequence of it.**
+
+Concretely: the shadow logger continues to call `apply_indicator_step`, so it
+retains the Yahoo dependency the published path is dropping. **That is
+deliberate.** If the incumbent arm stopped logging, the promotion/demotion
+question would become unanswerable the moment the live path changed, and this
+would be an irreversible change dressed as a reversible one.
+
+**SHADOW-EVAL is unchanged**: same 30-episode threshold, same single
+evaluation, same episode-matched placebo, same prohibition on inspecting the
+log beforehand. This registration does not amend it, accelerate it, or add a
+condition to it.
+
+## 3. What changes in the LOG, stated because it affects a published document
+
+- `indicator_final_score` and `vix_level` become **null** on new rows. The
+  columns remain; `extract_episodes` already NaN-guards both, so outcome
+  resolution degrades safely.
+- **The short trend filter disappears from logged short rows.** It lives in
+  Step 3 (`below_trend_sma`) and downgrades SELL → WATCH when price is above
+  its 50-day SMA. Shorts are **never published**, so no signal changes — but
+  the logged short record becomes a **different construction** from the one
+  that produced the existing 0-for-11.
+
+  **This matters because claims.md quotes that record.** From this date the
+  transparency post's SHORT row mixes two constructions, and the change must
+  be disclosed there rather than allowed to blur. Recorded here so it is a
+  known cost, not a discovery.
+
+## 4. claims.md gains exactly one line
+
+> *Published construction simplified on ablation grounds [DATE]: Step 3 and
+> the VIX regime removed. **No performance claim is made.** Both
+> constructions remain publicly logged; adjudication is SHADOW-EVAL's at 30
+> episodes.*
+
+**No SUPPORTED entry is added, edited or removed.** The project continues to
+hold **zero supported edge claims**, and this change cannot alter that.
+
+## 5. Hardening — same pass, no performance claim either
+
+1. **Dependency pinning**, one lockfile shared by CI and local. *(The pandas-3
+   lesson: an unpinned major bumped under us and behaviour moved.)*
+2. **The `mentions: None` wart** — vestigial key alongside the live
+   `sentiment_mentions`.
+3. **Retry-with-backoff on every external fetch in the live path that lacks
+   it.**
+4. **A weekly dependency-drift check in `audit.py`** — installed versus
+   pinned.
+
+## 6. What would make this change wrong, and how it would be caught
+
+**It could be wrong.** #203 failed, so squeeze-only has no demonstrated edge;
+the grounds are that one removed component was measured harmful and the other
+measured inert, not that what remains works.
+
+The catch is already registered: **SHADOW-EVAL at 30 pooled closed episodes,
+evaluating both arms.** If the incumbent blend outperforms squeeze-only
+there, that is the signal to revert — and it is answerable **only** because
+the incumbent arm keeps logging. That is why §2 is a precondition.
+
+**No interim read.** The shadow log may not be inspected before 30 episodes,
+and this change does not create an exception.
+
+## 7. Scope and closure
+
+- **This is not a hypothesis and carries no hypothesis number.** It is an
+  engineering change recorded for the same reason everything else here is:
+  so a future reader can see what changed, when, and on what grounds.
+- **No parameter below is tunable.** A different weight, a different bar, a
+  partial removal — each would be a new decision requiring its own record.
+- **Nothing here may be cited as evidence of anything.** Not the ablation
+  numbers, not the simplification, not a subsequent good month.
