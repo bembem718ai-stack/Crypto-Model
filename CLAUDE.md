@@ -438,6 +438,37 @@ trade was scored, and they still consumed Bonferroni budget -- raising the
 bar for the eight tests that could have produced a result. That is the cost
 of not having this rule earlier.
 
+## Product status — machinery COMPLETE, launch pending three human items
+
+The Discord service machinery is built, tested and wired. **Nothing in the
+code is waiting on anything.**
+
+- `research/publish.py` — OPEN/CLOSE episode alerts and the monthly
+  transparency post, rendered as TEXT for a human to post. **No Discord API,
+  no tokens, no automation**, and it is READ-ONLY against the live signal
+  path: it consumes `signal_log.csv` / `signal_outcomes.csv` and writes
+  nothing the signal path reads.
+- `docs/claims.md`'s WORDING section is the source of truth. **Disclosures
+  are reproduced verbatim; the NUMBERS are computed live**, because a
+  template carrying its own frozen tally starts publishing a false one the
+  moment an episode resolves.
+- **Never publishes:** shorts (long-only path), `REFUSED_UNTRADABLE` /
+  `SKIPPED_COST_FLOOR` rows, WATCH/AVOID, and anything from the shadow
+  basket. Each is asserted by test; the shadow check is an AST check, not a
+  grep, because the docstring legitimately discusses it.
+- `audit.check_publication_generators()` dry-runs both generators weekly, so
+  format rot fails in CI rather than in front of a subscriber. A human copies
+  these posts; nothing else inspects them on the way out.
+- `docs/discord_setup.md` is the build sheet: channels, pinned text, and the
+  operating rules including the no-DM-advice rule and the requirement that
+  the transparency post goes up BEFORE the first signal.
+
+**LAUNCH IS GATED ON THREE HUMAN DECISIONS, none of which is mine to make:**
+operator disclosure filled in, a parent conversation if the operator is a
+minor, and the open-vs-private decision recorded with one line of reasoning.
+They are the checklist at the end of `docs/discord_setup.md`. **Nothing goes
+public until all three are done.**
+
 ## Known open issues
 
 - **4-year degradation (unresolved).** Extending the backtest to ~4 years

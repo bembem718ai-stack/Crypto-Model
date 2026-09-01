@@ -177,15 +177,62 @@ that this is a research log and those are decisions only they can make.
 
 ## 5. Launch checklist
 
+### Machinery — done, verified in CI
+
+- [x] `research/publish.py` generates OPEN alerts, CLOSE alerts and the
+      monthly transparency post
+- [x] `python research/publish.py dry-run` passes, and the weekly audit
+      dry-runs both generators so format rot fails in CI rather than in
+      front of a subscriber
+- [x] Golden tests cover the emitted text, including that the STRONG_BUY
+      disclosure never appears on a BUY alert, and that refused, short,
+      WATCH and shadow rows never publish
+
+### Server setup — mechanical, do in one sitting
+
 - [ ] Server created; three operator channels locked read-only for @everyone
 - [ ] Server description pasted, **with the live-record sentence refreshed**
+      (`python research/publish.py post`)
 - [ ] Three pinned posts up
 - [ ] `docs/claims.md` linked in #methodology
-- [ ] Operator disclosure completed (or deliberately removed as not applicable)
-- [ ] `python research/publish.py dry-run` passes locally
-- [ ] First transparency post rendered and posted to #record before any signal
-      goes out — **the record goes up before the first alert**, so nobody sees
-      a signal before they see the tally
+- [ ] First transparency post rendered and posted to #record **before any
+      signal goes out** — the record goes up before the first alert, so
+      nobody sees a signal before they see the tally
 
 The last item is deliberate. A subscriber who sees a signal first, and the
 losing record second, has been shown the two in the wrong order.
+
+### ⚠ THREE HUMAN DECISIONS — these are not mine to make, and nothing launches until they are done
+
+These are the only remaining blockers. None can be resolved by code, by a
+test, or by anyone but the operator.
+
+- [ ] **Operator disclosure filled in.** §4's disclosure block is a template
+      with a placeholder. Decide what it says, write it into the server
+      description and #methodology, and delete the fill-me warning. If the
+      honest answer is that no disclosure is needed, record that decision
+      here rather than silently removing the section — a deleted section and
+      a considered one look identical later.
+
+- [ ] **Parent conversation, if the operator is a minor.** Before anything is
+      public and before any money is ever involved. Not a formality: a public
+      server carrying trade signals is a thing an adult in the household
+      should know exists, and the conversation is far easier before launch
+      than after a subscriber complains or a payment appears. If the operator
+      is not a minor, tick this and note "n/a".
+
+- [ ] **Open-vs-private decision recorded, with one line of reasoning.**
+      Write the line here:
+
+      > _Decision: ____________  Reasoning: ______________________________
+
+      Public means anyone can join, quote the record, and screenshot a losing
+      streak. Private means a small known audience and a much smaller blast
+      radius while the sample is still 8 episodes. **Neither is the safe
+      choice by default** — public is more accountable and more exposed;
+      private is lower-stakes and less auditable. The one line matters
+      because a decision with a written reason can be revisited on its
+      merits, and one without becomes a habit nobody remembers choosing.
+
+**Nothing in the machinery is waiting on anything.** The build is complete
+and tested; these three are the launch gate.
