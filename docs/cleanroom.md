@@ -4668,6 +4668,32 @@ for the whole of DISCOVERY.
    clause-2 pass anywhere in the crypto record — was measured against that
    null and means nothing.** The verdict was and remains FAIL, on
    CONFIRMATION, which is unaffected.
+> ### Cross-reference added 2026-09-01 — #249's M6 is the empirical input here
+>
+> The inheritance measured in this program is a FUNCTION of the universe's
+> pairwise correlation, and #249's M6 measured that quantity directly on the
+> tradable-26, year by year, with bands:
+>
+> | year | assets alive | mean pairwise ρ̄ | 95% CI |
+> |---|---|---|---|
+> | 2020 | 12 | +0.680 | [+0.657, +0.701] |
+> | 2021 | 15 | **+0.479** | [+0.433, +0.520] |
+> | 2022 | 24 | **+0.707** | [+0.686, +0.727] |
+> | 2023 | 24 | +0.538 | [+0.513, +0.557] |
+> | 2024 | 25 | +0.566 | [+0.547, +0.582] |
+> | 2025 | 25 | +0.694 | [+0.668, +0.714] |
+>
+> **ρ̄ ranges 0.479 → 0.707 and the variation is not noise** — the CIs are
+> tight and non-overlapping between the extremes. So inheritance
+> contamination on THIS universe is not a constant to be quoted once: it is
+> materially higher in 2022 and 2025 than in 2021, and any future program
+> reporting axis 4 on the tradable-26 should report ρ̄ for its own window
+> rather than citing a single project-wide number.
+>
+> This is a cross-reference, not a new finding, and it changes no verdict in
+> #217–#219. It is recorded here so the axis-4 measurement has its empirical
+> input attached rather than floating free.
+
 2. **Where universes are complete, inheritance is upward and tracks ρ̄.**
    Equities DISCOVERY ρ̄ 0.637 → +1.9 to +2.5 pp; equities CONFIRMATION
    ρ̄ 0.454 → +0.5 to +0.7 pp; crypto CONFIRMATION ρ̄ 0.606 → +1.2 to +3.0 pp.
@@ -5914,3 +5940,69 @@ do not say.
 - **`docs/claims.md` cannot change as a result of this program.**
 - **The budget is one hypothesis, #250**, drawn afterwards, tested only on
   post-freeze data, and registered with full discipline before it is scored.
+
+---
+
+# CLOSE-OUT — MARKET-STRUCTURE MAP (#249)
+
+Closed 2026-09-01. The map stands as committed, **with its three defect
+corrections and their labels intact** — the simulated M2 benchmark, M1's
+half-life column labelled a raw bootstrap range rather than a CI, and M8's
+restored intervals. Those corrections are part of the record, not errata to
+be tidied away.
+
+## DISPOSITION: no #250 is drawn from this map
+
+**The one-hypothesis slot is NOT spent. It is BANKED.**
+
+Taken measurement by measurement, against the standard that a hypothesis must
+have a plausible entry mechanism this project has not already tested:
+
+| measurement | what it showed | why no hypothesis follows |
+|---|---|---|
+| **M4** lead-lag | **The leading candidate, measured as ABSENT.** Contemporaneous ρ = +0.822 (ETH) / +0.611 (SOL); every lag 1h–24h within ±0.031 of zero, in every vol tercile and every year. | There is nothing to build on. A contemporaneous correlation is not a lead, and a lead is what a rule would need. This is the cleanest negative in the map. |
+| **M1** vol clustering | Real, strong, and canonical: \|return\| ACF +0.16…+0.30 at lag 1, still positive at lag 20. | **Its monetisation was already tested and failed.** Scaling exposure to predicted volatility is ALLOCATION #193–#196, which failed on both windows, and whose inverted control cleared the same clause. Re-entering through M1 would be a variation of a failed rule. |
+| **M2** jumps | Real and large: observed rates 2–3 orders of magnitude above a matched diffusive benchmark, and jumps cluster. | **No entry mechanism.** It says the SIZE distribution has fat tails and that tails cluster — a property of the risk, not a signal about direction or timing. Nothing here says which side of a jump to be on, or when. |
+| **M3** return autocorrelation | 0–3 of 30 lags exclude zero per series, against **~13–14 expected by chance** across 270 cells. | **Chance-consistent.** Fewer significant lags than chance alone would produce. There is no pattern to register. |
+| **M5** calendar | Reported with CIs; 93 cells, ~5 expected to exclude zero by chance. | Nothing survives that arithmetic as a candidate. |
+| **M6** dispersion | ρ̄ 0.479–0.707, varying materially by year. | **Context, not a signal.** Cross-referenced into NULL-CALIBRATION as the empirical input governing inheritance contamination — which is what it is for. |
+| **M7** asymmetry | Up/down runs differ; drawdowns recover slower than they form. | Structural context for the geometry and for the short-side record. Not a timing rule. |
+| **M8** tradability | Zero tickers under the 0.80% cost floor in any year; the #167 filter's measure is stable. | Confirms an instrument property. #163–#167 already scored the filtered basket and it failed. |
+
+**The honest summary: the map found one thing worth knowing that it did not
+already know — that the BTC-leads-alts folklore is false at 1h — and that
+finding is a NEGATIVE.** Everything else is either canonical structure whose
+monetisation this record has already tested and rejected, or chance.
+
+## Why banking is the right disposition, not a failure of nerve
+
+The one-hypothesis rule exists because a map of several hundred cells will
+contain chance patterns. **Spending the slot on the most interesting-looking
+cell is exactly the behaviour the rule was written to prevent.** A slot spent
+badly is worse than a slot unspent: it consumes the single opportunity this
+map confers, on a hypothesis with no mechanism behind it.
+
+**The slot remains available to either of two things, and to nothing else:**
+
+1. **A future map built on POST-FREEZE data** — the forward archives, accrued
+   shadow episodes, or a dataset refresh. Such a map is a new descriptive
+   program requiring its own registration.
+2. **A mechanism argument that survives checking against THIS map.** If a
+   reason to expect an effect is articulated first — from theory,
+   microstructure, or a venue-behaviour argument — this map can be consulted
+   to see whether it is consistent with what was measured. That direction is
+   legitimate: mechanism first, map as a check. The forbidden direction is
+   pattern first, mechanism invented afterwards.
+
+**The slot does not expire, and it does not accumulate.** One remains one.
+
+## What may and may not be said about this map
+
+- **It may never be cited as evidence of an edge.** Not as support, not as
+  partial support, not as "consistent with".
+- **M4's negative MAY be cited** — as a measured absence, which is what it
+  is, and which is the map's most useful output.
+- **`docs/claims.md` is unchanged** and could not have been changed by this
+  program. The project holds **zero supported edge claims**.
+- **No measurement here may be re-cut.** A ninth measurement, a different
+  lag range, another tercile split: each is a new registration.

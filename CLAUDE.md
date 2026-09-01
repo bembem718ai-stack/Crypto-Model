@@ -258,6 +258,42 @@ than by discipline. Quote it in its precise form: registered before the TEST
 data exists. (180 days of A's eventual BURN-IN are already on disk; no rule
 is scored on them.)
 
+**THE MARKET-STRUCTURE MAP (#249) IS COMPLETE AND THE BOARD IS SEALED.**
+`docs/market_structure.md` is the last construction available on frozen data:
+descriptive, no hypotheses, no verdicts, and it could not change claims.md.
+
+**Its one-hypothesis slot is BANKED, not spent. NO #250 was drawn.**
+
+- **M4 measured the leading folklore candidate as ABSENT** -- "BTC leads the
+  alts" is contemporaneous only (rho +0.822 ETH / +0.611 SOL at lag 0, every
+  lag 1h-24h within +/-0.031 of zero, every vol tercile, every year). That is
+  the map's most useful output and it is a NEGATIVE.
+- **M1 and M2 are real but canonical**, and their monetisations were already
+  tested (volatility scaling IS ALLOCATION #193-#196, which failed) or have
+  no entry mechanism (fat tails describe the RISK, not a direction or a time).
+- **M3 is chance-consistent** -- fewer significant lags than chance alone
+  would produce across 270 cells.
+
+Spending the slot on the most interesting-looking cell is precisely what the
+one-hypothesis rule exists to prevent, and a slot spent badly is worse than a
+slot unspent. **It remains available to exactly two things:** a future map
+built on POST-FREEZE data (its own registration), or a mechanism argument
+articulated FIRST and then checked against this map. Mechanism-then-map is
+legitimate; pattern-then-invented-mechanism is not. The slot does not expire
+and does not accumulate -- one remains one.
+
+**M6's measured pairwise correlation (rho-bar 0.479 in 2021 to 0.707 in 2022,
+tight non-overlapping CIs) is cross-referenced into NULL-CALIBRATION** as the
+empirical input governing inheritance contamination on this universe. It is
+not a constant: any future program reporting axis 4 on the tradable-26 must
+report rho-bar for its OWN window rather than quoting one project-wide figure.
+
+**THE BOARD IS SEALED.** Every search program is run and closed, the last
+descriptive construction on frozen data is complete, and its hypothesis slot
+is banked. **Nothing further can be learned from the frozen dataset.** The
+only paths forward are the six clocks above and, eventually, the banked slot
+on data that does not exist yet.
+
 **Starting a new search means writing a new registration first.**
 
 **EQUITIES (#204-#216) is closed: all six FAIL, the fail/fail cell.** The
