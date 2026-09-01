@@ -1,3 +1,13 @@
+# ---------------------------------------------------------------------
+# THIS FILE IS UNPINNED AND IS NOT WHAT CI INSTALLS.
+#
+# Install requirements.lock instead:   pip install -r requirements.lock
+#
+# It is kept only as the human-readable statement of WHICH packages the
+# project needs and why. The pandas-3 lesson: an unpinned major bumped
+# underneath us and behaviour moved with no commit to point at.
+# ---------------------------------------------------------------------
+
 # Core — required for signal_engines.py / pipeline.py / live_tools.py check mode
 requests
 pandas

@@ -59,8 +59,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
-          pip install pytest
+          pip install -r requirements.lock
 
       - name: Run full audit
         id: audit

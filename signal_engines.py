@@ -3074,7 +3074,15 @@ def cached_sentiment_check(ticker: str, ttl_hours: float = None,
                 "reason": (f"Adanos unavailable ({type(e).__name__}, {detail}) "
                            f"and no cached reading exists — gate neutral for "
                            f"this run. If this persists, check quota/key."),
-                "sentiment_score": None, "mentions": None,
+                # CANONICAL NAME ONLY. This branch used to emit
+                # `mentions`, while every consumer reads
+                # `sentiment_mentions` -- so an ERROR gate served a dict
+                # with no mentions key at all under the name anyone looks
+                # up, and .get() quietly returned None. Two names for one
+                # concept is how a silent None gets served; the cache
+                # persist path already strips it, and now nothing produces
+                # it either.
+                "sentiment_score": None, "sentiment_mentions": None,
                 "cache_hit": False, "cache_age_hours": None,
                 "stale_fallback": False}
 

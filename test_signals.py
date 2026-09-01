@@ -5313,3 +5313,154 @@ class TestTierFramingIsUnchangedByTheSimplification:
         t = pub.transparency_post(self._rec(), "2026-09")
         assert "improved the number" in t, (
             "the anti-cherry-picking disclosure disappeared from the post")
+
+
+# ======================================================================
+# HARDENING — 2026-09-01. Pins, retries, the vestigial-key wart, and the
+# checks that make each of them stay true. No performance claim here
+# either; this is reliability only.
+# ======================================================================
+
+class TestDependencyPinning:
+
+    def test_lockfile_exists_and_pins_every_package(self):
+        import audit
+        pinned = audit.parse_lockfile()
+        assert pinned, "requirements.lock missing or pins nothing"
+        for core in ("requests", "pandas", "numpy", "yfinance", "pytest"):
+            assert core in pinned, "unpinned core dependency: " + core
+            assert pinned[core][0].isdigit(), core + " pin is not a version"
+
+    def test_every_workflow_installs_the_lockfile(self):
+        import glob
+        wfs = glob.glob(".github/workflows/*.yml")
+        assert wfs, "no workflows found"
+        for wf in wfs:
+            t = open(wf, encoding="utf-8").read()
+            if "pip install" not in t:
+                continue
+            assert "requirements.lock" in t, wf + " installs an unpinned set"
+            assert "pip install -r requirements.txt" not in t, (
+                wf + " still installs the unpinned requirements.txt")
+
+    def test_no_workflow_installs_a_bare_package(self):
+        """`pip install pytest` with no version is a floating pin wearing
+        a different hat."""
+        import glob
+        import re
+        for wf in glob.glob(".github/workflows/*.yml"):
+            for line in open(wf, encoding="utf-8"):
+                m = re.search(r"pip install\s+([^-\n]\S*)", line)
+                if m and "==" not in m.group(1):
+                    raise AssertionError(
+                        "%s installs %s unpinned" % (wf, m.group(1)))
+
+    def test_drift_check_fails_on_a_mismatch(self, tmp_path):
+        import audit
+        lock = tmp_path / "r.lock"
+        lock.write_text("pandas==0.0.1-not-a-real-version\n", encoding="utf-8")
+        r = audit.check_dependency_drift(str(lock))
+        assert r == audit.FAIL
+
+    def test_drift_check_passes_on_the_real_lockfile(self):
+        import audit
+        assert audit.check_dependency_drift() in (audit.PASS, audit.SKIP)
+
+
+class TestLiveFetchRetries:
+
+    def test_every_live_external_call_is_inside_a_retry_loop(self):
+        import audit
+        assert audit.check_live_fetches_retry() == audit.PASS
+
+    def test_the_check_would_catch_a_bare_fetch(self, tmp_path, monkeypatch):
+        """The check is only worth having if it fails on a real regression."""
+        import audit
+        bad = tmp_path / "signal_engines.py"
+        bad.write_text("import requests\nx = requests.get('http://x')\n",
+                       encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        assert audit.check_live_fetches_retry() == audit.FAIL
+
+
+class TestSentimentMentionsWart:
+
+    def test_error_gate_uses_the_canonical_name_only(self):
+        src = open("signal_engines.py", encoding="utf-8").read()
+        assert '"sentiment_score": None, "mentions": None' not in src, (
+            "the ERROR gate still emits the vestigial 'mentions' key")
+
+    def test_error_gate_dict_carries_sentiment_mentions(self, monkeypatch,
+                                                        tmp_path):
+        epm.reset_run_cache()
+
+        def boom(*a, **kw):
+            raise ConnectionError("adanos down")
+
+        gate = epm.cached_sentiment_check(
+            "BTC", cache_path=str(tmp_path / "c.json"), fetcher=boom,
+            ttl_hours=4)
+        assert gate["decision"] == "ERROR"
+        assert "mentions" not in gate, "vestigial key is back"
+        assert "sentiment_mentions" in gate
+        assert gate["sentiment_mentions"] is None
+        assert gate["gate_multiplier"] == 1.0     # neutral, not punitive
+
+
+class TestShadowArmLiveness:
+
+    def test_both_arms_are_accruing(self):
+        import audit
+        assert audit.check_shadow_arms_live() == audit.PASS
+
+    def test_a_dead_incumbent_arm_fails(self, tmp_path):
+        """The precondition that keeps the simplification reversible."""
+        import audit
+        import csv
+        import importlib
+        sb = importlib.import_module("shadow_basket")
+        f = tmp_path / "s.csv"
+        with open(f, "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=sb.SHADOW_COLUMNS)
+            w.writeheader()
+            row = {c: "" for c in sb.SHADOW_COLUMNS}
+            row.update({"sq_direction": "BUY", "direction": "",
+                        "indicator_final_score": "", "sq_construction": "squeeze"})
+            w.writerow(row)
+        assert audit.check_shadow_arms_live(str(f)) == audit.FAIL
+
+    def test_an_incumbent_arm_with_no_step3_fails(self, tmp_path):
+        """Labelling without an indicator score is not the incumbent."""
+        import audit
+        import csv
+        import importlib
+        sb = importlib.import_module("shadow_basket")
+        f = tmp_path / "s.csv"
+        with open(f, "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=sb.SHADOW_COLUMNS)
+            w.writeheader()
+            row = {c: "" for c in sb.SHADOW_COLUMNS}
+            row.update({"sq_direction": "BUY", "direction": "BUY",
+                        "indicator_final_score": "", "sq_construction": "squeeze"})
+            w.writerow(row)
+        assert audit.check_shadow_arms_live(str(f)) == audit.FAIL
+
+    def test_liveness_check_reads_no_performance(self):
+        """It must never become an interim read of the shadow log."""
+        src = open("audit.py", encoding="utf-8").read()
+        fn = src.split("def check_shadow_arms_live")[1].split("\ndef ")[0]
+        for forbidden in ("pnl_r", "outcome", "extract_episodes",
+                          "resolve_episode", "net_r", "win"):
+            assert forbidden not in fn, (
+                "the liveness check touches performance: " + forbidden)
+
+
+class TestAuditReportEncoding:
+
+    def test_report_is_written_as_utf8(self):
+        src = open("audit.py", encoding="utf-8").read()
+        assert 'open(args.out, "w").write(report)' not in src, (
+            "audit writes its report in the platform default encoding; on "
+            "Windows cp1252 that crashes on its own arrow characters, after "
+            "every check has already run")
+        assert 'open(args.out, "w", encoding="utf-8")' in src

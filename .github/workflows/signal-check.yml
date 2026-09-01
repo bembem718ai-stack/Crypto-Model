@@ -60,7 +60,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.lock
 
       # Two triggers drive this workflow (see the header). Whichever arrives
       # second sees a signal_log entry newer than 50 minutes and stands

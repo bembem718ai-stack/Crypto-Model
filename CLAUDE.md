@@ -27,11 +27,19 @@ Four core files plus the audit, and two directories that support research:
 - `signal_engines.py` — Binance klines + Bollinger squeeze detection, Reddit
   sentiment via Adanos, Yahoo Finance technical/macro indicators, ATR exit
   levels, the ML engine.
-- `pipeline.py` — 3-step orchestration in ENFORCED order, direction
+- `pipeline.py` — step orchestration in ENFORCED order, direction
   classification, backtests, position sizing, robustness validation.
+  **THE PUBLISHED CONSTRUCTION IS SQUEEZE-ONLY as of 2026-09-01**: Step 3
+  (the indicator blend) and the VIX extreme-fear regime were removed on
+  ablation grounds (#198 harmful, #201 inert). `PUBLISHED_*` and
+  `INCUMBENT_*` name both constructions; the published path SKIPS Step 3,
+  which is what drops the Yahoo dependency. **NO PERFORMANCE CLAIM IS
+  MADE** — adjudication is SHADOW-EVAL's at 30 pooled closed episodes.
+  Step 3 remains in the codebase and `shadow_basket.py` still calls it
+  every day, which is the precondition that keeps the change reversible.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 545 tests covering all decision logic.
+- `test_signals.py` — 581 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
 - `data/` — the frozen offline dataset: ~5y of Binance.US 4h bars plus the
   incumbent's daily frame per ticker (BTC/ETH/SOL), with `MANIFEST.json`
@@ -563,11 +571,22 @@ public until all three are done.**
   showed BUY win rate falling toward 50% and SELL expectancy flipping sign
   over 2022–2026. The 2024–2026 validation window may simply have been
   favorable. `pipeline.py robustness` measures this; the decision is open.
-- **VIX regime rescue candidate (unproven).** Stressed-VIX trades looked
-  strongly positive vs negative for normal VIX. Pre-registered criteria for
-  accepting it live in `pipeline.py`'s robustness section. Not yet met.
-- **Short side viability (open).** Shorts use a 50-day SMA trend filter.
-  Whether they hold up across halves and tickers is what
+- **VIX regime — REMOVED FROM THE PUBLISHED PATH 2026-09-01, criteria never
+  met.** Stressed-VIX trades once looked strongly positive against normal
+  VIX, and pre-registered criteria for accepting it live sat in
+  `pipeline.py`'s robustness section. #201 then measured the regime as
+  UNEXERCISED BY CONSTRUCTION on the long side: removing it moved
+  expectancy +0.000R on both windows, because BUY-tier membership changed
+  on ONE day in 6.42 years and that day was unconfirmed. claims.md lists
+  the long-side contribution as NOT SUPPORTED. The code is one flag away
+  (`use_vix_regime=True`) and the incumbent shadow arm still exercises it.
+- **Short side viability (open), and the filter now only exists in the
+  incumbent.** Shorts use a 50-day SMA trend filter, which lived in Step 3
+  — so from 2026-09-01 it cannot fire on the published path and logged
+  short rows are a different construction from the one that produced the
+  0-for-11 quoted in claims.md. No published signal changes (shorts are
+  never published), and claims.md carries the dated disclosure. Whether
+  shorts hold up across halves and tickers is still what
   `short_side_verdict` decides.
 - **Resolution axis — CLOSED for the bar-equivalent construction (#168-#170,
   2026-08-28).** The 1h program is finished. #168 (time-equivalent) FAILED:

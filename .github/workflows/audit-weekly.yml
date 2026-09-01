@@ -45,7 +45,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.lock
 
       # audit.py exits 1 when any check FAILs. Capture that without failing
       # the step, so the issue-opening step below still runs.

@@ -1,0 +1,41 @@
+# requirements.lock — THE PINNED SET. CI and local install from THIS file.
+#
+# WHY THIS EXISTS: the pandas-3 lesson. requirements.txt named packages
+# without versions, an unpinned major bumped underneath us, and behaviour
+# moved without a commit. A research repo whose results are supposed to be
+# reproducible cannot have its numerics floating.
+#
+# These are the versions this project's 567 tests are green against, and the
+# versions every number in docs/cleanroom.md was produced under. Frozen
+# 2026-09-01 against Python 3.12.10.
+#
+# TO CHANGE A PIN: bump it here, run the suite, run audit.py, and commit the
+# bump on its own. A dependency bump is a change to the instrument, so it
+# gets the same treatment as any other change to the instrument.
+#
+# audit.py's "Dependencies match the lockfile" check compares the INSTALLED
+# versions against this file and reports drift, so a silent bump surfaces
+# within a week rather than at the next unexplained result.
+
+# --- Core: signal_engines.py / pipeline.py / live_tools.py check mode ---
+requests==2.34.2
+pandas==3.0.5
+numpy==2.5.2
+yfinance==1.6.0
+
+# --- ML confidence engine (pipeline.py run --ml / check --confluence) ---
+xgboost==3.4.0
+scikit-learn==1.9.0
+
+# --- TLS: research/tls.py, for the intercepting proxy on the dev machine.
+#     Verification is never disabled; truststore reads the OS trust store.
+truststore==0.10.4
+
+# --- Test runner. Pinned too: a pytest major can change collection and
+#     turn a green suite red (or, worse, silently skip).
+pytest==9.1.1
+
+# NOTE: plyer and winsound (desktop alerts/sound) are intentionally NOT
+# listed — only `live_tools.py monitor` uses them, which is for a machine
+# you keep running locally. GitHub Actions is headless, so `live_tools.py
+# check` (what the workflows run) never touches them.

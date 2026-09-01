@@ -53,7 +53,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.lock
 
       # A venue that is down emits a ::warning and the others still
       # collect; the collector exits 0 either way. A failed pull leaves

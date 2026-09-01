@@ -40,6 +40,7 @@ EXIT CODE: 1 if any check is FAIL, else 0 — so CI can gate on it.
 import argparse
 import io
 import json
+import ast
 import os
 import re
 import subprocess
@@ -672,6 +673,156 @@ def check_derivatives_collector(out_dir="data/derivatives"):
     return results
 
 
+def parse_lockfile(path="requirements.lock"):
+    """(name, pinned_version) pairs. Comments and blanks ignored."""
+    out = {}
+    if not os.path.exists(path):
+        return out
+    for line in open(path, encoding="utf-8"):
+        line = line.split("#")[0].strip()
+        if not line or "==" not in line:
+            continue
+        name, ver = line.split("==", 1)
+        out[name.strip().lower()] = ver.strip()
+    return out
+
+
+def check_dependency_drift(path="requirements.lock"):
+    """INSTALLED versus PINNED. Runs weekly, which is the point.
+
+    The pandas-3 lesson: an unpinned major bumped underneath this project
+    and behaviour moved with no commit to point at. A pin only helps if
+    something notices when the environment stops matching it -- otherwise
+    the lockfile is a document about the past. Drift is a FAIL, not a
+    warning: every number in docs/cleanroom.md was produced under the
+    pinned set, and a result computed under a different one is not
+    comparable to them.
+    """
+    import importlib.metadata as md
+
+    pinned = parse_lockfile(path)
+    if not pinned:
+        return record("A. Structural", "Dependencies match the lockfile", SKIP,
+                      "%s missing or empty" % path)
+    drift, missing, ok = [], [], 0
+    for name, want in sorted(pinned.items()):
+        try:
+            have = md.version(name)
+        except md.PackageNotFoundError:
+            missing.append(name)
+            continue
+        if have != want:
+            drift.append("%s pinned %s, installed %s" % (name, want, have))
+        else:
+            ok += 1
+    ev = {"pinned": len(pinned), "matching": ok, "drift": drift,
+          "not_installed": missing}
+    if drift:
+        return record("A. Structural", "Dependencies match the lockfile", FAIL,
+                      "environment has drifted from %s: %s — every number in "
+                      "the record was produced under the pinned set"
+                      % (path, "; ".join(drift)), ev)
+    if missing:
+        return record("A. Structural", "Dependencies match the lockfile", SKIP,
+                      "not installed here: %s (the rest match)"
+                      % ", ".join(missing), ev)
+    return record("A. Structural", "Dependencies match the lockfile", PASS,
+                  "all %d pinned packages match the installed versions" % ok, ev)
+
+
+def check_live_fetches_retry():
+    """Every external GET in the live path must sit inside a retry loop.
+
+    Checked on the AST, not by grepping for the word 'retry': the property
+    is that the call is INSIDE a `for attempt in range(...)`, which is what
+    actually makes a transient 5xx survivable. A new unretried fetch is the
+    kind of thing that works on every developer machine and fails at 03:00
+    in CI.
+    """
+    bad = []
+    for path in ("signal_engines.py", "pipeline.py", "live_tools.py"):
+        if not os.path.exists(path):
+            continue
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        loops = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.For, ast.While)):
+                loops.append((node.lineno, getattr(node, "end_lineno", node.lineno)))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            f = node.func
+            name = ""
+            if isinstance(f, ast.Attribute):
+                name = f.attr
+                if isinstance(f.value, ast.Name):
+                    name = f.value.id + "." + f.attr
+            if name not in ("requests.get", "requests.post", "yf.download"):
+                continue
+            ln = node.lineno
+            if not any(a <= ln <= b for a, b in loops):
+                bad.append("%s:%d %s" % (path, ln, name))
+    if bad:
+        return record("A. Structural", "Live fetches retry with backoff", FAIL,
+                      "external calls outside any retry loop: %s"
+                      % "; ".join(bad), {"unretried": bad})
+    return record("A. Structural", "Live fetches retry with backoff", PASS,
+                  "every requests/yfinance call in the live path sits inside "
+                  "a retry loop")
+
+
+def check_shadow_arms_live(path="shadow_log.csv"):
+    """BOTH shadow arms must still be accruing.
+
+    This is the SIMPLIFICATION registration's section-2 precondition,
+    checked against the actual log rather than the source. If the incumbent
+    arm stopped producing rows, the promotion/demotion question at
+    SHADOW-EVAL would become unanswerable and the 2026-09-01 change would
+    be irreversible -- and it would fail SILENTLY, because a log still
+    filling with squeeze-arm rows looks like a working log.
+
+    Reads only the LOG SHAPE. It does not compute, compare or report either
+    arm's performance: SHADOW-EVAL's checkpoint at 30 pooled closed
+    episodes is the only place that may look, and this check must never
+    become an interim read.
+    """
+    if not os.path.exists(path):
+        return record("D. Launch readiness", "Both shadow arms accruing", SKIP,
+                      "%s not present yet" % path)
+    import csv
+    with open(path, encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    if not rows:
+        return record("D. Launch readiness", "Both shadow arms accruing", SKIP,
+                      "%s is empty" % path)
+    recent = rows[-200:]
+    inc = sum(1 for r in recent if (r.get("direction") or "").strip())
+    sq = sum(1 for r in recent if (r.get("sq_direction") or "").strip())
+    ind = sum(1 for r in recent
+              if (r.get("indicator_final_score") or "").strip())
+    constructions = sorted({(r.get("sq_construction") or "?") for r in recent})
+    ev = {"rows_checked": len(recent), "incumbent_labelled": inc,
+          "squeeze_labelled": sq, "incumbent_indicator_scores": ind,
+          "sq_constructions_present": constructions}
+    if inc == 0:
+        return record("D. Launch readiness", "Both shadow arms accruing", FAIL,
+                      "the INCUMBENT arm has stopped labelling — the "
+                      "simplification is no longer reversible", ev)
+    if sq == 0:
+        return record("D. Launch readiness", "Both shadow arms accruing", FAIL,
+                      "the SQUEEZE arm has stopped labelling — the published "
+                      "construction is unshadowed", ev)
+    if ind == 0:
+        return record("D. Launch readiness", "Both shadow arms accruing", FAIL,
+                      "no indicator scores in the last %d rows: the incumbent "
+                      "arm is no longer computing Step 3, so it is not the "
+                      "incumbent any more" % len(recent), ev)
+    return record("D. Launch readiness", "Both shadow arms accruing", PASS,
+                  "last %d rows: %d incumbent / %d squeeze labels, %d Step 3 "
+                  "scores; sq_construction=%s"
+                  % (len(recent), inc, sq, ind, ",".join(constructions)), ev)
+
+
 def check_publication_generators():
     """DRY-RUN both publication generators so FORMAT ROT fails in CI.
 
@@ -971,6 +1122,9 @@ def main():
     check_sentiment_gate_errors()
     check_derivatives_collector()
     check_publication_generators()
+    check_dependency_drift()
+    check_live_fetches_retry()
+    check_shadow_arms_live()
     check_adanos_accounting()
     check_outcomes_tracking()
     check_sentiment_measurable()
@@ -1029,7 +1183,12 @@ def main():
     print("\n" + report)
     if args.out:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-        open(args.out, "w").write(report)
+        # ENCODING IS EXPLICIT. Windows defaults to cp1252, and this report
+    # contains characters audit.py itself writes (arrows in the Binance
+    # route row), so the default encoding crashed the run AFTER every check
+    # had passed -- the most expensive possible place to lose the output.
+    with open(args.out, "w", encoding="utf-8") as fh:
+        fh.write(report)
         print(f"Report written to {args.out}")
     if args.json_out:
         open(args.json_out, "w").write(json.dumps(_results, indent=2, default=str))
