@@ -6467,3 +6467,142 @@ single pooled sample under one shared regime series."**
 fidelity-axis measurements with the axis-4 caveat attached, the gap census,
 the precheck's per-quartile trade counts, and the registered k beside the
 surviving count. Negatives get the same detail as positives.
+
+---
+
+# CLOSE-OUT — MACRO-OVERLAY (#251–#256)
+
+**Six registered, five run, zero passed.** Runner and results committed at
+`3862f93`; the frozen series and their sha256 manifest at `f0a812e`.
+
+## Verdicts
+
+| # | rule | window | n | eps | win% | `net_all` | `ex_best` | plc adj | pctile | quartiles | 1/2/3 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| #251 | stablecoin 30d growth > 0 | DISC | 1073 | 330 | 32.2 | −0.0504 | −0.1107 | +0.0930 | 8.2% | − − − + | F F F |
+| #251 | | CONF | 1819 | 531 | 38.3 | +0.1348 | +0.0305 | +0.1555 | 95.8% | − − − + | P F F |
+| #252 | stablecoin TOP tercile | — | — | — | — | — | — | — | — | GATED | NEVER RUN |
+| #253 | stablecoin BOTTOM tercile | DISC | 836 | 282 | 32.1 | −0.0616 | −0.1241 | +0.1869 | 26.3% | — − − — | F F F |
+| #253 | | CONF | 494 | 186 | 34.2 | +0.0111 | −0.0764 | +0.5255 | 38.9% | − − − + | P F F |
+| #254 | DGS10 3m change < 0 | DISC | 762 | 211 | 35.6 | +0.0462 | −0.0029 | +0.2465 | 69.5% | — − + + | P F F |
+| #254 | | CONF | 1144 | 369 | 41.6 | +0.2420 | +0.2057 | +0.3078 | 96.1% | + + − + | P F F |
+| #255 | DGS10 < 200d mean | DISC | 502 | 156 | 34.1 | +0.0044 | −0.1319 | +0.1928 | 58.7% | − − − + | P F F |
+| #255 | | CONF | 1265 | 406 | 42.1 | +0.2538 | +0.2224 | +0.2578 | **99.0%** | + + + + | P F P |
+| #256 | both easing (#251 ∧ #254) | DISC | 400 | 117 | 32.8 | −0.0328 | −0.2590 | +0.2928 | 46.0% | — − − — | F F F |
+| #256 | | CONF | 934 | 290 | 45.4 | +0.3574 | +0.3118 | +0.3213 | **99.8%** | + + + + | **P P P** |
+
+Quartile key: `+` positive `ex_best`, `−` negative, `—` undefined. Bar
+99.1667% (k = 6). Base reproduces #164 exactly: DISCOVERY 1,678 trades / 496
+episodes, CONFIRMATION 2,414 / 661.
+
+**#256 CONFIRMATION cleared all three clauses.** It is the closest this
+program came and it still FAILS, because the registered bar requires BOTH
+windows and its DISCOVERY twin sits at the 46.0th percentile with a −0.2590
+`ex_best`. **#255 CONFIRMATION missed the bar by 0.17 percentile points**
+(99.0 vs 99.1667) — recorded so the near-miss is visible, and recorded as a
+FAIL. Per the no-variations rule neither may be re-run with a different
+lookback, boundary or series.
+
+Fidelity: DISCOVERY axis 1 1,073 vs 1,214.7 (1.13×), cost_r 0.0226/0.0240;
+axis 2 0 of 188,400 null-days on undefined regime; axis 3 N/A — a regime gate
+on an event series has no exposure budget; axis 4 +0.0081 vs −0.0106 →
+**+0.0187**. CONFIRMATION 1,819 vs 1,850.5 (1.02×), 0.0287/0.0309; 0 of
+162,800; N/A; +0.0677 vs +0.0653 → **+0.0024**. Axis-4 caveat attached: the
+axes certify the centre, not the tail.
+
+## The null was wrong first, and axis 1 caught it
+
+The registered null placed each observed regime run at a random
+non-overlapping position, 12 attempts per run. **At 73% regime density most
+runs cannot find a free slot and were silently dropped: the null carried
+0.22× the strategy's trades.** A null trading a fifth as often is not the
+strategy with its timing destroyed — it is a different, thinner strategy.
+
+**This is the third program in a row whose null failed a fidelity axis before
+it decided anything** (ROTATION's dead weight, EQUITIES' ineligible weight,
+now this). All three are the same error: a null differing from the strategy
+in more than the one thing it isolates. All three were caught by the axes
+rather than by inspection.
+
+### THE REGISTERED NULL FORM FOR REGIME SERIES — permanent
+
+> Decompose the observed boolean series into its **TRUE-runs** and
+> **FALSE-gaps**. Permute each list independently. Lay them back down end to
+> end from the observed starting parity.
+
+Run **count**, run **lengths**, gap **lengths** and **total coverage** are
+preserved by construction; only **where** the runs sit changes — which is
+exactly the thing the null exists to destroy. Axis 1 went 0.22× → **1.13×**
+DISCOVERY, **1.02×** CONFIRMATION. Residual excess is trade clustering, not
+coverage: coverage is exact in days, but shuffled runs land on marginally
+trade-denser days, which makes the bar slightly harder, not easier.
+
+Any future program gating on a regime series uses this generator, and reports
+axis 1 beside the verdict.
+
+## #252 was GATED, not skipped — and it cost the program its control
+
+Stage 1 counted confirmed trades from signal definitions and calendar
+structure only, no returns. **#252 DISCOVERY Q1 = 16 trades** against the
+`ex_best` floor of 30 (Q2 92, Q3 70, Q4 46; CONFIRMATION 232/344/270/265).
+Marked **UNMEASURABLE-BY-CONSTRUCTION** and never run. **Registered k stayed
+at 6** per the fixed-k gate law — five ran, the bar did not move.
+
+§5 pre-declared a control: *if both the top and bottom stablecoin terciles
+pass, the result is exposure or regime persistence, not liquidity.*
+
+> **That control could not be exercised as registered.** #252 was removed
+> before scoring, so the two-sided read was unavailable — not skipped, not
+> silently dropped.
+
+What survives is one-sided and weaker: #253 (bottom tercile) failed both
+windows, so nothing needed disambiguating in the event. Had #252 run and
+passed beside a passing #253, this control would have been the deciding
+instrument and the program had no substitute for it. **Recorded as a design
+cost:** a control built from a hypothesis pair is only as available as its
+weaker member's event count, and the precheck that protects `ex_best` can
+remove a control as easily as a claim. A future paired control states its
+event counts at registration.
+
+## Two findings, promoted to permanent methodology in CLAUDE.md
+
+**(a) Slow regime series are near-calendar gates.** The placebo shuffles
+*runs*, and there are very few of them. #251 DISCOVERY covers 73% of days in
+**11 runs, one of them 777 days** — effectively a single block. Seeds buy
+resolution, not independence.
+
+| # | DISC runs (max) | CONF runs (max) |
+|---|---|---|
+| #251 | **11** (777d) | 17 (377d) |
+| #252 | 21 (75d) | 27 (227d) |
+| #253 | 30 (197d) | 21 (66d) |
+| #254 | 29 (110d) | 20 (114d) |
+| #255 | 20 (241d) | 29 (159d) |
+| #256 | 27 (110d) | **17** (114d) |
+
+**#256's 99.8% rests on 17 blocks.** It should be read as "high", not as
+1-in-500. This compounds the standing axis-4 caveat rather than replacing it.
+
+**(b) The monotone slower-series → higher-percentile gradient is the
+diagnostic signature of a window effect.** Every rule here is positive on
+CONFIRMATION and negative-or-flat on DISCOVERY; not one is stable across
+windows. Gating on a series that moves this slowly is close to gating on
+time, so the test mostly reports which window was kinder. The gradient is
+visible without any outcome data — from run counts alone — and is therefore
+checkable at registration.
+
+## Disposition — the macro/flow axis is CLOSED on frozen data
+
+**Searched, closed.** Six regime gates over two independent macro/flow series
+(stablecoin supply, DGS10), both windows, 3,000 seeds, every constant fixed
+before export. Zero survivors, and the one all-clause pass is single-window
+with a diagnosed window-effect signature and 17 blocks behind its percentile.
+
+No #257 is drawn from this program. A different lookback, tercile boundary,
+series or combination is a **new program requiring its own justification**,
+and under research rule 9 it must first name which closed door it does not
+re-open — the macro/flow axis on frozen data is now one of them.
+
+**Nothing here may be cited as evidence of anything.** Not #256's 99.8%, not
+#255's near-miss, not the CONFIRMATION-side positives. The project continues
+to hold **zero supported edge claims**.

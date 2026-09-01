@@ -256,9 +256,24 @@ pp/yr on equities DISCOVERY vs the permutation null's +2.48) but NOT
 persistence inheritance (+2.16 on CONFIRMATION). It is available with that
 weakness attached.
 
+**MACRO-OVERLAY (#251-#256) is CLOSED: 0 of 6 pass. The MACRO/FLOW AXIS ON
+FROZEN DATA IS SEARCHED AND CLOSED.** Six regime gates over two independent
+series (DefiLlama stablecoin supply, FRED DGS10), both windows, 3,000 seeds,
+every constant fixed before export and the series frozen under sha256.
+**#256** (both-easing) cleared all three clauses on CONFIRMATION at the
+99.8th percentile and FAILED -- its DISCOVERY twin sits at the 46.0th with a
+-0.2590 ex_best, and its percentile rests on **17 runs**. **#255** missed the
+bar by 0.17 percentile points (99.0 vs 99.1667) and is a FAIL. Neither may be
+re-specified; a different lookback, boundary, series or combination is a NEW
+program that must first name which closed door it does not re-open.
+**#252 was GATED at 16 DISCOVERY-Q1 trades, which cost the program its
+pre-declared two-sided control** -- a control built from a hypothesis pair is
+only as available as its weaker member's event count.
+
 **EVERY SEARCH PROGRAM IS RUN AND CLOSED**: the crypto grid, the basket
 programs, the architectural search (#187-#203), EQUITIES (#204-#216),
-NULL-CALIBRATION (#217-#219) and BINANCE FUNDING (#220-#234).
+NULL-CALIBRATION (#217-#219), BINANCE FUNDING (#220-#234) and MACRO-OVERLAY
+(#251-#256).
 
 **THE STRATEGY IS NOW FORWARD COLLECTION, AND SIX CLOCKS ARE RUNNING.**
 Nothing is in flight; everything open is calendar-gated and may not be
@@ -417,6 +432,50 @@ residual and say which side it favours.
    axis would be a methods program with its own registration; inventing one
    after a batch of tail-comparison failures is the move research rule 4
    forbids, so the gap is recorded rather than quietly patched.
+
+### Regime-series gates — the null form, and the mandatory run-count table
+
+**THE REGISTERED NULL FORM FOR ANY BOOLEAN REGIME SERIES.** Decompose the
+observed series into its **TRUE-runs** and **FALSE-gaps**, permute each list
+independently, and lay them back down end to end from the observed starting
+parity. Run **count**, run **lengths**, gap **lengths** and **total
+coverage** are preserved by construction; only **where** the runs sit
+changes, which is the one thing the null exists to destroy.
+
+The obvious alternative -- place each observed run at a random
+non-overlapping position -- **fails axis 1 at high regime density.** #251's
+first null used it with 12 placement attempts per run; at 73% density most
+runs could not find a free slot and were silently dropped, leaving the null
+with **0.22x** the strategy's trades. The run/gap decomposition took axis 1
+to 1.13x / 1.02x. Add to the contamination table:
+
+| null | regime | contamination |
+|---|---|---|
+| random run PLACEMENT | dense regime (>~50% of days) | runs unplaceable and dropped -> 0.22x trades; a thinner strategy, not a timing null |
+
+**SLOW REGIME SERIES ARE NEAR-CALENDAR GATES, AND SEEDS DO NOT FIX IT.** The
+null shuffles **runs**, so the run COUNT is the effective sample size behind
+every percentile it produces -- not the seed count, and not the trade count.
+#251 DISCOVERY covered 73% of days in **11 runs, one of them 777 days**:
+effectively a single block. #256's 99.8th percentile rested on **17 blocks**.
+
+> **A run-count table -- runs per window, with the longest run -- is
+> MANDATORY beside any percentile computed against a regime-series null.**
+> Seeds buy resolution, not independence.
+
+This compounds the axis-4 centre-vs-tail caveat rather than replacing it: few
+blocks make the tail both uncharacterized AND coarse.
+
+**THE MONOTONE SLOWER-SERIES -> HIGHER-PERCENTILE GRADIENT IS THE DIAGNOSTIC
+SIGNATURE OF A WINDOW EFFECT.** When a family of regime gates comes back
+positive in one window and negative-or-flat in the other, with the slowest
+series scoring highest, the gate is close to gating on TIME and the test is
+mostly reporting which window was kinder. All six of #251-#256 showed it.
+
+**The gradient is computable from run counts alone, with no outcome data, so
+it is checkable AT REGISTRATION.** A regime-series program states its run
+counts per window in its registration; a series with single-digit-to-teens
+runs in a window is disclosed as near-calendar there before anything runs.
 
 ### The fixed-k gate law — a gate removes chances, never cheapens them
 
