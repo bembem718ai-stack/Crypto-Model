@@ -30,6 +30,7 @@ a window until something appears.
 """
 import os
 import sys
+import copy
 import argparse
 import datetime as dt
 
@@ -813,15 +814,61 @@ def monthly_summary(carry, bas, month):
 
 # ----------------------------------------------------------------------
 
-def build(today=None):
+def _archive_fingerprint():
+    """(path, mtime, size) for every archive build() reads.
+
+    The cache key. It changes the instant any archive does, so a cached
+    render can never outlive its data -- which is the only thing that
+    would make caching a measurement instrument dishonest.
+    """
+    out = []
+    for name in ("deribit_options", "binance_funding", "kraken_funding",
+                 "okx_funding", "kraken_tickers"):
+        f = os.path.join(DERIV, "%s.csv" % name)
+        try:
+            st = os.stat(f)
+            out.append((name, int(st.st_mtime_ns), int(st.st_size)))
+        except OSError:
+            out.append((name, 0, 0))
+    return tuple(out)
+
+
+_BUILD_CACHE = {}
+
+
+def build(today=None, use_cache=True):
+    """Render everything. Cached on the ARCHIVE FINGERPRINT, not on time.
+
+    A full render runs a 2,000-draw block bootstrap over nine symbols.
+    Once a month that is free; but publish.py now calls this to compose
+    the transparency post, and the test suite renders that post from
+    several angles, so the same untouched archives were being bootstrapped
+    a dozen times per run.
+
+    The cache is keyed on every input file's mtime and size, so it expires
+    the moment the collector writes. It is NOT keyed on the clock: a stale
+    render is exactly the failure a measurement instrument must not have.
+    """
     today = today or dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
+    key = (today, _archive_fingerprint())
+    if use_cache and key in _BUILD_CACHE:
+        # A COPY, NEVER THE CACHED OBJECT. Handing out the stored dict
+        # lets any caller that appends to it -- a renderer, a test, a
+        # future consumer -- corrupt every later caller silently, and the
+        # corruption then looks like bad data rather than a shared
+        # reference. Caught the first time a test mutated a render.
+        return copy.deepcopy(_BUILD_CACHE[key])
     vrp = variance_risk_premium()
     carry = perp_carry()
     bas = basis()
     table = render(vrp, carry, bas, today)
     summary = monthly_summary(carry, bas, today[:7])
-    return {"vrp": vrp, "carry": carry, "basis": bas,
-            "table": table, "summary": summary, "date": today}
+    built = {"vrp": vrp, "carry": carry, "basis": bas,
+             "table": table, "summary": summary, "date": today}
+    if use_cache:
+        _BUILD_CACHE.clear()          # one entry: the current archives
+        _BUILD_CACHE[key] = copy.deepcopy(built)
+    return built
 
 
 HEADER = """# Premia — what the market paid

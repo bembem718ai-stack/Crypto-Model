@@ -39,7 +39,7 @@ Four core files plus the audit, and two directories that support research:
   every day, which is the precondition that keeps the change reversible.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 597 tests covering all decision logic.
+- `test_signals.py` — 612 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
 - `research/premia.py` — **#257 THE PREMIA INSTRUMENT.** Descriptive, in
   the #249 style: no hypotheses, no verdicts. Measures crypto variance
@@ -359,11 +359,33 @@ annotation also exposed a defect in #235-#242 that nothing else had:
 BUY, so any payer story for one direction is refuted by its own
 registered twin. Noted, not fixed; the rules stay as sealed.
 
+**THE PAYER FINDING IS ALSO A DATED PREDICTION.** The shared reason all
+three sealed programs return NO PAYER IDENTIFIED -- the rent settles on the
+PERPETUAL and these programs buy SPOT at D+1 -- is registered as a
+mechanical prediction that **all three FAIL** at their gates (~2027-06-27,
+~2028-01-05, ~2028-07-01). **A PASS BY ANY OF THEM REFUTES THE ANALYSIS**,
+and would mean the routing argument was wrong rather than that a payer was
+found. It lowers no bar and changes no pass rule; its value is that a pass
+would cost it something.
+
+**ROUTING RULE for adversarial-review findings, standing:** a computation
+defect in live or instrument code is FIXED, re-rendered, and noted in the
+commit; anything bearing on a SEALED registration gets a dated, post-hoc
+PAYER-LAYER ANNOTATION ONLY, rules untouched. A wrong number should be
+corrected the moment it is known; a sealed rule that now looks
+ill-conceived is evidence about our 2026 judgement, and editing it destroys
+what pre-registration exists to preserve.
+
 **#257 THE PREMIA INSTRUMENT is RUNNING and does not end.** It is an
 instrument, not a test: no hypotheses, no verdicts, no Bonferroni
 budget, nothing drawn from it. It measures what professionals
 harvest, on data we manufacture. Nothing it prints is tradeable by
-this operator or may enter a signal post.
+this operator or may enter a signal post. **From 2026-09-01 the monthly
+transparency post carries #257's summary block** behind a mandatory
+preamble -- risk premia, not signals, not tradeable by this operator, VRP
+not computable until the archive matures -- which `publish.dry_run()`
+refuses to ship without. That adds NO SUPPORTED claim: a measured market
+price is not a claim about this system.
 
 **EVERY SEARCH PROGRAM IS RUN AND CLOSED**: the crypto grid, the basket
 programs, the architectural search (#187-#203), EQUITIES (#204-#216),

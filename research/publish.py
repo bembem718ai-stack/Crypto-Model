@@ -196,12 +196,51 @@ def close_alert(ep, record):
 # ----------------------------------------------------------------------
 # MONTHLY TRANSPARENCY POST
 # ----------------------------------------------------------------------
-def transparency_post(record, month_label):
+def premia_block(month_label):
+    """#257's monthly summary, or None if it cannot be built.
+
+    RETURNS None RATHER THAN RAISING. The monthly tally is the post's
+    reason to exist; a measurement section is an addition to it. If the
+    derivatives archive is missing, stale or unreadable, the post must
+    still go out with the record intact. dry_run() reports whether the
+    block was present, so a silent disappearance shows up in the weekly
+    audit instead of being discovered by its absence.
+    """
+    try:
+        import premia
+        return premia.build()["summary"]
+    except Exception:                                 # noqa: BLE001
+        return None
+
+
+# THE TWO LINES THAT MUST PRECEDE ANY PREMIA NUMBER IN A PUBLISHED POST.
+# Verbatim, not paraphrased: they are the whole reason these numbers are
+# safe to publish beside a signal record. Without them a reader has every
+# reason to assume a measured double-digit yield is something this service
+# is offering them.
+PREMIA_PREAMBLE = [
+    "**These are RISK PREMIA — the fee paid to whoever bears crash and",
+    "balance-sheet risk. They are NOT signals, NOT an edge this project has,",
+    "and NOT tradeable by this operator: each needs venue access, posted",
+    "margin and a balance sheet this project does not have.**",
+    "**The variance risk premium is NOT COMPUTABLE yet** — our options",
+    "archive is too young for any implied reading to have a realised",
+    "counterpart — and it stays marked so until it matures.",
+]
+
+
+def transparency_post(record, month_label, premia=None):
     """The full honest tally, per claims.md's LIVE RECORD rules.
 
     BOTH records appear side by side, with the standing explanation. The
     published-long row is what a follower experienced; the full-log row is
     the honest denominator for how often the model was wrong.
+
+    `premia` is #257's monthly measurement block. Pass a string to
+    include it, None to build it, or False to omit it. It is separated
+    from the record by its own heading and preceded by PREMIA_PREAMBLE,
+    because the one genuine hazard in publishing it is a reader taking a
+    measured market yield for something on offer here.
     """
     r = record
     lw = (100.0 * r["long_wins"] / r["long_n"]) if r["long_n"] else float("nan")
@@ -252,6 +291,18 @@ def transparency_post(record, month_label):
         "Below that, the tally is a record of what happened, not evidence of an",
         "edge in either direction.",
         "",
+    ]
+
+    block = premia_block(month_label) if premia is None else premia
+    if block:
+        L += ["---", "", "### What the market paid — measured, not traded", ""]
+        L += PREMIA_PREAMBLE
+        L += ["", block, "",
+              "Measured from archives this project collects itself; the full",
+              "dated table with every uncertainty interval is in docs/premia.md.",
+              ""]
+
+    L += [
         "---",
         "**The research record is public at %s** — every hypothesis is written" % REPO,
         "down before it runs and reported afterwards whether it worked or not.",
@@ -268,6 +319,7 @@ def dry_run(outcomes=OUTCOMES, log_path=SIGNAL_LOG, verbose=False):
     """Render both generators and report shape. Raises on breakage."""
     rec = load_record(outcomes, log_path)
     post = transparency_post(rec, "dry-run")
+    blk = premia_block("dry-run")
     d = pd.read_csv(outcomes)
     pub = d[(d["side"] == "long") & (d["entry_direction"].isin(PUBLISHED_TIERS))]
     if not len(pub):
@@ -290,8 +342,23 @@ def dry_run(outcomes=OUTCOMES, log_path=SIGNAL_LOG, verbose=False):
         print(o)
         print("\n" + "=" * 60 + "\n")
         print(c)
+    # THE PREAMBLE IS NOT OPTIONAL. If the block rendered, every one of its
+    # lines must be in the post -- a premia number published without the
+    # "not signals, not tradeable" framing is the one way this section can
+    # do harm, so it fails here rather than reaching a subscriber.
+    if blk:
+        if blk not in post:
+            raise ValueError("premia block built but is missing from the post")
+        for line in PREMIA_PREAMBLE:
+            if line not in post:
+                raise ValueError("premia block published without its "
+                                 "preamble line: %s" % line[:60])
+        if "NOT COMPUTABLE" not in post:
+            raise ValueError("premia block omits the VRP maturity caveat")
     return {"ok": True, "transparency_chars": len(post),
-            "sample_open": o, "sample_close": c, "record": rec}
+            "sample_open": o, "sample_close": c, "record": rec,
+            "premia_block": bool(blk),
+            "premia_chars": len(blk) if blk else 0}
 
 
 def main():

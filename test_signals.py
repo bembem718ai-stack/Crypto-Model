@@ -5728,3 +5728,178 @@ class TestPremiaInstrument:
         src = open("audit.py", encoding="utf-8").read()
         assert "check_premia_instrument()" in src.split("def main")[-1] or \
             "check_premia_instrument()" in src
+
+
+# ======================================================================
+# GOLDEN — the transparency post WITH the #257 premia block.
+#
+# The hazard this section guards is specific and one-directional: a
+# measured double-digit market yield printed beside a signal record reads
+# as something on offer unless it is framed. So the framing is tested as
+# hard as the numbers.
+# ======================================================================
+
+class TestTransparencyPostWithPremia:
+
+    def _pub(self):
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        return importlib.import_module("publish")
+
+    def _rec(self):
+        return {"long_n": 8, "long_wins": 3, "long_losses": 5, "long_net_r": 1.0,
+                "all_n": 19, "all_wins": 4, "all_losses": 15, "all_net_r": -7.0,
+                "short_n": 11, "short_wins": 1, "short_net_r": -8.0,
+                "long_streak": 3, "all_streak": 7, "strong_buy_log_rows": 8}
+
+    def test_post_carries_the_premia_block(self):
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        assert "What the market paid — measured, not traded" in t
+        assert "perp funding" in t
+        assert "docs/premia.md" in t
+
+    def test_every_preamble_line_precedes_the_numbers(self):
+        """Verbatim, all of it, and BEFORE the block."""
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        first_number = t.index("perp funding")
+        for line in pub.PREMIA_PREAMBLE:
+            assert line in t, "missing preamble line: " + line[:60]
+            assert t.index(line) < first_number, \
+                "preamble line appears AFTER the numbers: " + line[:60]
+
+    def test_preamble_states_the_three_disclaimers(self):
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        assert "NOT signals" in t
+        assert "NOT tradeable by this operator" in t
+        assert "NOT an edge this project has" in t
+
+    def test_vrp_maturity_caveat_is_present(self):
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        assert "NOT COMPUTABLE" in t
+        assert "too young" in t
+
+    def test_block_states_the_project_holds_none_of_them(self):
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        low = t.lower()
+        assert "does not harvest any of them" in low
+        assert "holds no position in any of them" in low
+        assert "makes no recommendation about them" in low
+
+    def test_premia_numbers_carry_intervals_or_raw_sample(self):
+        """The #249 rule survives the trip into a published post."""
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        start = t.index("What the market paid")
+        end = t.index("docs/premia.md")
+        for line in t[start:end].splitlines():
+            if not line.startswith("- **") or "%" not in line:
+                continue
+            assert ("95% CI" in line or "RAW SAMPLE" in line
+                    or "NOT COMPUTABLE" in line), \
+                "premia bullet with a bare number: " + line[:100]
+
+    def test_zero_supported_edge_claims_still_stated(self):
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        assert "zero supported edge claims" in t.lower()
+
+    def test_the_record_still_leads_the_post(self):
+        """Premia are an addition, never a replacement. The tally comes
+        first and the reader's own number stays the LONG row."""
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        assert t.index("LONG (published)") < t.index("What the market paid")
+        assert "**Your number is the LONG row.**" in t
+
+    # ---- graceful degradation ----------------------------------------
+    def test_post_still_renders_when_premia_is_unavailable(self):
+        """The tally is the post's reason to exist. A missing archive must
+        not take the monthly record down with it."""
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09", premia=False)
+        assert "LONG (published)" in t
+        assert "What the market paid" not in t
+        assert "zero supported edge claims" in t.lower()
+
+    def test_premia_block_returns_none_rather_than_raising(self, monkeypatch):
+        pub = self._pub()
+        import builtins
+        real = builtins.__import__
+
+        def boom(name, *a, **k):
+            if name == "premia":
+                raise ImportError("simulated missing archive")
+            return real(name, *a, **k)
+
+        monkeypatch.setattr(builtins, "__import__", boom)
+        assert pub.premia_block("2026-09") is None
+
+    # ---- the check that makes the preamble non-optional --------------
+    def test_dry_run_refuses_a_post_missing_the_preamble(self, monkeypatch):
+        """If this can be bypassed, the framing is decoration."""
+        pub = self._pub()
+        real_post = pub.transparency_post
+
+        def stripped(rec, label, premia=None):
+            t = real_post(rec, label, premia=premia)
+            return t.replace(pub.PREMIA_PREAMBLE[0], "")
+
+        monkeypatch.setattr(pub, "transparency_post", stripped)
+        with pytest.raises(ValueError, match="preamble"):
+            pub.dry_run()
+
+    def test_dry_run_reports_whether_the_block_was_present(self):
+        pub = self._pub()
+        r = pub.dry_run()
+        assert r["ok"] is True
+        assert r["premia_block"] is True
+        assert r["premia_chars"] > 200
+
+    def test_premia_render_is_cached_on_the_archive_not_the_clock(self, tmp_path):
+        """Caching a MEASUREMENT is only safe if it expires with the data."""
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        pr = importlib.import_module("premia")
+        a = pr.build()
+        assert pr._BUILD_CACHE, "nothing was cached"
+        b = pr.build()
+        assert a["table"] == b["table"], "cached render differs from the first"
+
+        # ISOLATION, not identity. The cache hands out COPIES: an earlier
+        # version returned the stored object, and a caller that appended
+        # to a render corrupted every later one -- which then looks like
+        # bad data rather than a shared reference.
+        assert a is not b
+        a["table"] += "\n| BTC | +12.34% | no label here |"
+        assert "no label here" not in pr.build()["table"], \
+            "mutating a render leaked into the cache"
+
+        fp = pr._archive_fingerprint()
+        assert len(fp) == 5 and all(len(x) == 3 for x in fp)
+
+        # A changed archive must miss the cache and re-render.
+        import unittest.mock as mock
+        with mock.patch.object(pr, "_archive_fingerprint",
+                               lambda: (("deribit_options", 1, 1),)):
+            pr.build()
+            assert list(pr._BUILD_CACHE)[0][1] == (("deribit_options", 1, 1),), \
+                "cache survived an archive change"
+
+    def test_claims_md_records_the_change(self):
+        # Substrings must not span a line wrap -- claims.md is hard-wrapped,
+        # so an assertion that reads naturally as prose can straddle a
+        # newline and fail for a formatting reason rather than a real one.
+        c = open("docs/claims.md", encoding="utf-8").read()
+        assert "carries measured market premia" in c
+        assert "PRICES OBSERVED IN THE MARKET" in c
+        assert "adds NO SUPPORTED entry" in c
+        assert "zero supported edge claims" in c.lower()

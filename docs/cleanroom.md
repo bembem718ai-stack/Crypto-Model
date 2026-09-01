@@ -6968,3 +6968,189 @@ notice, an archive silently going stale. The first is guarded by §3(b)'s
 verified facts, the second by the collector's own staleness checks, and
 the third by `audit.py`. None of those guarantees are perfect, and this
 sentence exists so a future reader knows they were the guarantees on offer.
+
+---
+
+# CLOSE-OUT — THE PAYER CLAUSE AND THE PREMIA INSTRUMENT (#257)
+
+**2026-09-01.** Both structural changes are complete, committed and
+running. Nothing in this close-out amends a locked rule.
+
+## 1. Rule 10, in its hardened form
+
+**Every hypothesis names its structural payer — who systematically loses
+to this rule and why they cannot or will not stop** (forced flow, mandate,
+behavioral constraint, hedging demand) — **or states "no payer identified"
+in those words**, which is permitted and recorded as the **weakest class of
+hypothesis**.
+
+**THE TEST RUNS IN BOTH DIRECTIONS, and the second half was added because
+the adversarial review earned it.** A payer described the same way whatever
+the data showed is a story, not a payer. **And "no payer identified" may
+not be reached by definition:** define "payer" as the contractual
+counterparty and the answer is derivable for every spot-only program in
+this repository without opening a file. A conclusion available with zero
+observations is worth exactly what a story that survives any data is worth.
+
+> **So a "no payer identified" must name WHICH forced flow it examined and
+> WHERE that flow's rent is collected instead.** "I could not think of one"
+> is not a finding. "The flow is real, it is *this*, and it is paid to
+> *that seat*, which this rule does not occupy" is.
+
+**The clause can only make a hypothesis harder to justify writing down,
+never easier to pass.** A payer story raises no percentile, lowers no bar,
+rescues no near-miss and licenses no re-test. Rule 4 is unchanged.
+
+## 2. The three annotations, and the prediction they make
+
+> **POST-HOC COMMENTARY. The locked rules of #172–#186, #235–#242 and
+> #243–#248 are untouched** — no constant, bar, window, gate or dormancy
+> date is amended, and none of these programs is re-scoped or brought
+> forward. This is a reading of sealed work, written after it was sealed.
+
+| program | annotation |
+|---|---|
+| **#172–#186** FUNDING | **NO PAYER IDENTIFIED**, except partially for #178 — the leveraged perpetual long paying top-decile funding into a 20-day high, exited by the venue's margin engine. The seven negative-funding rules buy spot and never receive the funding they key on. |
+| **#235–#242** POSITIONING | **NO PAYER IDENTIFIED.** The only forced flow these columns see is the OKX perpetual holder liquidated at maintenance margin; the program reaches him only through dealer inventory unwind. |
+| **#243–#248** OI/BASIS | **NO PAYER IDENTIFIED.** The forced flow is margin-engine liquidation of leveraged perpetual longs, but the program holds spot only and enters at the close of D+1, so that flow accrues to intra-cascade liquidity. |
+
+### The shared sentence — AND IT IS A PREDICTION, NOT A COMMENTARY
+
+> **The forced flow is real, and it is settled on the PERPETUAL. These
+> three programs buy SPOT, one to two days later. The rent is collected by
+> the seats they do not occupy — the cash-and-carry desk short the perp,
+> the resting bid inside the cascade, the venue's insurance fund — and by
+> the time these rules trade, the payment has already been made to someone
+> else.**
+
+**THIS IS REGISTERED AS A MECHANICAL PREDICTION, TO BE READ AGAINST THE
+2027–28 RESULTS.** If it is right, all three programs fail. It is written
+here, dated, before any of them can be scored:
+
+| program | scheduled | what this prediction says |
+|---|---|---|
+| **#172–#186** | ~2027-06-27 | FAILS, with #178 the least unlikely survivor |
+| **#235–#242** | ~2028-01-05 | FAILS |
+| **#243–#248** | ~2028-07-01 | FAILS |
+
+**A PASS BY ANY OF THEM REFUTES THIS ANALYSIS**, and that is the point of
+writing it down. If one passes, the correct conclusion is not that a payer
+was found after all — it is that **the routing argument was wrong**, that
+spot at D+1 does reach a flow settled on the perpetual, and that the
+mechanism by which it does so was not understood here in 2026.
+
+**This prediction may not be used to lower any bar.** It changes no pass
+rule, and a program that fails does not thereby "confirm" it — three
+failures are also what nine already-closed axes look like. Its whole value
+is that a PASS would cost it something.
+
+### The #235–#242 contradiction, recorded
+
+The payer question exposed a defect nothing else had. The program registers
+
+- **#235** (crowd long) and **#239** (OI building) as **BUY**, and
+- **#236 / #240** (crowd short) and **#238** (OI unwinding) as **BUY**.
+
+**Both sides of the same variable produce the same trade.** Any payer story
+explaining one direction is refuted by its own registered twin, which is
+why no single payer covers the family.
+
+> **NOT FIXED. The rules stay exactly as sealed.** Editing a dormant
+> registration because a later reading found it awkward is precisely the
+> move pre-registration exists to prevent. The observation is recorded so
+> that whoever reads the 2028 results has it — which is strictly more than
+> they would have had.
+
+## 3. The routing rule for adversarial-review findings
+
+**Adopted now, standing from here.** A review of this project's own work
+returns two kinds of finding, and they route differently:
+
+| finding | routing |
+|---|---|
+| **A computation defect in live or instrument code** (`premia.py`, collectors, harness) | **FIX IT**, re-render every number it touched, and **note it in the commit** with what the wrong number would have looked like. Code is not pre-registered; correctness wins. |
+| **Anything bearing on a SEALED registration** | **PAYER-LAYER ANNOTATION ONLY**, dated and marked post-hoc. **The rules are untouched.** No constant, bar, window, gate or date moves — however good the argument. |
+
+**The asymmetry is deliberate.** A wrong number is wrong and should be
+corrected the moment it is known. A sealed rule that now looks
+ill-conceived is *evidence about our judgement in 2026*, and editing it
+destroys exactly the evidence pre-registration was built to preserve. The
+first exercise of this rule was #235–#242's contradiction, which is
+annotated above and not repaired.
+
+## 4. #257's first table, and the four data-checks in it
+
+Published 2026-09-01 to `docs/premia.md`, and from this date the monthly
+transparency post carries the summary block behind a mandatory preamble
+(**risk premia, not signals, not tradeable by this operator; VRP not
+computable until the archive matures**) that `publish.dry_run()` refuses to
+ship without.
+
+| measurement | first reading |
+|---|---|
+| **Perp carry**, Binance (primary) | BTCUSDT **+11.80%/yr** [+8.60, +15.24] · ETHUSDT **+13.95%** [+9.94, +18.52] · SOLUSDT **+0.17%** [−11.92, +9.66] |
+| **Perp carry**, Kraken · OKX | PF_XBTUSD +3.39% [+0.94, +4.90] · BTC-USDT-SWAP +4.42% [+2.02, +5.62] |
+| **Term basis**, Kraken dated | FF_XBTUSD_261225 **+4.63%/yr** (115d) · FF_SOLUSD_260925 **−16.73%** (24d) — all RAW SAMPLES, one observation day |
+| **Variance risk premium** | **NOT COMPUTABLE** |
+
+**FOUR THINGS IN THAT TABLE ARE THERE BECAUSE THE DATA WAS CHECKED RATHER
+THAN THE CONVENTIONS ASSUMED.** Each would otherwise have printed a
+plausible wrong number rather than raised an error:
+
+1. **Kraken's `funding_rate` is in PRICE UNITS**; `relative_funding_rate`
+   is the fraction. Median 0.309 for PF_XBTUSD against a ~$78k index =
+   3.96e-6, matching relative's 3.85e-6. The wrong column reports BTC carry
+   near **270,000%/yr** — caught instantly — but on SOL it reports
+   **+84%/yr**, which ships silently. **The error equals the index price,
+   so it is invisible on any low-priced symbol.**
+2. **Binance's funding interval is PER ROW** — 8h on 21,119 rows, 2h on 99,
+   4h on 2 (SOL's FTX window). A flat 3×/day overstates those by 4× and 2×.
+3. **The carry is TIME-WEIGHTED**, not a mean of per-row annualised rates.
+   This one was **wrong in the first render and found by adversarial
+   review**: the row-mean put SOLUSDT at **−12.98%/yr against a true
+   +0.17%**, a sign flip reading as "SOL perps were in backwardation" — and
+   it agreed to **0.000pp** on the all-8h BTC and ETH, so it was invisible
+   on the two symbols anyone checks first. Recorded prominently because
+   **#257's whole claim is that it catches this class of error, and it did
+   not catch this one unaided.**
+4. **Dead instruments are excluded BY RULE and REPORTED.** Kraken marks a
+   bookless instrument **at index**, fabricating a basis of exactly
+   0.0000%. All 8 `FI_` rows are dead by that test. Relatedly, `OI` and
+   `vol24h` are in **different units by prefix** (linear = base units,
+   inverse = $1 contracts: PF_XBTUSD's 1,977 BTC is ~$155M while
+   PI_XBTUSD's 3,530,220 contracts is ~$3.5M), so liveness is a
+   **unit-free sign test**, never a threshold.
+
+### The VRP horizon caveat, which does not expire with the archive
+
+**#257 reports the variance risk premium as NOT COMPUTABLE**, and the
+obvious reason is that the option-chain archive is one day old. **The
+second reason is structural and will still be true in a year:**
+
+> `oi_weighted_mark_iv` is OI-weighted across the **entire live chain —
+> every strike AND every expiry** — so it has **no single horizon to
+> realise against.** A matched-horizon VRP additionally requires a
+> per-expiry IV term structure the collector does not store. Until it
+> does, even a long archive supports only a **horizon-blended** premium,
+> which is a weaker quantity than the name implies.
+
+What is computable today is implied vol against **trailing** realised vol,
+published under its own name at N=1. **It may never be called a VRP.** And
+that trailing series, described throughout this repository as a ~16-day
+window, **measures ~356h (~14.8d) ± 20h** — a distinction that is
+operational rather than cosmetic, because it sets the forward shift the day
+a genuine VRP becomes computable.
+
+## 5. Disposition
+
+- **Rule 10 binds every registration from 2026-09-01.** It is
+  constitutional, not advisory.
+- **The three annotations are commentary plus one dated prediction.** The
+  sealed programs run on their own clocks, unchanged.
+- **#257 does not end.** It is an instrument, not a test: it renders,
+  appends a dated row, and keeps rendering. There is no state in which it
+  is finished, and **nothing may be drawn from it** — a harvestable premium
+  would be a new registration, with its own number, its own payer statement
+  under rule 10, and an account of what balance sheet it proposes to use.
+- **The project still holds ZERO supported edge claims**, and neither
+  change alters that.

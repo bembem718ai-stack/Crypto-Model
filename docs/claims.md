@@ -193,6 +193,27 @@ simplification of a construction with no supported edge claim either way.
 **No SUPPORTED entry was added, edited or removed by this change, and the
 project still holds ZERO supported edge claims.**
 
+### The transparency post carries measured market premia — 2026-09-01
+
+> **The monthly transparency post now includes a MEASUREMENT block (#257):
+> annualised perp funding, term basis, and the variance risk premium's
+> status. These are PRICES OBSERVED IN THE MARKET, not claims about this
+> system.** They are not an edge, not a signal, and not tradeable by this
+> operator; each requires venue access, posted margin and a balance sheet
+> this project does not have.
+
+Two lines of framing precede every premia number in the post and are
+enforced in code — `publish.dry_run()` refuses to ship a post where the
+block rendered without its full preamble. The published block also states
+outright that the project **does not harvest any of them, holds no
+position in any of them, and makes no recommendation about them.**
+
+**This adds NO SUPPORTED entry.** A measured market price is not a claim
+about this system's performance, and the project continues to hold **zero
+supported edge claims.** Every number in the block carries an uncertainty
+interval or is labelled a RAW SAMPLE; the full dated table is in
+`docs/premia.md`.
+
 ## 2. NOT SUPPORTED
 
 Claims the project has been tempted to make that the record does not back. For
