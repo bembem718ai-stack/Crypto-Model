@@ -672,6 +672,42 @@ def check_derivatives_collector(out_dir="data/derivatives"):
     return results
 
 
+def check_publication_generators():
+    """DRY-RUN both publication generators so FORMAT ROT fails in CI.
+
+    The alerts and the monthly transparency post are rendered from
+    signal_outcomes.csv by research/publish.py and posted BY A HUMAN. Nothing
+    automated checks them on the way out, so a column rename or a broken
+    format string would be discovered by a subscriber reading a malformed
+    post -- which is the worst possible place to find it.
+
+    This renders both, asserts they are non-empty, and asserts no forbidden
+    claim reached the output. It publishes nothing.
+    """
+    try:
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        import publish
+    except Exception as e:                              # noqa: BLE001
+        return record("C. Deployment", "Publication generators render", SKIP,
+                      f"publish.py unavailable: {type(e).__name__}")
+    try:
+        out = publish.dry_run()
+    except Exception as e:                              # noqa: BLE001
+        return record("C. Deployment", "Publication generators render", FAIL,
+                      f"dry-run RAISED: {type(e).__name__}: {str(e)[:160]} — "
+                      f"a subscriber would have seen this, not CI")
+    r = out["record"]
+    ev = {"transparency_chars": out["transparency_chars"],
+          "long_episodes": r["long_n"], "long_net_r": round(r["long_net_r"], 2),
+          "all_episodes": r["all_n"]}
+    return record("C. Deployment", "Publication generators render", PASS,
+                  f"post {out['transparency_chars']} chars; record "
+                  f"{r['long_n']} long / {r['all_n']} all, "
+                  f"{r['long_net_r']:+.2f}R published", ev)
+
+
 def check_adanos_accounting():
     """The binding constraint is the ~200 req/month Adanos free tier.
     Backtests use the NEUTRAL-sentiment assumption, so this whole audit
@@ -934,6 +970,7 @@ def main():
     check_log_freshness()
     check_sentiment_gate_errors()
     check_derivatives_collector()
+    check_publication_generators()
     check_adanos_accounting()
     check_outcomes_tracking()
     check_sentiment_measurable()
