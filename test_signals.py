@@ -4799,3 +4799,192 @@ class TestNewDerivativeSources:
         assert isinstance(res, list)
         assert len(res) == len(cd.SOURCE_WINDOWS), (
             "audit must check every documented source")
+
+
+# ======================================================================
+# PUBLICATION — episode alerts and the transparency post
+# ======================================================================
+# READ-ONLY against the live signal path. These generators consume
+# signal_log.csv and signal_outcomes.csv and emit TEXT for a human to post.
+# No Discord API, no tokens, no automation.
+#
+# docs/claims.md's WORDING section is the source of truth: no emitted text
+# may make a claim outside its SUPPORTED list. The DISCLOSURES are carried
+# verbatim; the NUMBERS are computed live, because a template with a frozen
+# tally would publish a stale record the moment an episode resolves.
+class TestPublicationGenerator:
+
+    def _pub(self):
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        return importlib.import_module("publish")
+
+    def _ep(self, **kw):
+        base = dict(episode_id="BTC_20260801T000000", ticker="BTC", side="long",
+                    entry_time_utc="2026-08-01T00:00:00", entry_direction="BUY",
+                    peak_direction="BUY", entry_price=78420.0,
+                    target_price=80910.0, stop_price=77175.0, entry_score=61.3,
+                    atr=830.0, status="closed", outcome="target", pnl_r=2.0,
+                    days_held=3.2, exit_date="2026-08-04")
+        base.update(kw)
+        return base
+
+    def _rec(self):
+        return {"long_n": 8, "long_wins": 3, "long_losses": 5, "long_net_r": 1.0,
+                "all_n": 19, "all_wins": 3, "all_losses": 16, "all_net_r": -10.0,
+                "short_n": 11, "short_wins": 0, "short_net_r": -11.0,
+                "long_streak": 3, "all_streak": 8, "strong_buy_log_rows": 8}
+
+    # ---- what may never be published --------------------------------
+    def test_refused_tradability_never_publishes(self):
+        pub = self._pub()
+        for code in ("REFUSED_UNTRADABLE", "SKIPPED_COST_FLOOR"):
+            assert not pub.is_publishable({"decision": code, "direction": "BUY"})
+
+    def test_shorts_never_publish(self):
+        pub = self._pub()
+        assert not pub.is_publishable({"decision": "SELL", "direction": "SELL"})
+        assert not pub.is_publishable({"decision": "AVOID", "direction": "SELL"})
+
+    def test_watch_never_publishes(self):
+        pub = self._pub()
+        assert not pub.is_publishable({"decision": "WATCH", "direction": "WATCH"})
+
+    def test_only_buy_tiers_publish(self):
+        pub = self._pub()
+        assert pub.is_publishable({"decision": "BUY", "direction": "BUY"})
+        assert pub.is_publishable({"decision": "STRONG_BUY",
+                                   "direction": "STRONG_BUY"})
+
+    def test_shadow_log_is_never_read(self):
+        # The shadow basket must never reach a subscriber. Checked on the AST,
+        # not the text, because the docstring legitimately says "shadow".
+        import ast
+        tree = ast.parse(open("research/publish.py", encoding="utf-8").read())
+        docs = {id(ast.get_docstring(n, clean=False)) for n in ast.walk(tree)
+                if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef))}
+        lits = [n.value for n in ast.walk(tree)
+                if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                and id(n.value) not in docs]
+        for bad in ("shadow_log.csv", "shadow_outcomes.csv"):
+            assert bad not in lits, "publication path names " + bad
+
+    # ---- OPEN alert, golden ------------------------------------------
+    def test_open_alert_buy_carries_the_published_record(self):
+        pub = self._pub()
+        t = pub.open_alert(self._ep(), self._rec())
+        assert "BTC — BUY" in t
+        assert "Entry 78,420" in t and "Target 80,910" in t and "Stop 77,175" in t
+        assert "This is a research signal, published as-is and tracked publicly." in t
+        assert "That is not enough trades to establish an edge, in either direction." in t
+        assert "No claim is made that this trade will work." in t
+        assert "Outcome will be added to the public tally either way." in t
+        assert "8 closed long episodes, 3 target / 5 stop, +1.00R net" in t
+
+    def test_open_alert_strong_buy_carries_the_not_validated_disclosure(self):
+        pub = self._pub()
+        t = pub.open_alert(self._ep(entry_direction="STRONG_BUY",
+                                    peak_direction="STRONG_BUY"), self._rec())
+        assert "BTC — STRONG_BUY" in t
+        assert "STRONG_BUY is the model's rarest tier and it is NOT a validated edge." in t
+        assert "The wider target is a geometry choice, not a confidence measurement." in t
+        assert "concentration test cannot be computed on it at all" in t
+        assert "Across 82 tickers, zero reach enough trades to measure this tier." in t
+
+    def test_buy_alert_does_not_carry_strong_buy_disclosure(self):
+        pub = self._pub()
+        t = pub.open_alert(self._ep(), self._rec())
+        assert "NOT a validated edge" not in t
+
+    # ---- CLOSE alert --------------------------------------------------
+    def test_close_alert_states_outcome_R_and_updated_record(self):
+        pub = self._pub()
+        t = pub.close_alert(self._ep(outcome="target", pnl_r=2.0), self._rec())
+        assert "TARGET" in t and "+2.00R" in t
+        assert "8 closed long episodes" in t
+
+    def test_close_alert_reports_a_loss_without_softening(self):
+        pub = self._pub()
+        t = pub.close_alert(self._ep(outcome="stop", pnl_r=-1.0), self._rec())
+        assert "STOP" in t and "-1.00R" in t
+        assert "Outcome added to the public tally." in t
+
+    # ---- no claim outside SUPPORTED ----------------------------------
+    def test_no_forbidden_claim_words_anywhere(self):
+        pub = self._pub()
+        texts = [pub.open_alert(self._ep(), self._rec()),
+                 pub.open_alert(self._ep(entry_direction="STRONG_BUY"), self._rec()),
+                 pub.close_alert(self._ep(), self._rec()),
+                 pub.transparency_post(self._rec(), "2026-09")]
+        # CLAIM forms are banned. "not financial advice" is a DISCLAIMER --
+        # the opposite of a claim -- and claims.md's own wording uses it, so
+        # banning the bare substring would have failed correct output.
+        banned = ["guaranteed", "profitable", "proven edge", "will profit",
+                  "risk-free", "buy now", "easy money", "cannot lose"]
+        for t in texts:
+            low = t.lower()
+            for b in banned:
+                assert b not in low, "forbidden claim in output: " + b
+            # and where "financial advice" appears it must be negated
+            if "financial advice" in low:
+                assert "not financial advice" in low
+
+    def test_transparency_carries_the_not_financial_advice_disclaimer(self):
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09").lower()
+        assert "not financial advice" in t
+
+    # ---- transparency post --------------------------------------------
+    def test_transparency_shows_BOTH_records_side_by_side(self):
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        assert "LONG (published)" in t and "ALL (full log)" in t
+        assert "selective reporting" in t.lower()
+
+    def test_transparency_counts_toward_the_15_threshold(self):
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        assert "15" in t and "8" in t
+
+    def test_transparency_footer_states_zero_supported_edge_claims(self):
+        pub = self._pub()
+        t = pub.transparency_post(self._rec(), "2026-09")
+        assert "zero supported edge claims" in t.lower()
+        assert "signals" in t.lower() and "promises" in t.lower()
+        assert "github" in t.lower()
+
+    def test_record_is_computed_from_the_outcomes_file(self):
+        # Not hardcoded: the tally must move when the file does.
+        pub = self._pub()
+        r = pub.load_record("signal_outcomes.csv")
+        assert r["all_n"] == 19 and r["long_n"] == 8
+        assert abs(r["long_net_r"] - 1.0) < 1e-9
+        assert r["short_n"] == 11 and r["short_wins"] == 0
+
+    def test_dry_run_renders_both_generators(self):
+        pub = self._pub()
+        out = pub.dry_run("signal_outcomes.csv", "signal_log.csv")
+        assert out["ok"] is True
+        assert out["transparency_chars"] > 400
+        assert out["sample_open"] and out["sample_close"]
+
+
+class TestPublicationAuditWiring:
+    """The dry-run must be in the weekly audit, so format rot fails in CI
+    rather than in front of a subscriber."""
+
+    def test_audit_runs_the_publication_dry_run(self):
+        import importlib
+        a = importlib.import_module("audit")
+        a._results.clear()
+        a.check_publication_generators()
+        assert a._results[-1]["status"] == a.PASS
+
+    def test_audit_calls_it_from_the_offline_suite(self):
+        import ast
+        tree = ast.parse(open("audit.py", encoding="utf-8").read())
+        called = {n.func.id for n in ast.walk(tree)
+                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+        assert "check_publication_generators" in called
