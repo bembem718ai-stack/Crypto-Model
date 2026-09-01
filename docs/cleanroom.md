@@ -5781,3 +5781,136 @@ Identical to DRAFT A §A5: `ex_best` > 0 on all three symbols **AND** pooled
   usable window, and no rule is scored on them — but the claim is
   "registered before the *test* data exists", and that is the precise form
   it should be quoted in.
+
+---
+
+# PRE-REGISTRATION — MARKET-STRUCTURE MAP (#249)
+
+> **LOCKED 2026-09-01, before any measurement was computed.**
+>
+> **DESCRIPTIVE PROGRAM. No hypotheses, no pass conditions, no verdicts, no
+> thresholds, no signals.** Nothing here can pass or fail. Its sole product
+> is a map.
+
+## What this is, and why it is the last of its kind
+
+Every search program on the frozen data is run and closed. This is **the last
+construction available on data that already exists** — and it is deliberately
+not a search. It measures **structural properties of the market**, with
+uncertainty attached, and stops.
+
+**Why bother, given the record.** Every failed program searched for an edge
+directly. None asked what this market's structure actually *is* — whether
+volatility clusters and for how long, whether a cross-section exists to
+select from, whether BTC leads the alts at any horizon. Those are facts about
+the market, not claims about a strategy, and they are measurable without any
+return-vs-signal join.
+
+**The catch, stated first because it governs everything below.** A document
+with hundreds of measured cells **will contain chance patterns**. That is
+arithmetic, not pessimism. It is precisely why this map buys **exactly one**
+hypothesis and not many.
+
+## THE ONE-HYPOTHESIS RULE
+
+> **At most ONE future registered hypothesis (#250) may be drawn from this
+> map**, and it may be tested **only on data timestamped AFTER this map's
+> freeze** — the forward archives, accrued shadow episodes, or a future
+> dataset refresh.
+
+Consequences, all binding:
+
+- **#250 inherits the registered-before-the-test-data-exists property
+  automatically**, because its test data does not exist on the day the map is
+  read. That is the entire architecture of this program: a map on old data,
+  buying a hypothesis on data not yet collected.
+- **The map may NEVER be cited as evidence of an edge.** Not as support, not
+  as partial support, not as "consistent with". Its only legitimate use is as
+  **the reason a hypothesis was worth registering.**
+- **One is a hard budget, not a starting allowance.** A second interesting
+  pattern is not a second hypothesis. If two look compelling, one is chosen
+  and the other is recorded as forgone.
+- **#250 must be registered before it is scored**, with full discipline: named
+  null, four fidelity axes, its own Bonferroni, the event-count gate, fixed-k.
+  Nothing about being map-derived relaxes anything.
+
+## SCOPE — these eight measurements and no others
+
+**Adding a measurement is an AMENDMENT made before running, never during.**
+Discovering mid-run that a ninth cut would be interesting is exactly the
+move this clause forbids.
+
+All on **pre-lockbox frozen data only**. The lockbox opens **2026-02-26** and
+**is never read** — not for fitting, not for plotting, not for a sanity
+check.
+
+| data | span used |
+|---|---|
+| BTC / ETH 1h + 4h | 2019-09-23 → 2026-02-25 |
+| SOL 1h + 4h | 2020-09-18 → 2026-02-25 |
+| daily basket, tradable-26 | to 2026-02-25 |
+
+| # | measurement |
+|---|---|
+| **M1** | **Volatility clustering** — autocorrelation decay of \|returns\| at 1h/4h/1d; half-life per ticker with block-bootstrap CIs. |
+| **M2** | **Jumps** — frequency and size of bar returns beyond 3× and 5× trailing ATR against a diffusive expectation; clustering of jump days. |
+| **M3** | **Return autocorrelation** — lags 1–30 at 1h/4h/1d with heteroskedasticity-robust bands from a block bootstrap. |
+| **M4** | **Cross-asset lead-lag** — BTC-leads-alt cross-correlation at 1h, lags 0–24, per volatility-regime tercile and rolling by year. |
+| **M5** | **Calendar structure** — hour-of-day and day-of-week return and volatility with CIs; the **00/08/16 UTC funding-settlement hours reported separately**. |
+| **M6** | **Cross-sectional dispersion** — rolling average pairwise correlation and return dispersion of the tradable-26: when does a cross-section exist to select from. |
+| **M7** | **Asymmetry** — up-move vs down-move size and duration; drawdown depth vs recovery-time distributions. |
+| **M8** | **Tradability drift** — flat-bar share and median stop fraction over time per basket ticker (#167's measure, as a time series). |
+
+**M4 is the classic niche-root candidate and is measured, not assumed.** "BTC
+leads the alts" is folklore this project has never tested; the map states
+what the correlation actually is, at which lags, in which regimes, with
+bands.
+
+**M6 is the ROTATION context, measured.** ROTATION assumed a cross-section
+existed to select from. M6 measures when one did.
+
+## RULES — binding on every cell
+
+1. **Every number carries a CI, or is explicitly labelled a RAW COUNT.** No
+   bare point estimate is permitted anywhere in the output.
+2. **No threshold is tuned toward significance.** Every cutoff (3×/5× ATR,
+   terciles, lag ranges, block lengths) is fixed in this registration and
+   stated in the output with its rationale.
+3. **No return-vs-signal joins.** This is structure, not signals. Nothing
+   here is scored through the trade machinery, no rule is evaluated, no
+   expectancy is computed.
+4. **The block bootstrap's block length is stated with its reason** wherever
+   used, and the same choice is applied consistently.
+5. **The multiple-comparisons caveat is carried on the document itself**, not
+   buried per table: this map contains hundreds of cells and some will look
+   remarkable by chance.
+
+## Bootstrap specification — fixed here
+
+**Moving-block bootstrap, 1,000 resamples**, block length
+**ℓ = ⌈n^(1/3)⌉** on the series being resampled.
+
+`n^(1/3)` is the rate-optimal block length for a sample mean under weak
+dependence (Hall–Horowitz–Jing). It is fixed **before** seeing any result so
+that no band can be widened or narrowed after the fact. Where a statistic is
+computed on |returns| — whose dependence decays slowly — the same rule
+applies and the resulting bands are, if anything, **too narrow**; that
+direction is stated beside those cells rather than corrected by choosing a
+more flattering ℓ.
+
+CIs are **percentile intervals at 95%** (2.5th / 97.5th) unless a cell says
+otherwise.
+
+## Output
+
+`docs/market_structure.md` — tables plus **a plain-language reading per
+measurement**, stating what was measured, what the numbers say, and what they
+do not say.
+
+## Closure
+
+- **This list is the whole program.** Eight measurements, one document.
+- **No verdicts.** Nothing here passes, fails, or is promoted.
+- **`docs/claims.md` cannot change as a result of this program.**
+- **The budget is one hypothesis, #250**, drawn afterwards, tested only on
+  post-freeze data, and registered with full discipline before it is scored.
