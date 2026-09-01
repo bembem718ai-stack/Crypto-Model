@@ -6825,7 +6825,17 @@ even a long archive would support only a **horizon-blended** premium,
 which is weaker than the name implies.
 
 What **is** computable today is implied vol against **trailing** realised
-vol (Deribit's own ~16-day backward-looking series). That is a
+vol (Deribit's backward-looking series). **That series is described
+throughout this repository as a ~16-day window; measured against the chain
+it is ~356h (~14.8d) with a ±20h band**, so it is labelled ~15d. The
+distinction is operational, not cosmetic: it sets the forward shift once a
+genuine VRP exists, and shifting by more than the true window inserts a dead
+gap while shifting by less puts already-realised returns inside the
+"subsequent" leg. The spread is reported in **vol points**, named on the
+column — at BTC's current level vol points and variance points agree to 3%
+(because `iv²−rv² = (iv+rv)(iv−rv)` and `iv+rv ≈ 0.97` near 48% vol) but
+differ by 30% on ETH, so a maintainer calibrating the swap on BTC would be
+wrong on ETH. That is a
 contemporaneous spread between two observations, **not a risk premium**,
 it is published under its own name at N=1, and **it may never be called a
 VRP anywhere.**
@@ -6868,6 +6878,23 @@ annualising its mark-index gap is meaningless — that gap is a spot premium
 funding resets, not a term structure. Perps are reported **un-annualised**,
 and their term economics live in §3(b).
 
+**UNITS DIFFER BY PREFIX AND EVERY SIZE CELL CARRIES ITS OWN.** `PF_`/`FF_`
+(linear) quote open interest and volume in **base units**; `PI_`/`FI_`
+(inverse) quote them in **$1 USD contracts**. PF_XBTUSD's 1,977 BTC is
+~$155M while PI_XBTUSD's 3,530,220 contracts is ~$3.5M — bare, the inverse
+looks 1,786× larger and is 44× smaller. Liveness is therefore a **unit-free
+sign test (> 0), never a threshold**. `markPrice`/`indexPrice` are
+quote-currency for all four prefixes, so `mark/index − 1` is dimensionless
+and prefix-safe; **the index is taken FROM THE ROW**, because the `FF_`/`FI_`
+and `PF_`/`PI_` families carry index values 0.2–1.0 bps apart and
+substituting one moves a 3-day annualised basis by ~8% relative.
+
+**ANNUALISING A PERPETUAL BY ITS FUNDING INTERVAL IS PROHIBITED**, and the
+numbers are attached so the prohibition cannot be argued with: ×8760 prints
+PF_XBTUSD at **+79.5%/yr**, PF_ETHUSD **+116.8%/yr**, PF_SOLUSD
+**+17.8%/yr**. The danger is not the large ones — **+17.8% is an utterly
+ordinary crypto basis and would be accepted without a second look.**
+
 **THE DEAD-INSTRUMENT RULE.** Kraken marks an instrument **at index** when
 it has no book, yielding a basis of **exactly 0.0000%** — which reads as a
 precise measurement and is the absence of one. Instruments with zero open
@@ -6880,8 +6907,20 @@ by this test; all 8 `FF_` rows were live.
 > **Every number carries an uncertainty interval, or is explicitly
 > labelled a RAW SAMPLE. There is no third category.**
 
+- **Carry is TIME-WEIGHTED** — total funding paid over total elapsed time,
+  `8760 × Σrate / Σinterval_hours`, **not a mean of per-row annualised
+  rates.** Under mixed intervals a row-mean over-weights the short rows: it
+  put SOLUSDT's six-year carry at **−12.98%/yr against a true +0.17%/yr**, a
+  sign flip that reads as "SOL perps were in backwardation" and that a
+  reader accepts without blinking. It agreed to 0.000pp on the all-8h BTC
+  and ETH, so it was invisible on the two symbols anyone checks first.
+  **This was found by adversarial review of the instrument AFTER it first
+  rendered, and is recorded because the instrument's whole claim is that it
+  catches exactly this class of error.**
 - **Carry** CIs are a **moving-block bootstrap**, 30-day blocks, 2,000
-  draws, seed 257000. Funding regimes persist for weeks; an iid bootstrap
+  draws, seed 257000, resampling `(rate, hours)` pairs and recomputing the
+  time-weighted statistic inside each draw, so the interval is an interval
+  on the number actually published. Funding regimes persist for weeks; an iid bootstrap
   would report an interval several times too narrow. Fewer than 3 blocks
   ⇒ no interval, RAW SAMPLE.
 - **Basis** and the **IV-vs-trailing-RV spread** are RAW SAMPLES today and

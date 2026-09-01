@@ -78,29 +78,78 @@ MIN_VOL24H = 0.0
 # UNCERTAINTY
 # ----------------------------------------------------------------------
 
+def time_weighted_carry(rates, hours):
+    """Annualised carry actually received: total paid / total elapsed.
+
+    THE ESTIMATOR THIS REPLACED WAS ROW-WEIGHTED AND WRONG, and it was
+    wrong in the worst available way. Averaging per-row annualised rates
+    gives every row equal weight, but a 2-hour funding row covers a
+    QUARTER of the time an 8-hour row covers while being scaled by 4x as
+    much. Binance's SOLUSDT archive carries 99 two-hour rows and 2
+    four-hour rows out of 6,610 -- and those 101 rows dragged the
+    six-year mean to -12.98%/yr against a time-weighted truth of
+    +0.17%/yr.
+
+    A negative six-year carry on a major alt is entirely plausible: it
+    reads as "SOL perps were structurally in backwardation", which a
+    reader accepts without blinking. It raised no error and no warning,
+    and it agreed with the correct answer to 0.000pp on BTCUSDT and
+    ETHUSDT -- the two symbols anyone checks first -- because those are
+    all-8h. That is exactly the failure shape this instrument is supposed
+    to catch, and it was in the instrument.
+
+    The identity that makes the fix obvious once seen:
+        sum_i(ann_i * hours_i) / sum_i(hours_i)
+          = sum_i(rate_i * 8760/hours_i * hours_i) / sum_i(hours_i)
+          = 8760 * sum_i(rate_i) / sum_i(hours_i)
+    i.e. total funding paid, over total time elapsed. No per-row
+    annualisation survives into the aggregate at all.
+    """
+    r = np.asarray(rates, dtype=float)
+    h = np.asarray(hours, dtype=float)
+    ok = (r == r) & (h == h) & (h > 0)
+    if not ok.any():
+        return float("nan")
+    return float(HOURS_PER_YEAR * r[ok].sum() / h[ok].sum())
+
+
 def block_bootstrap_ci(values, block, draws=BOOT_DRAWS, seed=BOOT_SEED,
-                        lo=2.5, hi=97.5):
-    """Percentile CI for a MEAN under serial dependence.
+                        lo=2.5, hi=97.5, hours=None):
+    """Percentile CI under serial dependence.
+
+    With `hours`, resamples (rate, hours) blocks and recomputes the
+    TIME-WEIGHTED carry inside each draw, so the interval is an interval
+    on the statistic actually published. Without it, a plain block mean.
 
     Returns (lo, hi, n_blocks) or (nan, nan, n_blocks) when the series is
     too short to resample. The caller must label a nan interval as a RAW
     SAMPLE -- never print the point estimate bare.
     """
-    v = np.asarray([x for x in values if x == x], dtype=float)
+    v = np.asarray(values, dtype=float)
+    h = np.asarray(hours, dtype=float) if hours is not None else None
+    if h is None:
+        keep = v == v
+    else:
+        keep = (v == v) & (h == h) & (h > 0)
+    v = v[keep]
+    h = h[keep] if h is not None else None
     n = len(v)
-    block = max(1, min(int(block), n))
+    block = max(1, min(int(block), n)) if n else 1
     n_blocks = n // block if block else 0
     if n == 0 or n_blocks < MIN_BLOCKS:
         return float("nan"), float("nan"), n_blocks
     rng = np.random.default_rng(seed)
     starts_max = n - block
     k = int(np.ceil(n / block))
-    means = np.empty(draws, dtype=float)
+    stat = np.empty(draws, dtype=float)
     for i in range(draws):
         starts = rng.integers(0, starts_max + 1, size=k)
-        samp = np.concatenate([v[s:s + block] for s in starts])[:n]
-        means[i] = samp.mean()
-    return float(np.percentile(means, lo)), float(np.percentile(means, hi)), n_blocks
+        idx = np.concatenate([np.arange(st, st + block) for st in starts])[:n]
+        if h is None:
+            stat[i] = v[idx].mean()
+        else:
+            stat[i] = HOURS_PER_YEAR * v[idx].sum() / h[idx].sum()
+    return float(np.percentile(stat, lo)), float(np.percentile(stat, hi)), n_blocks
 
 
 def fmt_pct(x, dp=2):
@@ -180,7 +229,18 @@ def variance_risk_premium():
         rv = float("nan")
         rv_obs = 0
         if not h.empty:
-            hh = h[h["timestamp"] <= last["timestamp"]]
+            # ANCHOR ON observed_utc, NOT timestamp. The chain row's
+            # `timestamp` is floored to 00:00Z while the read actually
+            # happened hours later (02:42Z on the first row). Matching on
+            # the floored value picks a realised reading from BEFORE the
+            # implied one existed -- small today, but it is a look-back
+            # against a forward-looking measurement, which is the one
+            # direction of error this instrument may never make.
+            anchor = pd.to_datetime(last.get("observed_utc"), utc=True,
+                                    errors="coerce")
+            if anchor != anchor:
+                anchor = last["timestamp"]
+            hh = h[h["timestamp"] <= anchor]
             hh = hh if not hh.empty else h
             rv = float(hh.iloc[-1]["historical_volatility"]) / 100.0
             rv_obs = int(len(h))
@@ -188,7 +248,7 @@ def variance_risk_premium():
             "ccy": ccy,
             "as_of": str(pd.Timestamp(last["timestamp"]).date()),
             "iv": iv, "n_iv": int(len(c)),
-            "rv_trailing_16d": rv, "n_rv": rv_obs,
+            "rv_trailing": rv, "n_rv": rv_obs,
             "spread": (iv - rv) if (iv == iv and rv == rv) else float("nan"),
             "n_options": last.get("n_options"),
             "put_call_oi": last.get("put_call_oi_ratio"),
@@ -205,9 +265,24 @@ def variance_risk_premium():
         "matched-horizon VRP additionally requires a per-expiry IV term "
         "structure the collector does not yet store.")
     out["notes"].append(
-        "The spread below is IMPLIED minus TRAILING realised (Deribit's "
-        "~16-day backward-looking series). It is a contemporaneous spread, "
-        "NOT a variance risk premium, and carries no uncertainty at N=1.")
+        "The spread below is IMPLIED minus TRAILING realised, in VOL "
+        "POINTS (annualised percentage points), not variance points. The "
+        "two nearly coincide at BTC's current level -- iv^2-rv^2 = "
+        "(iv+rv)(iv-rv) and (iv+rv) is about 0.97 near 48% vol -- so a "
+        "maintainer who swapped them would see a 3% discrepancy on BTC "
+        "and a 30% one on ETH. The unit is therefore named on the column, "
+        "never left bare.")
+    out["notes"].append(
+        "Deribit's realised series is described everywhere in this repo as "
+        "a ~16-day window. MEASURED against the chain it is about 356h "
+        "(~14.8d) with a +/-20h band, so it is labelled ~15d here. The "
+        "distinction is operational rather than cosmetic: it sets the "
+        "forward shift once a genuine VRP becomes computable, and shifting "
+        "by more than the true window inserts a dead gap while shifting by "
+        "less puts already-realised returns inside the 'subsequent' leg.")
+    out["notes"].append(
+        "It is a contemporaneous spread, NOT a variance risk premium, and "
+        "carries no uncertainty at N=1.")
     return out
 
 
@@ -215,25 +290,26 @@ def variance_risk_premium():
 # (b) PERP CARRY YIELD — funding, annualised
 # ----------------------------------------------------------------------
 
-def _skew_flag(v):
-    """True when the MEAN is being driven by a few extreme observations.
+def _skew_flag(v, published_mean):
+    """True when the PUBLISHED carry sits far from the typical interval.
 
-    Annualising a short funding interval multiplies it hard: Binance's
-    FTX-window SOL rows are 2-hourly, so each is scaled by 4,380 against
-    the usual 1,095. A handful of them move the mean by tens of percent
-    while the median barely notices. SOL's mean annualised carry is
-    -12.98% against a +9.50% median for exactly this reason.
+    Compares the time-weighted number actually printed against the median
+    per-interval rate, scaled by the interquartile spread. A wide gap
+    means the window's total is dominated by a minority of intervals: the
+    mean is still the yield genuinely received, but a reader must be told
+    when it is a few unusual weeks wearing a multi-year label.
 
-    The mean is still reported -- it is the yield actually received over
-    the window -- but a reader must be told when it is a few days wearing
-    a six-year label.
+    IT COMPARES THE PUBLISHED STATISTIC ON PURPOSE. An earlier version
+    flagged the mean of per-row annualised rates -- a quantity this
+    module no longer publishes -- so the warning could have fired for, or
+    stayed silent about, a number no reader ever saw.
     """
     v = np.asarray([x for x in v if x == x], dtype=float)
-    if len(v) < 10:
+    if len(v) < 10 or published_mean != published_mean:
         return False
-    mean, med = float(v.mean()), float(np.median(v))
+    med = float(np.median(v))
     spread = float(np.percentile(v, 75) - np.percentile(v, 25))
-    return bool(spread > 0 and abs(mean - med) > spread)
+    return bool(spread > 0 and abs(published_mean - med) > spread)
 
 
 def _annualise_binance(d):
@@ -284,13 +360,18 @@ def perp_carry():
             rows_per_day = 24.0 / iv_med if iv_med else 3.0
             block = max(1, int(round(BLOCK_DAYS * rows_per_day)))
             v = g["ann"].to_numpy(dtype=float)
-            lo, hi, nb = block_bootstrap_ci(v, block)
+            rate = pd.to_numeric(g["funding_rate"], errors="coerce").to_numpy(float)
+            hrs = pd.to_numeric(g["funding_interval_hours"],
+                                errors="coerce").to_numpy(float)
+            lo, hi, nb = block_bootstrap_ci(rate, block, hours=hrs)
+            tw = time_weighted_carry(rate, hrs)
             res["binance"].append({
                 "symbol": sym, "n": int(len(g)),
-                "skew_flag": _skew_flag(v),
+                "skew_flag": _skew_flag(v, tw),
                 "span": "%s -> %s" % (g["timestamp"].min().date(),
                                        g["timestamp"].max().date()),
-                "mean_ann": float(np.nanmean(v)),
+                "mean_ann": tw,
+                "row_mean_ann": float(np.nanmean(v)),
                 "median_ann": float(np.nanmedian(v)),
                 "ci": (lo, hi), "n_blocks": nb,
                 "intervals": sorted(set(int(x) for x in
@@ -310,16 +391,19 @@ def perp_carry():
             else:
                 spacing_h = 1.0
             spacing_h = spacing_h if spacing_h and spacing_h > 0 else 1.0
-            v = (pd.to_numeric(g["relative_funding_rate"], errors="coerce")
-                 * (HOURS_PER_YEAR / spacing_h)).to_numpy(dtype=float)
+            rate = pd.to_numeric(g["relative_funding_rate"], errors="coerce").to_numpy(float)
+            v = rate * (HOURS_PER_YEAR / spacing_h)
+            hrs = np.full(len(rate), spacing_h, dtype=float)
             block = max(1, int(round(BLOCK_DAYS * 24.0 / spacing_h)))
-            lo, hi, nb = block_bootstrap_ci(v, block)
+            lo, hi, nb = block_bootstrap_ci(rate, block, hours=hrs)
+            tw = time_weighted_carry(rate, hrs)
             res["kraken"].append({
                 "symbol": sym, "n": int(len(g)),
-                "skew_flag": _skew_flag(v),
+                "skew_flag": _skew_flag(v, tw),
                 "span": "%s -> %s" % (g["timestamp"].min().date(),
                                        g["timestamp"].max().date()),
-                "mean_ann": float(np.nanmean(v)),
+                "mean_ann": tw,
+                "row_mean_ann": float(np.nanmean(v)),
                 "median_ann": float(np.nanmedian(v)),
                 "ci": (lo, hi), "n_blocks": nb,
                 "spacing_h": round(spacing_h, 3),
@@ -336,24 +420,34 @@ def perp_carry():
             else:
                 spacing_h = 8.0
             spacing_h = spacing_h if spacing_h and spacing_h > 0 else 8.0
-            v = (pd.to_numeric(g["funding_rate"], errors="coerce")
-                 * (HOURS_PER_YEAR / spacing_h)).to_numpy(dtype=float)
+            rate = pd.to_numeric(g["funding_rate"], errors="coerce").to_numpy(float)
+            v = rate * (HOURS_PER_YEAR / spacing_h)
+            hrs = np.full(len(rate), spacing_h, dtype=float)
             block = max(1, int(round(BLOCK_DAYS * 24.0 / spacing_h)))
-            lo, hi, nb = block_bootstrap_ci(v, block)
+            lo, hi, nb = block_bootstrap_ci(rate, block, hours=hrs)
+            tw = time_weighted_carry(rate, hrs)
             res["okx"].append({
                 "symbol": sym, "n": int(len(g)),
-                "skew_flag": _skew_flag(v),
+                "skew_flag": _skew_flag(v, tw),
                 "span": "%s -> %s" % (g["timestamp"].min().date(),
                                        g["timestamp"].max().date()),
-                "mean_ann": float(np.nanmean(v)),
+                "mean_ann": tw,
+                "row_mean_ann": float(np.nanmean(v)),
                 "median_ann": float(np.nanmedian(v)),
                 "ci": (lo, hi), "n_blocks": nb,
                 "spacing_h": round(spacing_h, 3),
             })
 
     res["notes"].append(
-        "Arithmetic annualisation (rate x intervals/year), not compounded: "
-        "funding is paid out per interval and not reinvested.")
+        "TIME-WEIGHTED: total funding paid over total time elapsed "
+        "(8760 x sum(rate) / sum(interval_hours)), not a mean of per-row "
+        "annualised rates. Under mixed intervals a row-mean over-weights "
+        "the short rows -- it put SOLUSDT's six-year carry at -12.98%/yr "
+        "against a time-weighted +0.17%/yr, while agreeing to 0.000pp on "
+        "the all-8h BTC and ETH.")
+    res["notes"].append(
+        "Arithmetic annualisation, not compounded: funding is paid out per "
+        "interval and not reinvested.")
     res["notes"].append(
         "Binance interval is taken PER ROW from funding_interval_hours; "
         "SOL carries 2h and 4h episodes where a flat 3x/day would "
@@ -365,12 +459,11 @@ def perp_carry():
     if any(r.get("skew_flag") for r in
            res["binance"] + res["kraken"] + res["okx"]):
         res["notes"].append(
-            "WHERE FLAGGED, THE MEAN IS DRIVEN BY A FEW EXTREME "
-            "OBSERVATIONS AND THE MEDIAN IS THE ROBUST NUMBER. Annualising "
-            "a short funding interval multiplies it hard: Binance's "
-            "FTX-window SOL rows are 2-hourly and scale by 4,380 rather "
-            "than 1,095, so a handful of days can move a six-year mean by "
-            "tens of percent. Both are shown; neither is dropped.")
+            "WHERE FLAGGED, THE PUBLISHED CARRY SITS MORE THAN AN "
+            "INTERQUARTILE SPREAD FROM THE TYPICAL INTERVAL -- the window's "
+            "total is dominated by a minority of intervals. The mean is "
+            "still the yield genuinely received; the median is the typical "
+            "one. Both are shown; neither is dropped.")
     res["notes"].append(
         "CIs are moving-block bootstrap, %d-day blocks, %d draws. Funding "
         "regimes persist for weeks; an iid bootstrap would report an "
@@ -381,6 +474,27 @@ def perp_carry():
 # ----------------------------------------------------------------------
 # (c) BASIS — Kraken tickers, the ~05:20 UTC snapshot
 # ----------------------------------------------------------------------
+
+def _oi_unit(sym):
+    """Units for openInterest / vol24h, which DIFFER BY PREFIX.
+
+    PF_ and FF_ are linear (multi-collateral) and quote size in BASE
+    units; PI_ and FI_ are inverse and quote size in $1 USD contracts.
+    PF_XBTUSD OI 1,977 BTC is about $155M; PI_XBTUSD OI 3,530,220
+    contracts is about $3.5M. Bare, the inverse looks 1,786x larger and
+    is in fact 44x smaller.
+
+    This is why liveness is a UNIT-FREE SIGN TEST (> 0) and never a
+    threshold, and why every published size cell carries its unit.
+    """
+    if sym.startswith(("PI_", "FI_")):
+        return "USD-contracts"
+    base = sym.split("_")[1] if "_" in sym else ""
+    for b in ("XBT", "ETH", "SOL", "LTC", "XRP"):
+        if base.startswith(b):
+            return "BTC" if b == "XBT" else b
+    return base[:-3] if base.endswith("USD") else "base"
+
 
 def _expiry_from_symbol(sym):
     """FF_XBTUSD_261225 -> 2026-12-25. Returns None for a perpetual."""
@@ -453,7 +567,8 @@ def basis():
 
         if exp is None:
             out["perp"].append({"symbol": sym, "premium": prem,
-                                "oi": oi, "vol24h": vol})
+                                "oi": oi, "vol24h": vol,
+                                "oi_unit": _oi_unit(sym)})
         else:
             days = (exp - asof).days
             if days <= 0:
@@ -464,6 +579,7 @@ def basis():
                 continue
             out["dated"].append({
                 "symbol": sym, "expiry": str(exp), "days": days,
+                "oi_unit": _oi_unit(sym),
                 "premium": prem,
                 # ACT/365 simple, not compounded: matches the arithmetic
                 # convention used for carry above so the two columns are
@@ -503,7 +619,22 @@ def basis():
         % obs_days)
     out["notes"].append(
         "Annualisation is ACT/365 simple on dated futures only. Perpetuals "
-        "have no expiry, so their mark-index gap is reported UN-annualised.")
+        "have no expiry, so their mark-index gap is reported UN-annualised. "
+        "Annualising it by the funding interval instead would print "
+        "PF_XBTUSD at +79.5%/yr, PF_ETHUSD +116.8%/yr and PF_SOLUSD "
+        "+17.8%/yr -- and +17.8% is an utterly ordinary crypto basis that "
+        "would be accepted without a second look. PROHIBITED.")
+    out["notes"].append(
+        "openInterest and vol24h are in DIFFERENT UNITS by prefix: PF_/FF_ "
+        "(linear) in base units, PI_/FI_ (inverse) in $1 USD contracts. "
+        "Every size cell carries its unit, and liveness is a unit-free "
+        "sign test (> 0), never a threshold.")
+    out["notes"].append(
+        "markPrice and indexPrice are both quote-currency for all four "
+        "prefixes, so mark/index-1 is dimensionless and prefix-safe. The "
+        "index is taken FROM THE ROW: FF_/FI_ and PF_/PI_ carry slightly "
+        "different index values (0.2-1.0 bps apart), and substituting one "
+        "for the other moves a 3-day annualised basis by ~8% relative.")
     out["notes"].append(
         "%d instrument(s) excluded as dead (no book; Kraken marks those AT "
         "index, which fabricates a 0.0000%% basis)." % len(out["excluded"]))
@@ -556,14 +687,14 @@ def render(vrp, carry, bas, today):
                  "realised**, which is a contemporaneous spread and **not a "
                  "risk premium**:")
         L.append("")
-        L.append("| ccy | as of | OI-wtd mark IV | trailing 16d RV | spread | "
+        L.append("| ccy | as of | OI-wtd mark IV | trailing RV (~15d) | spread | "
                  "options in chain | put/call OI | label |")
         L.append("|---|---|---|---|---|---|---|---|")
         for r in vrp["rows"]:
             L.append("| %s | %s | %s | %s | %s | %s | %s | **RAW SAMPLE "
                      "(N=%d)** |"
                      % (r["ccy"], r["as_of"], fmt_pct(r["iv"], 2),
-                        fmt_pct(r["rv_trailing_16d"], 2),
+                        fmt_pct(r["rv_trailing"], 2),
                         fmt_pct(r["spread"], 2),
                         ("%d" % r["n_options"]) if r["n_options"] == r["n_options"]
                         else "n/a",
@@ -605,11 +736,11 @@ def render(vrp, carry, bas, today):
                  "24h vol | label |")
         L.append("|---|---|---|---|---|---|---|---|")
         for r in bas["dated"]:
-            L.append("| %s | %s | %d | %s | %s | %.4g | %.4g | **RAW "
-                     "SAMPLE** |"
+            L.append("| %s | %s | %d | %s | %s | %.4g %s | %.4g %s | "
+                     "**RAW SAMPLE** |"
                      % (r["symbol"], r["expiry"], r["days"],
                         fmt_pct(r["premium"], 3), fmt_pct(r["annualised"], 2),
-                        r["oi"], r["vol24h"]))
+                        r["oi"], r["oi_unit"], r["vol24h"], r["oi_unit"]))
         L.append("")
     if bas.get("tracked_perp"):
         L.append("Perpetuals, tracked universe — **un-annualised** "
@@ -620,9 +751,9 @@ def render(vrp, carry, bas, today):
         L.append("| instrument | premium | OI | 24h vol | label |")
         L.append("|---|---|---|---|---|")
         for r in bas["tracked_perp"]:
-            L.append("| %s | %s | %.4g | %.4g | **RAW SAMPLE** |"
+            L.append("| %s | %s | %.4g %s | %.4g %s | **RAW SAMPLE** |"
                      % (r["symbol"], fmt_pct(r["premium"], 4), r["oi"],
-                        r["vol24h"]))
+                        r["oi_unit"], r["vol24h"], r["oi_unit"]))
         L.append("")
     c = bas.get("perp_cross")
     if c:

@@ -5587,6 +5587,47 @@ class TestPremiaInstrument:
         assert ann.iloc[1] == pytest.approx(0.001 * 8760 / 2)
         assert ann.iloc[1] == pytest.approx(4 * ann.iloc[0])
 
+    def test_carry_is_time_weighted_not_row_weighted(self):
+        """The bug an adversarial review found, pinned so it cannot return.
+
+        Averaging per-row ANNUALISED rates gives a 2-hour row the same
+        weight as an 8-hour row while scaling it by 4x as much. The
+        correct carry is total funding paid over total time elapsed.
+
+        It was invisible where anyone would look: BTCUSDT and ETHUSDT are
+        all-8h, so both estimators agree to 0.000pp on them. It lived
+        entirely on SOLUSDT, where 101 mixed-interval rows out of 6,610
+        put the six-year carry at -12.98%/yr against a true +0.17%/yr --
+        a sign flip that reads as "SOL perps were in backwardation",
+        which a reader accepts without blinking.
+        """
+        import numpy as np
+        pr = self._p()
+        # One 8h row at +1%, one 2h row at -1%. Over 10 elapsed hours the
+        # net paid is 0, so the true carry is exactly 0.
+        rates = [0.01, -0.01]
+        hours = [8.0, 2.0]
+        assert pr.time_weighted_carry(rates, hours) == pytest.approx(0.0)
+        # The retired row-mean would have said strongly negative, because
+        # the 2h row annualises at 4x the 8h row.
+        row_mean = np.mean([r * 8760 / h for r, h in zip(rates, hours)])
+        assert row_mean < -0.05
+
+        # And on the real archive: constant-interval venues must be
+        # unchanged, the mixed one must not be.
+        c = pr.perp_carry()
+        for r in c["kraken"] + c["okx"]:
+            assert r["mean_ann"] == pytest.approx(r["row_mean_ann"], abs=1e-9)
+        sol = [r for r in c["binance"] if r["symbol"] == "SOLUSDT"]
+        btc = [r for r in c["binance"] if r["symbol"] == "BTCUSDT"]
+        if btc:
+            assert btc[0]["mean_ann"] == pytest.approx(
+                btc[0]["row_mean_ann"], abs=1e-9), "all-8h symbol moved"
+        if sol:
+            assert sol[0]["mean_ann"] != pytest.approx(
+                sol[0]["row_mean_ann"], abs=1e-4), \
+                "mixed-interval symbol did not move -- is it still row-weighted?"
+
     def test_zero_or_missing_interval_does_not_divide_by_zero(self):
         import pandas as pd
         pr = self._p()
