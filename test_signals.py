@@ -5504,3 +5504,186 @@ class TestAuditReportEncoding:
             "Windows cp1252 that crashes on its own arrow characters, after "
             "every check has already run")
         assert 'open(args.out, "w", encoding="utf-8")' in src
+
+
+# ======================================================================
+# #257 — THE PREMIA INSTRUMENT
+#
+# A DESCRIPTIVE instrument. These tests pin the two things that make it
+# honest rather than decorative: every rendered number is labelled, and
+# the unit conventions that would silently produce plausible wrong numbers
+# are the ones actually used.
+# ======================================================================
+
+class TestPremiaInstrument:
+
+    def _p(self):
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        return importlib.import_module("premia")
+
+    # ---- the #249 rule, enforced -------------------------------------
+    def test_dry_run_is_clean(self):
+        assert self._p().dry_run()["ok"] is True
+
+    def test_every_rendered_number_carries_a_label(self):
+        """The rule the instrument exists to obey: an interval, or the
+        words RAW SAMPLE. There is no third category."""
+        pr = self._p()
+        t = pr.build()["table"]
+        lines = t.splitlines()
+        headers = {i - 1 for i, ln in enumerate(lines) if ln.startswith("|---")}
+        checked = 0
+        for i, line in enumerate(lines):
+            if (not line.startswith("|") or line.startswith("|---")
+                    or i in headers or "%" not in line):
+                continue
+            checked += 1
+            assert ("RAW SAMPLE" in line or "[" in line), \
+                "unlabelled number: " + line[:100]
+        assert checked > 5, "the table rendered almost nothing to check"
+
+    def test_dry_run_catches_an_unlabelled_number(self, monkeypatch):
+        """The check must fail on a real regression, or it is decoration."""
+        pr = self._p()
+        real = pr.build
+
+        def leaky(*a, **k):
+            b = real(*a, **k)
+            b["table"] += "\n| BTC | +12.34% | no label here |\n"
+            return b
+
+        monkeypatch.setattr(pr, "build", leaky)
+        r = pr.dry_run()
+        assert r["ok"] is False
+        assert any("unlabelled" in p for p in r["problems"])
+
+    # ---- units: the errors that look plausible ------------------------
+    def test_kraken_carry_uses_the_fractional_rate_not_price_units(self):
+        """kraken_funding.csv carries BOTH. funding_rate is in PRICE units
+        (median 0.309 for PF_XBTUSD against a ~$78k index);
+        relative_funding_rate is the fraction. Using the wrong one reports
+        BTC carry near 270,000% a year."""
+        pr = self._p()
+        rows = pr.perp_carry()["kraken"]
+        assert rows, "no kraken carry rows"
+        for r in rows:
+            assert abs(r["mean_ann"]) < 5.0, (
+                "%s annualised carry %.1f%% -- that is the price-units "
+                "column, not the rate" % (r["symbol"], 100 * r["mean_ann"]))
+
+    def test_binance_annualisation_is_per_row_not_per_venue(self):
+        """SOL carries 2h and 4h funding episodes. A flat 3x/day would
+        overstate those rows by 4x and 2x."""
+        import pandas as pd
+        pr = self._p()
+        d = pd.DataFrame({
+            "funding_rate": [0.001, 0.001],
+            "funding_interval_hours": [8, 2]})
+        ann = pr._annualise_binance(d)
+        assert ann.iloc[0] == pytest.approx(0.001 * 8760 / 8)
+        assert ann.iloc[1] == pytest.approx(0.001 * 8760 / 2)
+        assert ann.iloc[1] == pytest.approx(4 * ann.iloc[0])
+
+    def test_zero_or_missing_interval_does_not_divide_by_zero(self):
+        import pandas as pd
+        pr = self._p()
+        d = pd.DataFrame({"funding_rate": [0.001, 0.001, 0.001],
+                          "funding_interval_hours": [0, None, 8]})
+        ann = pr._annualise_binance(d)
+        assert ann.iloc[0] != ann.iloc[0]      # nan, not inf
+        assert ann.iloc[1] != ann.iloc[1]
+        assert ann.iloc[2] == pytest.approx(0.001 * 1095)
+
+    # ---- basis: the dead-instrument trap ------------------------------
+    def test_dead_instruments_are_excluded_and_reported(self):
+        """Kraken marks a bookless instrument AT index, which fabricates a
+        basis of exactly 0.0000%. Those rows must be excluded by rule and
+        listed, never silently dropped."""
+        pr = self._p()
+        b = pr.basis()
+        assert b["excluded"], "nothing excluded -- has the rule stopped firing?"
+        for r in b["excluded"]:
+            assert "why" in r and r["why"]
+        for r in b["dated"]:
+            assert r["oi"] > 0 and r["vol24h"] > 0, \
+                "a dead instrument reached the basis table: " + r["symbol"]
+
+    def test_perpetuals_are_never_annualised(self):
+        """A perpetual has no expiry, so a term rate is undefined."""
+        pr = self._p()
+        b = pr.basis()
+        for r in b["perp"]:
+            assert "annualised" not in r
+            assert pr._expiry_from_symbol(r["symbol"]) is None
+
+    def test_expiry_parsing(self):
+        pr = self._p()
+        import datetime as _dt
+        assert pr._expiry_from_symbol("FF_XBTUSD_261225") == _dt.date(2026, 12, 25)
+        assert pr._expiry_from_symbol("PF_XBTUSD") is None
+        assert pr._expiry_from_symbol("PI_ETHUSD") is None
+        assert pr._expiry_from_symbol("FF_BAD_999999") is None
+
+    # ---- uncertainty --------------------------------------------------
+    def test_short_series_gets_no_interval(self):
+        """Below the block floor there is no interval, and the caller must
+        print RAW SAMPLE rather than a bare point estimate."""
+        pr = self._p()
+        lo, hi, nb = pr.block_bootstrap_ci([0.1, 0.2, 0.3], block=90)
+        assert lo != lo and hi != hi
+        assert pr.fmt_ci(lo, hi) == "RAW SAMPLE"
+
+    def test_block_bootstrap_is_wider_than_iid_on_a_trending_series(self):
+        """The whole reason for a BLOCK bootstrap: funding regimes persist,
+        and an iid resample would report an interval far too narrow."""
+        import numpy as np
+        pr = self._p()
+        v = np.concatenate([np.full(500, 0.02), np.full(500, -0.02)])
+        blo, bhi, _ = pr.block_bootstrap_ci(v, block=250)
+        ilo, ihi, _ = pr.block_bootstrap_ci(v, block=1)
+        assert (bhi - blo) > (ihi - ilo)
+
+    # ---- what it may never say ---------------------------------------
+    def test_vrp_is_not_claimed_before_it_is_computable(self):
+        pr = self._p()
+        v = pr.variance_risk_premium()
+        assert v["status"] == "NOT COMPUTABLE"
+        t = pr.build()["table"]
+        assert "NOT COMPUTABLE" in t
+        assert "not a risk premium" in t.lower()
+
+    def test_summary_makes_no_edge_or_recommendation_claim(self):
+        pr = self._p()
+        low = pr.build()["summary"].lower()
+        for banned in ("edge", "alpha", "profitable", "opportunity",
+                       "you should", "we recommend", "buy ", "sell "):
+            assert banned not in low, "summary makes a claim: " + banned
+        assert "does not harvest" in low
+        assert "no recommendation" in low
+
+    def test_instrument_reads_no_lockbox_and_makes_no_network_call(self):
+        """Archives only. A descriptive instrument that quietly fetched
+        would stop being reproducible."""
+        src = open("research/premia.py", encoding="utf-8").read()
+        tree = ast.parse(src)
+        docs = {id(ast.get_docstring(n, clean=False)) for n in ast.walk(tree)
+                if isinstance(n, (ast.Module, ast.FunctionDef, ast.ClassDef))}
+        lits = [n.value for n in ast.walk(tree)
+                if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                and id(n.value) not in docs]
+        for bad in ("http://", "https://"):
+            assert not any(bad in x for x in lits), "premia.py names a URL"
+        assert "requests" not in {n.names[0].name for n in ast.walk(tree)
+                                  if isinstance(n, ast.Import)}
+        assert "lockbox" not in src.lower().replace("no lockbox", "")
+
+    # ---- audit wiring -------------------------------------------------
+    def test_audit_runs_the_premia_dry_run(self):
+        import audit
+        assert audit.check_premia_instrument() == audit.PASS
+        src = open("audit.py", encoding="utf-8").read()
+        assert "check_premia_instrument()" in src.split("def main")[-1] or \
+            "check_premia_instrument()" in src

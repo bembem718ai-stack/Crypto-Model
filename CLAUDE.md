@@ -39,8 +39,18 @@ Four core files plus the audit, and two directories that support research:
   every day, which is the precondition that keeps the change reversible.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 581 tests covering all decision logic.
+- `test_signals.py` — 597 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
+- `research/premia.py` — **#257 THE PREMIA INSTRUMENT.** Descriptive, in
+  the #249 style: no hypotheses, no verdicts. Measures crypto variance
+  risk premium (currently **NOT COMPUTABLE** — the options archive is one
+  day old), annualised perp carry (Binance primary, Kraken/OKX beside),
+  and Kraken dated-futures basis from the ~05:20 UTC snapshot. Appends a
+  dated table to `docs/premia.md`. **These are risk premia — payment for
+  bearing crash and balance-sheet risk — NOT alpha, NOT signals, and NOT
+  tradeable by this operator.** Every number carries an interval or is
+  labelled a RAW SAMPLE; `--dry-run` enforces that and is wired into the
+  weekly audit.
 - `data/` — the frozen offline dataset: ~5y of Binance.US 4h bars plus the
   incumbent's daily frame per ticker (BTC/ETH/SOL), with `MANIFEST.json`
   recording bar counts, last bar, and the direction mix. Written by
@@ -198,6 +208,64 @@ Research is kept separate from the live system, and stays separate.
    | POSITIONING #235-#242 | ~2028-01-05 |
    | OI/BASIS #243-#248 | ~2028-07-01 |
 
+10. **THE PAYER CLAUSE.** *(Constitutional amendment, 2026-09-01. Binds
+    every registration from this date.)*
+
+    **Every hypothesis must name, in its registration, the STRUCTURAL
+    PAYER: who systematically loses to this rule, and why they cannot or
+    will not stop.** The reason must be a named constraint --
+
+    | class | what makes it bind |
+    |---|---|
+    | **forced flow** | a schedule someone must trade on regardless of price (roll, expiry, rebalance, settlement) |
+    | **mandate** | a rule that compels holding, hedging or divesting irrespective of expected return |
+    | **behavioral constraint** | a documented, persistent bias that survives being pointed out |
+    | **hedging demand** | price-insensitive demand for protection, paid for out of a risk budget rather than an alpha budget |
+
+    **"No payer identified" is a PERMITTED answer** and must be written in
+    exactly those words. It is not a defect and does not block a
+    registration -- but it is **recorded as the weakest class of
+    hypothesis**, and that label travels with every result the program
+    produces.
+
+    **WHY THIS IS A RULE AND NOT ADVICE.** Every program this project has
+    run has been a search over the SHAPE of a rule -- lookback, threshold,
+    weighting, window -- with the question of who is on the other side left
+    unasked. Nine axes have now been searched and closed with zero
+    survivors. That is a large amount of evidence that shape-search alone
+    finds nothing, and the cheapest available explanation is that a rule
+    with no identified payer has no reason to work in the first place.
+    Naming the payer is the one filter that can be applied BEFORE the
+    Bonferroni budget is spent rather than after.
+
+    **WHAT THIS RULE MAY NOT BECOME.** A payer story is not evidence. It
+    does not raise a percentile, lower a bar, rescue a near-miss, or
+    license a re-test of anything already closed (rule 4 is unchanged). A
+    beautifully argued payer attached to a failing rule leaves a failing
+    rule. The clause can only ever make a hypothesis harder to justify
+    writing down -- never easier to pass.
+
+    **THE HONESTY TEST, IN BOTH DIRECTIONS.** A payer that would be
+    described the same way whatever the data showed is not a payer, it is
+    a story. State the payer BEFORE the result, in the registration, where
+    it can be wrong.
+
+    **AND THE SAME TEST APPLIES TO "NO PAYER IDENTIFIED."** That answer is
+    permitted, but it may not be reachable *by definition*. Defining
+    "payer" narrowly enough -- say, as the contractual counterparty -- makes
+    "no payer" derivable for every spot-only program in this repository
+    without opening a single file, and a conclusion reachable with zero
+    observations is worth exactly as much as a payer story that survives
+    any data.
+
+    > **So a "no payer identified" must name WHICH forced flow it looked
+    > at and WHERE that flow's rent is actually collected instead.**
+
+    "I could not think of one" is not the finding. "The flow is real, it
+    is *this*, and it is paid to *that seat*, which this rule does not
+    occupy" is the finding -- and it is a far more useful one, because it
+    says what would have to change for the answer to differ.
+
    Plus the one BANKED hypothesis slot from #249, which may be spent only on
    post-freeze data or on a mechanism argued FIRST and then checked against
    the map.
@@ -277,6 +345,25 @@ program that must first name which closed door it does not re-open.
 **#252 was GATED at 16 DISCOVERY-Q1 trades, which cost the program its
 pre-declared two-sided control** -- a control built from a hypothesis pair is
 only as available as its weaker member's event count.
+
+**THE PAYER CLAUSE (research rule 10) is CONSTITUTIONAL from
+2026-09-01.** Every future hypothesis names its structural payer or
+states "no payer identified" and is recorded as the weakest class.
+The three sealed programs were annotated post-hoc -- **all three come
+back NO PAYER IDENTIFIED, for one shared structural reason**: the
+forced flow they detect is settled on the PERPETUAL, and these
+programs buy SPOT one to two days later, so the rent is collected by
+seats they do not occupy. **Their locked rules are unchanged.** The
+annotation also exposed a defect in #235-#242 that nothing else had:
+#235/#239 and #236/#238/#240 register OPPOSITE states as the same
+BUY, so any payer story for one direction is refuted by its own
+registered twin. Noted, not fixed; the rules stay as sealed.
+
+**#257 THE PREMIA INSTRUMENT is RUNNING and does not end.** It is an
+instrument, not a test: no hypotheses, no verdicts, no Bonferroni
+budget, nothing drawn from it. It measures what professionals
+harvest, on data we manufacture. Nothing it prints is tradeable by
+this operator or may enter a signal post.
 
 **EVERY SEARCH PROGRAM IS RUN AND CLOSED**: the crypto grid, the basket
 programs, the architectural search (#187-#203), EQUITIES (#204-#216),

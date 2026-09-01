@@ -6606,3 +6606,326 @@ re-open — the macro/flow axis on frozen data is now one of them.
 **Nothing here may be cited as evidence of anything.** Not #256's 99.8%, not
 #255's near-miss, not the CONFIRMATION-side positives. The project continues
 to hold **zero supported edge claims**.
+
+---
+
+# CONSTITUTIONAL AMENDMENT — THE PAYER CLAUSE
+
+**Adopted 2026-09-01. Binds every registration from this date. Research
+rule 10 in `CLAUDE.md` is the operative text; this section records why it
+exists and what it does to the programs already written.**
+
+## The rule
+
+**Every hypothesis must name, in its registration, the STRUCTURAL PAYER:
+who systematically loses to this rule, and why they cannot or will not
+stop.** The reason must be a named constraint — **forced flow**,
+**mandate**, **behavioral constraint**, or **hedging demand** — and the
+flow must be concrete: when it happens, in what instrument, and what
+compels it.
+
+**"No payer identified" is PERMITTED**, in those words. It does not block
+a registration. It is **recorded as the weakest class of hypothesis**, and
+that label travels with every result the program produces.
+
+**But it may not be reached BY DEFINITION.** Defining "payer" narrowly
+enough — as the contractual counterparty, say — makes "no payer"
+derivable for every spot-only program in this repository without opening a
+file, and a conclusion available with zero observations is worth exactly
+as much as a payer story that survives any data.
+
+> **A "no payer identified" must name WHICH forced flow it examined and
+> WHERE that flow's rent is actually collected instead.**
+
+## Why now
+
+Nine axes have been searched and closed with zero survivors. Every one
+asked the same question — *does this quantity predict return?* — and none
+asked *who is paying, and for what?* That is a large amount of evidence
+that shape-search alone finds nothing, and the cheapest explanation is
+that a rule with no identified payer had no reason to work.
+
+**The clause is a filter that can be applied BEFORE the Bonferroni budget
+is spent rather than after.** It costs nothing to write a sentence naming
+the payer; it costs fifteen tests to discover there wasn't one.
+
+## What the clause may never become
+
+**A payer story is not evidence.** It does not raise a percentile, lower a
+bar, rescue a near-miss, or license a re-test of anything closed (rule 4
+is unchanged). A beautifully argued payer attached to a failing rule
+leaves a failing rule. **The clause can only make a hypothesis harder to
+justify writing down — never easier to pass.**
+
+---
+
+## RETROACTIVE ANNOTATION — the three sealed programs
+
+> **POST-HOC COMMENTARY, 2026-09-01. THIS CHANGES NOTHING.** The rules,
+> constants, bars, windows, gates and dormancy dates of #172–#186,
+> #235–#242 and #243–#248 are **exactly as locked**. Not one character of
+> any registration is amended, and none of these programs is re-scoped,
+> re-numbered, weakened, strengthened or brought forward. This annotation
+> is a **reading of programs already sealed**, written after they were
+> written, and it may not be cited as part of their pre-registration.
+>
+> It is recorded because the Payer Clause would have required it of them,
+> and a rule the project applies only to future work it has not yet had to
+> write is not a rule it has actually adopted.
+
+### #172–#186 — FUNDING (Kraken venue, dormant until ~2027-06-27)
+
+> **NO PAYER IDENTIFIED**, except partially for #178. Only #178 (F4) has
+> an identifiable structural payer — the leveraged perpetual long paying
+> top-decile funding into a 20-day high, exited by the venue's margin
+> engine — since the seven negative-funding rules buy spot and never
+> receive the funding they key on.
+
+### #235–#242 — POSITIONING (OKX rubik, dormant until ~2028-01-05)
+
+> **NO PAYER IDENTIFIED.** The only forced flow these columns see is the
+> OKX perpetual holder liquidated at maintenance margin; the program
+> reaches him only through dealer inventory unwind, and registers the
+> opposite state (#235, #239) as the same BUY, so no single payer covers
+> the family.
+
+### #243–#248 — OI/BASIS (Kraken tickers snapshot, dormant until ~2028-07-01)
+
+> **NO PAYER IDENTIFIED.** The forced flow these rules detect is
+> margin-engine liquidation of leveraged perpetual longs, but the program
+> holds spot only and enters at the close of D+1, so that flow accrues to
+> intra-cascade liquidity, not to it.
+
+## The finding these three annotations share, stated once
+
+All three land in the same place for the same reason, and it is a
+structural fact about the programs rather than a failure of imagination:
+
+> **The forced flow is real, and it is settled on the PERPETUAL. These
+> programs buy SPOT, one to two days later. The rent is collected by the
+> seats they do not occupy — the cash-and-carry desk short the perp, the
+> resting bid inside the cascade, the venue's insurance fund — and by the
+> time these rules trade, the payment has already been made to someone
+> else.**
+
+That sentence is worth more than any of the individual annotations,
+because it says **what would have to change for the answer to differ**:
+hold the instrument the flow settles in, or arrive while it is still being
+paid. This project can do neither, which is a fact about this project's
+balance sheet and latency, not about the market.
+
+**A SECOND FINDING, ON #235–#242 SPECIFICALLY, recorded because it is a
+defect the payer question exposed and nothing else had:** the program
+registers **#235 (crowd long) and #239 (OI building)** as BUY, and
+**#236/#240 (crowd short) and #238 (OI unwinding)** as BUY as well. Both
+sides of the same variable produce the same trade. Any payer story
+explaining one direction is **refuted by its own registered twin**. This
+is noted, not fixed: **the rules stay exactly as sealed**, and this
+observation is available to whoever reads the results in 2028 — which is
+strictly more than they would have had without it.
+
+## What was done to reach these annotations, recorded for honesty
+
+Each program's payer was proposed independently, then attacked by three
+adversarial reviewers under distinct lenses — **falsifiability**,
+**capture** (does the registered rule reach the flow at the horizon it
+trades?), and **competition** (has the flow already been arbitraged away
+from a retail-scale daily operator?). A payer survived only on fewer than
+two refutations.
+
+**The most useful objection was aimed at a NEGATIVE claim, not a positive
+one**, and it is the reason rule 10 carries its second honesty test: a
+reviewer pointed out that declaring "no payer" by defining the payer as
+the contractual counterparty is derivable for any spot-only program
+without evidence. The annotations above are therefore written in the
+required form — naming the flow, and naming where its rent goes instead.
+
+---
+
+# REGISTRATION — THE PREMIA INSTRUMENT (#257)
+
+**A DESCRIPTIVE PROGRAM, in the #249 style.** No hypotheses, no verdicts,
+no pass rules, no Bonferroni budget. **Its sole product is a live
+measurement the model publishes**, appended dated to `docs/premia.md`,
+with a monthly summary block available to the transparency post.
+
+## §0. THE RESTLESSNESS-RULE SENTENCE (research rule 9)
+
+> **#257 opens no closed door because it tests nothing.** It re-opens
+> neither the architectural axes (#187–#203), nor equities (#204–#216),
+> nor funding-as-signal (#220–#234), nor the macro/flow axis (#251–#256) —
+> it does not ask whether any quantity predicts return. The NEW structure
+> it rests on is that six forward collectors have now manufactured
+> archives that describe **prices of risk** rather than **directions of
+> price**, and no instrument in this project has ever read them that way.
+
+## §1. WHAT THESE NUMBERS ARE, AND ARE NOT
+
+**They are RISK PREMIA: payment for bearing crash risk and balance-sheet
+risk.** Someone is being compensated for holding an exposure that hurts
+exactly when it is most painful to hold, or for lending balance sheet to
+someone who must be levered.
+
+> **NOT ALPHA.** A premium is a fee for a risk genuinely borne, not a
+> mispricing. Harvesting it means taking the loss when it arrives, and the
+> loss is the product, not a malfunction.
+>
+> **NOT SIGNALS.** Nothing measured here enters the published signal path.
+> Not now, not as a filter, not as a regime input, not later.
+>
+> **NOT TRADEABLE BY THIS OPERATOR.** Every one of these requires venue
+> access, posted margin and a balance sheet this project does not have.
+> **The instrument exists to MEASURE WHAT PROFESSIONALS HARVEST, on data
+> we manufacture ourselves.** That is its whole purpose and its whole
+> claim.
+
+**Nothing in `docs/premia.md` may be cited as evidence for or against any
+hypothesis in this record**, and no number it prints may appear in a
+signal post.
+
+## §2. WHY THIS IS WORTH BUILDING, stated plainly
+
+Nine axes have been searched and closed with zero survivors. Every one of
+them asked the same question — *does this quantity predict return?* — and
+none asked *who is paying, and for what?*
+
+**The premia are the part of the market where the answer to the second
+question is not in dispute.** The funding rate is not a forecast; it is a
+price someone pays to stay levered. The basis is not a signal; it is the
+cost of someone's balance sheet. Measuring them puts a number on the
+question research rule 10 now forces every hypothesis to ask, and it does
+so **without a hypothesis, without a bar, and without anything to lose.**
+
+**This is also the instrument's own answer to the Payer Clause.** #257
+names no payer because it makes no claim; it measures the payments
+directly, which is the only honest thing a program with no position can
+do with them.
+
+## §3. THE THREE MEASUREMENTS
+
+All three read ONLY this project's own archives. **No network call, no
+live fetch, no lockbox read.**
+
+### (a) Crypto variance risk premium — BTC, ETH
+
+Deribit OI-weighted mark IV against volatility realised **subsequently**
+over the matching horizon.
+
+> **REGISTERED AS NOT COMPUTABLE TODAY, and the instrument says so on
+> every run until it is.** The option-chain archive began 2026-09-01 and
+> holds one snapshot per currency, so no observation has a subsequent
+> realisation to compare against.
+
+**A second and deeper limit is recorded now rather than discovered
+later:** `oi_weighted_mark_iv` is weighted across the **entire live chain
+— every strike AND every expiry** — so it has no single horizon to realise
+against. A genuinely matched-horizon VRP additionally requires a
+per-expiry IV term structure the collector does not store. Until it does,
+even a long archive would support only a **horizon-blended** premium,
+which is weaker than the name implies.
+
+What **is** computable today is implied vol against **trailing** realised
+vol (Deribit's own ~16-day backward-looking series). That is a
+contemporaneous spread between two observations, **not a risk premium**,
+it is published under its own name at N=1, and **it may never be called a
+VRP anywhere.**
+
+### (b) Perp carry yield — funding, annualised, per symbol
+
+**Binance archive PRIMARY** (deepest: 2020-01-01 onward), **Kraken and OKX
+reported BESIDE it, never pooled with it** — #220–#234 measured two feeds
+of the same quantity correlating at 0.37–0.72, so one is not a proxy for
+another.
+
+Arithmetic annualisation, **not compounded**: funding is paid out per
+interval and is not reinvested into the position, so rate × intervals-per-
+year is the yield actually received.
+
+**Two unit facts, verified empirically before this was locked, because
+each would silently produce a plausible wrong number:**
+
+1. **The Binance interval is PER ROW, not per venue.** The archive carries
+   8h on 21,119 rows, 2h on 99 and 4h on 2 — SOL's FTX-window episode.
+   A flat 3×/day would overstate those rows by 4× and 2×.
+2. **Kraken's `funding_rate` is in PRICE UNITS; `relative_funding_rate` is
+   the fraction.** Median `funding_rate` for PF_XBTUSD is 0.309 against a
+   ~$78k index — 0.309/78,000 = 3.96e-6, matching `relative_funding_rate`'s
+   3.85e-6. Using the wrong column reports BTC carry near 270,000% a year;
+   on a low-priced symbol the same error lands in the plausible range and
+   would not be caught at all. Kraken's series is **hourly**, so its factor
+   is 8,760, not the 1,095 an assumed 8-hour interval would give.
+
+### (c) Basis — Kraken mark vs index, the ~05:20 UTC snapshot
+
+**THE SNAPSHOT LAW (#243–#248) BINDS THIS SECTION.** `kraken_tickers` is a
+current-only endpoint sampled once daily at ~05:20 UTC. Every number
+describes **that instant**, and is never called a "daily basis".
+
+**Annualisation requires an expiry, so it is applied ONLY to dated
+futures** (`FF_` linear, `FI_` inverse), ACT/365 simple, with days-to-
+expiry parsed from the symbol. **A perpetual has no expiry**, so
+annualising its mark-index gap is meaningless — that gap is a spot premium
+funding resets, not a term structure. Perps are reported **un-annualised**,
+and their term economics live in §3(b).
+
+**THE DEAD-INSTRUMENT RULE.** Kraken marks an instrument **at index** when
+it has no book, yielding a basis of **exactly 0.0000%** — which reads as a
+precise measurement and is the absence of one. Instruments with zero open
+interest or zero 24h volume are **excluded by stated rule and REPORTED,
+never silently dropped**. Measured 2026-09-01: all 8 `FI_` rows were dead
+by this test; all 8 `FF_` rows were live.
+
+## §4. THE #249 CI RULE, ENFORCED RATHER THAN PROMISED
+
+> **Every number carries an uncertainty interval, or is explicitly
+> labelled a RAW SAMPLE. There is no third category.**
+
+- **Carry** CIs are a **moving-block bootstrap**, 30-day blocks, 2,000
+  draws, seed 257000. Funding regimes persist for weeks; an iid bootstrap
+  would report an interval several times too narrow. Fewer than 3 blocks
+  ⇒ no interval, RAW SAMPLE.
+- **Basis** and the **IV-vs-trailing-RV spread** are RAW SAMPLES today and
+  are labelled so on every row. The basis archive holds **one** observation
+  day.
+- **Where the MEAN is driven by a few extreme observations the row is
+  flagged and the MEDIAN named as the robust number.** SOL's mean
+  annualised Binance carry is −12.98% against a **+9.50% median**, because
+  the 2-hourly FTX-window rows annualise at ×4,380. Both are shown;
+  neither is dropped.
+- **This is machine-checked, not trusted.** `premia.dry_run()` walks every
+  rendered table row and fails on any percentage carrying neither an
+  interval nor a RAW SAMPLE label. It is wired into `audit.py`, which the
+  weekly workflow runs.
+
+## §5. WHAT THIS PROGRAM MAY NEVER BECOME
+
+- **No hypothesis may be drawn from this map**, in the #249 sense or any
+  other. If a premium later looks harvestable, that is a **new
+  registration** with its own number, its own payer statement under rule
+  10, and its own bar — and it must first explain what balance sheet it
+  proposes to use.
+- **No number here may enter a signal post**, a claims.md SUPPORTED entry,
+  or any text a subscriber reads as a recommendation.
+- **The monthly summary block is available, not automatic.** It is
+  generated by `premia.monthly_summary()`; a human decides whether the
+  transparency post carries it, exactly as a human posts every other
+  published text. Wiring it into `publish.py` would change what
+  subscribers read as a side effect of a research commit, and that is a
+  decision, not a side effect.
+- **No parameter here is tunable to make a number look better.** The block
+  length, the draw count, the seed, the liveness rule and the day-count
+  convention are fixed in this document. Changing one is a new decision
+  with its own record.
+
+## §6. CLOSURE
+
+**This program does not end.** It is an instrument, not a test: it runs,
+appends a dated row, and keeps running. It has no verdict to reach and
+therefore no state in which it is finished.
+
+**It can, however, be WRONG**, and the ways it would be are named here:
+a unit error that survives review, a venue changing a convention without
+notice, an archive silently going stale. The first is guarded by §3(b)'s
+verified facts, the second by the collector's own staleness checks, and
+the third by `audit.py`. None of those guarantees are perfect, and this
+sentence exists so a future reader knows they were the guarantees on offer.

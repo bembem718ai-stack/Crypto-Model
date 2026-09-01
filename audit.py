@@ -823,6 +823,40 @@ def check_shadow_arms_live(path="shadow_log.csv"):
                   % (len(recent), inc, sq, ind, ",".join(constructions)), ev)
 
 
+def check_premia_instrument():
+    """#257 renders, and every number it prints is labelled.
+
+    THE CHECK THAT MATTERS IS THE LABELLING ONE. A descriptive instrument
+    whose numbers quietly lose their uncertainty is worse than no
+    instrument: it publishes point estimates with the authority of the
+    surrounding prose and none of the evidence. premia.dry_run() walks
+    every rendered table row and fails on any percentage that carries
+    neither an interval nor an explicit RAW SAMPLE label.
+    """
+    try:
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        import premia
+    except Exception as e:                            # noqa: BLE001
+        return record("C. Deployment", "Premia instrument renders", SKIP,
+                      "%s: %s" % (type(e).__name__, str(e)[:160]))
+    try:
+        r = premia.dry_run()
+    except Exception as e:                            # noqa: BLE001
+        return record("C. Deployment", "Premia instrument renders", FAIL,
+                      "dry run raised %s: %s" % (type(e).__name__, str(e)[:200]))
+    if not r["ok"]:
+        return record("C. Deployment", "Premia instrument renders", FAIL,
+                      "; ".join(r["problems"])[:400], r)
+    return record("C. Deployment", "Premia instrument renders", PASS,
+                  "table %d chars, %d carry symbols, %d dated-basis rows "
+                  "(%d excluded as dead), VRP %s; every number carries an "
+                  "interval or a RAW SAMPLE label"
+                  % (r["table_chars"], r["carry_symbols"], r["dated_basis"],
+                     r["excluded_basis"], r["vrp_status"]), r)
+
+
 def check_publication_generators():
     """DRY-RUN both publication generators so FORMAT ROT fails in CI.
 
@@ -1122,6 +1156,7 @@ def main():
     check_sentiment_gate_errors()
     check_derivatives_collector()
     check_publication_generators()
+    check_premia_instrument()
     check_dependency_drift()
     check_live_fetches_retry()
     check_shadow_arms_live()
