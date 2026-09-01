@@ -1,0 +1,40 @@
+{
+  "frozen_at": "2026-09-01T16:05:52Z",
+  "program": "#251-#256 MACRO-OVERLAY",
+  "permanence": "PERMANENT FREEZE \u2014 never re-pulled, never merged, never revised for this program",
+  "excluded": {
+    "fear_and_greed": "price-contaminated; built from price and volatility inputs"
+  },
+  "series": {
+    "stablecoin_supply": {
+      "rows": 3199,
+      "first": "2017-11-29",
+      "last": "2026-09-01",
+      "span_days": 3198,
+      "n_gaps": 0,
+      "longest_gap_days": 1,
+      "total_missing_days": 0,
+      "source_url": "https://stablecoins.llama.fi/stablecoincharts/all",
+      "sha256": "0a051a5e6f8f59143ab630950543f5193d7f9981ed2c8da9f111a6613f356103",
+      "columns": [
+        "date",
+        "total_circulating_usd"
+      ]
+    },
+    "dgs10": {
+      "rows": 16150,
+      "first": "1962-01-02",
+      "last": "2026-08-28",
+      "span_days": 23614,
+      "n_gaps": 3599,
+      "longest_gap_days": 5,
+      "total_missing_days": 7465,
+      "source_url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10",
+      "sha256": "e25385403d61c34019e819ee33fb5e0ce22a6dba904f4ccf7e12c14184674a26",
+      "columns": [
+        "date",
+        "dgs10"
+      ]
+    }
+  }
+}
