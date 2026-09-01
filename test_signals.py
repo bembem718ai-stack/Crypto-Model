@@ -5023,12 +5023,52 @@ class TestPublicationGenerator:
         assert "github" in t.lower()
 
     def test_record_is_computed_from_the_outcomes_file(self):
-        # Not hardcoded: the tally must move when the file does.
+        """Not hardcoded: the tally must move when the file does.
+
+        RE-DERIVED HERE, NOT PINNED. This test used to assert the literal
+        tally (19/8/+1.00R/0 short wins) and went red the day a short
+        episode resolved as a win -- reporting new live data as a code
+        failure. Pinning live numbers in a test means the test breaks
+        precisely when the thing it watches is working.
+
+        So the expectation is recomputed from the CSV by a second, dumber
+        implementation. That still catches the bug the test exists for -- a
+        load_record that returns constants -- because constants would stop
+        matching the file the moment it moved, which is the same signal,
+        just pointed at the code instead of at the market.
+        """
+        import csv
         pub = self._pub()
         r = pub.load_record("signal_outcomes.csv")
-        assert r["all_n"] == 19 and r["long_n"] == 8
-        assert abs(r["long_net_r"] - 1.0) < 1e-9
-        assert r["short_n"] == 11 and r["short_wins"] == 0
+
+        with open("signal_outcomes.csv", encoding="utf-8") as fh:
+            rows = [x for x in csv.DictReader(fh)
+                    if (x.get("status") or "").strip() == "closed"]
+        longs = [x for x in rows if (x.get("side") or "").strip() == "long"]
+        shorts = [x for x in rows if (x.get("side") or "").strip() == "short"]
+
+        def net(xs):
+            return sum(float(x["pnl_r"]) for x in xs if (x.get("pnl_r") or "").strip())
+
+        assert r["all_n"] == len(rows)
+        assert r["long_n"] == len(longs)
+        assert r["short_n"] == len(shorts)
+        assert abs(r["long_net_r"] - net(longs)) < 1e-9
+        assert abs(r["all_net_r"] - net(rows)) < 1e-9
+        assert r["long_wins"] == sum(
+            1 for x in longs if float(x["pnl_r"] or 0) > 0)
+        assert r["short_wins"] == sum(
+            1 for x in shorts if float(x["pnl_r"] or 0) > 0)
+        # and the file must actually contain something to compare
+        assert r["all_n"] > 0
+
+    def test_published_record_is_the_long_row_only(self):
+        """The number a follower's experience matches. Shorts are logged
+        but never published, so they may never be folded into it."""
+        pub = self._pub()
+        r = pub.load_record("signal_outcomes.csv")
+        assert r["long_n"] < r["all_n"], "no short episodes to keep separate"
+        assert r["long_net_r"] != r["all_net_r"]
 
     def test_dry_run_renders_both_generators(self):
         pub = self._pub()
