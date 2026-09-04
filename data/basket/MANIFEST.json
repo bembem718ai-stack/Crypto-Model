@@ -7,7 +7,10 @@
     "target_4h_bars": 20000,
     "min_daily_rows": 200,
     "overlap_min_frac": 0.9,
-    "n_requested": 86
+    "n_requested": 86,
+    "hashed_at": "2026-09-02",
+    "hashed_at_freeze": false,
+    "hashed_note": "hashes computed 2026-09-02, AFTER the freeze -- they attest to the files' content at that date, not at freeze time. Verified via git log that no commit touched these files between their freeze commit and the hashing. Every freeze from this date records hashes at freeze time (research/freeze_hash.py)."
   },
   "tickers": [
     {
@@ -24,7 +27,9 @@
       "tech_days": 4363,
       "squeeze_days": 2531,
       "expected_overlap": 2531,
-      "overlap_frac": 0.9885
+      "overlap_frac": 0.9885,
+      "sha256_bars": "baa4baf7e6e01488389e1b8b59095b09139de71ca4dd90065ac9567a682b3f89",
+      "sha256_daily": "a5522bf4f3c98f9c3369a13b6c2b94f90629c591a8e22564e4621120e1972134"
     },
     {
       "symbol": "LTCUSDT",
@@ -40,7 +45,9 @@
       "tech_days": 4363,
       "squeeze_days": 2531,
       "expected_overlap": 2531,
-      "overlap_frac": 0.9885
+      "overlap_frac": 0.9885,
+      "sha256_bars": "ca56f893a6aab5a2e8be05aa4a0d76e7d0c393814080a31802ac325ba6656da0",
+      "sha256_daily": "4e6e246931eb5d65217d350a5ee9da5ee1d834a97a315fed826d2a511368a89a"
     },
     {
       "symbol": "IMXUSDT",
@@ -74,7 +81,9 @@
       "tech_days": 3214,
       "squeeze_days": 2531,
       "expected_overlap": 2531,
-      "overlap_frac": 0.9885
+      "overlap_frac": 0.9885,
+      "sha256_bars": "47c51a27478073d9c6a8e570e080c3e24df495bc861e1a695d486ad0e9d9b4f1",
+      "sha256_daily": "0eb472ed51d6ea9d1c024e27b2b1d95e532b30d1e846b0818f02feb04b512dca"
     },
     {
       "symbol": "BNBUSDT",
@@ -90,7 +99,9 @@
       "tech_days": 3214,
       "squeeze_days": 2531,
       "expected_overlap": 2531,
-      "overlap_frac": 0.9885
+      "overlap_frac": 0.9885,
+      "sha256_bars": "029ec3530b0b158865e383c0f8259a53207bd6cc7c8f133a13e3691789a92446",
+      "sha256_daily": "2851060309baed8379899fe7ddc74a8a06eaae39dc17d77c5803d394aacdce26"
     },
     {
       "symbol": "ETHUSDT",
@@ -106,7 +117,9 @@
       "tech_days": 3214,
       "squeeze_days": 2531,
       "expected_overlap": 2531,
-      "overlap_frac": 0.9885
+      "overlap_frac": 0.9885,
+      "sha256_bars": "95834f2d10a092e347f811147809d4284d93d3a78548a30f0a4ebc09f1930cfe",
+      "sha256_daily": "5ad7e8a977d4de9813e424b147a32451b16ff6c7d4d3f37ce5ebdde05c9e5f78"
     },
     {
       "symbol": "XRPUSDT",
@@ -122,7 +135,9 @@
       "tech_days": 3214,
       "squeeze_days": 1620,
       "expected_overlap": 1620,
-      "overlap_frac": 0.9821
+      "overlap_frac": 0.9821,
+      "sha256_bars": "f40a2aa2d4e4634091cf77e010ce97889b53dc06b9e31960ab8847861d9c1023",
+      "sha256_daily": "2b7591161db19fa118659ba2f2a9dc19449ff46f29437a1b73c830bb8eeb025e"
     },
     {
       "symbol": "ADAUSDT",
@@ -138,7 +153,9 @@
       "tech_days": 3214,
       "squeeze_days": 2529,
       "expected_overlap": 2529,
-      "overlap_frac": 0.9885
+      "overlap_frac": 0.9885,
+      "sha256_bars": "be846b635bea058a60257e6496e14cf8603ef49e0e4a6f2f929bad3294b13d3e",
+      "sha256_daily": "d011f5c0a7963319a267df93bb8986e21b19a4b46698b27934ea4363046f945a"
     },
     {
       "symbol": "BATUSDT",
@@ -154,7 +171,9 @@
       "tech_days": 3214,
       "squeeze_days": 2529,
       "expected_overlap": 2529,
-      "overlap_frac": 0.9885
+      "overlap_frac": 0.9885,
+      "sha256_bars": "3dc5e220828f8581b725a556b9785ed5568ed1cc7e2d82301798831daed7dc50",
+      "sha256_daily": "5a48cbe798c6b867124c2da3735ae6c308cc2814a22286251ac0b02b27c87a01"
     },
     {
       "symbol": "ETCUSDT",
@@ -170,7 +189,9 @@
       "tech_days": 3214,
       "squeeze_days": 2529,
       "expected_overlap": 2529,
-      "overlap_frac": 0.9885
+      "overlap_frac": 0.9885,
+      "sha256_bars": "068a63de47242c81a57889ca793f92ede9480d5373a5f4d485db977929dc0e17",
+      "sha256_daily": "4035ff3c530e57fdc966b2ef54dac6316f6790df69b6109aa2d0eb1ba3cf3cc3"
     },
     {
       "symbol": "XLMUSDT",
@@ -186,7 +207,9 @@
       "tech_days": 3214,
       "squeeze_days": 2529,
       "expected_overlap": 2529,
-      "overlap_frac": 0.9885
+      "overlap_frac": 0.9885,
+      "sha256_bars": "0d3ad59582dd33e23bc56b527918227f334f10c41b2fbaeb869b702eeeb8ba4b",
+      "sha256_daily": "ecee04fba93121394823a8a95753ebf31b700c260d0b89dbaa14febea4596d8c"
     },
     {
       "symbol": "ZRXUSDT",
@@ -202,7 +225,9 @@
       "tech_days": 3214,
       "squeeze_days": 2529,
       "expected_overlap": 2529,
-      "overlap_frac": 0.9885
+      "overlap_frac": 0.9885,
+      "sha256_bars": "435bb4a52ae449341f1618e2c254563b58e1a64b8226110298cd130d2976fbb4",
+      "sha256_daily": "00baa95388cd28671540093960b2bada7c060412de1888f79ba0fbe978d71cf9"
     },
     {
       "symbol": "DOGEUSDT",
@@ -218,7 +243,9 @@
       "tech_days": 3214,
       "squeeze_days": 2499,
       "expected_overlap": 2499,
-      "overlap_frac": 0.9884
+      "overlap_frac": 0.9884,
+      "sha256_bars": "52016e4eccbc1c60e7c40f29abcf8e8ccd81319650ab30e139d69933d6a93cab",
+      "sha256_daily": "5997d8302bb1e0faa637fb1a271f777280fa0aa44272e08d9d132be3f6646fbb"
     },
     {
       "symbol": "NEOUSDT",
@@ -234,7 +261,9 @@
       "tech_days": 3214,
       "squeeze_days": 2492,
       "expected_overlap": 2492,
-      "overlap_frac": 0.9884
+      "overlap_frac": 0.9884,
+      "sha256_bars": "5932710fb007439f7a1658224415d010ac9e10f2da9fa2953d66495715edd4d7",
+      "sha256_daily": "d95fe495fd172ea515b61e77132b67b044ba6e2ef87771a5db1b9b61d54168d7"
     },
     {
       "symbol": "QTUMUSDT",
@@ -250,7 +279,9 @@
       "tech_days": 3214,
       "squeeze_days": 2478,
       "expected_overlap": 2478,
-      "overlap_frac": 0.9883
+      "overlap_frac": 0.9883,
+      "sha256_bars": "0b4b72a0034c13a09eadbc439f21637356d4a4baaff5739dcc162cef59e5d6c5",
+      "sha256_daily": "1839eb0ffb60d59d9a28623052a8d498c30f7520f26ecbfb413a2d62645998da"
     },
     {
       "symbol": "STORJUSDT",
@@ -266,7 +297,9 @@
       "tech_days": 3214,
       "squeeze_days": 2186,
       "expected_overlap": 2186,
-      "overlap_frac": 0.9867
+      "overlap_frac": 0.9867,
+      "sha256_bars": "50f557a15187f5ed1eb2e8ceece0f257dee56824971763fe2513c5a80e2d0185",
+      "sha256_daily": "5a7b0d769e045b93f6e8f2705c1cf533d54b5c8b9da4dcabd52092e0464be5bc"
     },
     {
       "symbol": "ZENUSDT",
@@ -282,7 +315,9 @@
       "tech_days": 3214,
       "squeeze_days": 2080,
       "expected_overlap": 2080,
-      "overlap_frac": 0.9861
+      "overlap_frac": 0.9861,
+      "sha256_bars": "9f584c8a765a8812975a0af058750cadd19ab34db3d1b307f3391404f8744086",
+      "sha256_daily": "a10ba6497a54ea52f3860360162c57f31e2ea409a17f7dee923cdf19f0b2e4a2"
     },
     {
       "symbol": "MANAUSDT",
@@ -298,7 +333,9 @@
       "tech_days": 3214,
       "squeeze_days": 1695,
       "expected_overlap": 1695,
-      "overlap_frac": 0.9829
+      "overlap_frac": 0.9829,
+      "sha256_bars": "6bb59effc4cffc50942a66cc1de88d423d22576f3d39a7a356d48ae0d7ed6a5a",
+      "sha256_daily": "4ba617758de2b25fe65811da8b051765556c0f41cb07de68fbaf5540c344a4f2"
     },
     {
       "symbol": "ZECUSDT",
@@ -314,7 +351,9 @@
       "tech_days": 3214,
       "squeeze_days": 1688,
       "expected_overlap": 1688,
-      "overlap_frac": 0.9828
+      "overlap_frac": 0.9828,
+      "sha256_bars": "aee68abcdd0e467fa523193eda90748cb14066cc4ada1d410ec3f1bd13a9e9dd",
+      "sha256_daily": "49a3279bcf72916776a2af35bcf1dd928a8e227836d355a996d7976351638d92"
     },
     {
       "symbol": "LINKUSDT",
@@ -330,7 +369,9 @@
       "tech_days": 3214,
       "squeeze_days": 1687,
       "expected_overlap": 1687,
-      "overlap_frac": 0.9828
+      "overlap_frac": 0.9828,
+      "sha256_bars": "ed3d5ff93df3cc872cec4451404910480dff5db14284cc81faa1a5c5eb0fb83c",
+      "sha256_daily": "948cf27a6275a5c8cfa3f2800714c6c336e68c54775910c8b49fec9bc2759e66"
     },
     {
       "symbol": "ENJUSDT",
@@ -346,7 +387,9 @@
       "tech_days": 3214,
       "squeeze_days": 1681,
       "expected_overlap": 1681,
-      "overlap_frac": 0.9827
+      "overlap_frac": 0.9827,
+      "sha256_bars": "fde5f86fab89cce31d3e3f9debea0ff8cf9cc9558070d4e134742e0ffb8f388e",
+      "sha256_daily": "34ff351ed687c26a10d9166e2efa397c30928db0e0fd4d233cc48945d53a3149"
     },
     {
       "symbol": "NMRUSDT",
@@ -362,7 +405,9 @@
       "tech_days": 3214,
       "squeeze_days": 1654,
       "expected_overlap": 1654,
-      "overlap_frac": 0.9825
+      "overlap_frac": 0.9825,
+      "sha256_bars": "68a7ac1588fd87458a6b498048a1494e5dbd1c45fba7a505038f44806b08e12b",
+      "sha256_daily": "039c7cc533e43e377dfd05639f4ad6c85be74fb77e560d1bfab608189f2b3a94"
     },
     {
       "symbol": "REQUSDT",
@@ -378,7 +423,9 @@
       "tech_days": 3214,
       "squeeze_days": 1618,
       "expected_overlap": 1618,
-      "overlap_frac": 0.9821
+      "overlap_frac": 0.9821,
+      "sha256_bars": "4f44c55579c3925bc1cbf60cee389d4cbf0a560c6816d2632fa57df881ed251c",
+      "sha256_daily": "09abb4f23e0309c2d95eb2785b14b7f415c32026d6ed81ae8f075a1441529ac2"
     },
     {
       "symbol": "TRXUSDT",
@@ -394,7 +441,9 @@
       "tech_days": 3214,
       "squeeze_days": 518,
       "expected_overlap": 518,
-      "overlap_frac": 0.944
+      "overlap_frac": 0.944,
+      "sha256_bars": "12c8ab100cd828999645e3b8301dd19e46dcbdcdf1b82a26452f3064100a55a7",
+      "sha256_daily": "fae3931787df9d0bd4a0412c102301be8c90c26789438cde064e2152d31e6c91"
     },
     {
       "symbol": "RLCUSDT",
@@ -410,7 +459,9 @@
       "tech_days": 3214,
       "squeeze_days": 1599,
       "expected_overlap": 1599,
-      "overlap_frac": 0.9819
+      "overlap_frac": 0.9819,
+      "sha256_bars": "4f542066e2e02616a4010751c8a93efc50361b94a5cd99be70d0dd1baff0153d",
+      "sha256_daily": "987f163ab13f046afcb928a9b339e7373b1c4d80b3c7f2c99ba7a55adaa9bef5"
     },
     {
       "symbol": "BNTUSDT",
@@ -426,7 +477,9 @@
       "tech_days": 3214,
       "squeeze_days": 1585,
       "expected_overlap": 1585,
-      "overlap_frac": 0.9817
+      "overlap_frac": 0.9817,
+      "sha256_bars": "24ce495b50b17a0c6fabed5758c3d787f2e7f325484523cbc207a09fc4dcf4a5",
+      "sha256_daily": "37078e19ede82e9a35e7d64fae80f5121401b6b6b3ddd0bbaa30e3d2ff7dab50"
     },
     {
       "symbol": "SYSUSDT",
@@ -442,7 +495,9 @@
       "tech_days": 3214,
       "squeeze_days": 1487,
       "expected_overlap": 1487,
-      "overlap_frac": 0.9805
+      "overlap_frac": 0.9805,
+      "sha256_bars": "4c945b7df8f7f96662a2020b540033f659934f785b849a49ed85469941fa35e2",
+      "sha256_daily": "88ca326c81cde4e4fc8fd98a645eb9518a9fe92d5fa8b3a792040868d0c2c404"
     },
     {
       "symbol": "LSKUSDT",
@@ -458,7 +513,9 @@
       "tech_days": 3214,
       "squeeze_days": 1465,
       "expected_overlap": 1465,
-      "overlap_frac": 0.9802
+      "overlap_frac": 0.9802,
+      "sha256_bars": "2b296680cae88f8e90a42e62653f79e30877d755ab4ea10672eb9d2ab7b69f7b",
+      "sha256_daily": "d9ff3156cfa36fb378648c54771b020e13278e34036f202eee19bd406de59506"
     },
     {
       "symbol": "FILUSDT",
@@ -474,7 +531,9 @@
       "tech_days": 3180,
       "squeeze_days": 1897,
       "expected_overlap": 1897,
-      "overlap_frac": 0.9847
+      "overlap_frac": 0.9847,
+      "sha256_bars": "ee9ee3c692e8d804f0318d31637b86bf21c53ce68c5acf29427f4462c66a7780",
+      "sha256_daily": "90a107e7d8ba77332f265a25f83f075d57ee1b4a2b4e56e0d7bed6874c4a3990"
     },
     {
       "symbol": "WAXPUSDT",
@@ -490,7 +549,9 @@
       "tech_days": 3172,
       "squeeze_days": 1542,
       "expected_overlap": 1542,
-      "overlap_frac": 0.9812
+      "overlap_frac": 0.9812,
+      "sha256_bars": "55dcb289a8e16d1da3e9a21211313f41ac203b4653112271c4c55281edf2ca8d",
+      "sha256_daily": "afff2d300b3e86028d7605853549a02602ef35ef3b03ab63b6850f57941664c5"
     },
     {
       "symbol": "ONEUSDT",
@@ -507,7 +568,9 @@
       "squeeze_days": 2192,
       "expected_overlap": 2192,
       "overlap_frac": 0.3248,
-      "overlap_flag": "merged 712 rows is 32.5% of the shorter feed (2192) -- inner join truncated"
+      "overlap_flag": "merged 712 rows is 32.5% of the shorter feed (2192) -- inner join truncated",
+      "sha256_bars": "13c08394ee69313778945ea2c9a8a11231bb117b8a32f3dab058d61be3bc8023",
+      "sha256_daily": "de400c002932474b1e1cd32f27df8c52a7dff82034c975444dc548ce1bac63cc"
     },
     {
       "symbol": "THETAUSDT",
@@ -523,7 +586,9 @@
       "tech_days": 3145,
       "squeeze_days": 1571,
       "expected_overlap": 1571,
-      "overlap_frac": 0.9815
+      "overlap_frac": 0.9815,
+      "sha256_bars": "6173dc89f5b139f089d41db4113e9cc34c7ac8f2a4f9db1f2ccdbbd5fcae204e",
+      "sha256_daily": "4ffe80ef82b8786562e973bc30574a7508d3af39a2cbd2896d13688f7dfc6010"
     },
     {
       "symbol": "ONTUSDT",
@@ -539,7 +604,9 @@
       "tech_days": 3095,
       "squeeze_days": 2387,
       "expected_overlap": 2387,
-      "overlap_frac": 0.9879
+      "overlap_frac": 0.9879,
+      "sha256_bars": "a61b42cdc645a9310bcecd034cafd7824165656f2e744cf6bc027b80df481d67",
+      "sha256_daily": "6acaf4a3d2a79ed08eb1aa5602bd1405412a7bb0672a256a05a7da66f3094142"
     },
     {
       "symbol": "SNXUSDT",
@@ -555,7 +622,9 @@
       "tech_days": 3089,
       "squeeze_days": 1633,
       "expected_overlap": 1633,
-      "overlap_frac": 0.9822
+      "overlap_frac": 0.9822,
+      "sha256_bars": "dca13d34cd90c3a141f904e06b6eaa0b6b3d5d20f028f1727f3a9c4dd3e9ab9e",
+      "sha256_daily": "f5df68676fe2e20364f76c2b6f5dd6a982fb44bdca69ba1a0ee611863fceda02"
     },
     {
       "symbol": "VETUSDT",
@@ -571,7 +640,9 @@
       "tech_days": 2947,
       "squeeze_days": 2485,
       "expected_overlap": 2485,
-      "overlap_frac": 0.9883
+      "overlap_frac": 0.9883,
+      "sha256_bars": "db1096b6d4f9c15b21dffeb61e1b3fc4d7b2901e19817249e8a3fb7fc52c56d7",
+      "sha256_daily": "7fc6d660339f5810604e0e03cc5f47f4881ac4536845250389f5a325d822073c"
     },
     {
       "symbol": "VTHOUSDT",
@@ -587,7 +658,9 @@
       "tech_days": 2951,
       "squeeze_days": 2226,
       "expected_overlap": 2226,
-      "overlap_frac": 0.987
+      "overlap_frac": 0.987,
+      "sha256_bars": "905e4847edb887faeacf7c75fe39d12efb030eee59b998d4f0d7a9cf58c89aa7",
+      "sha256_daily": "dc50a6cbb4581c6fffe1bcf2e760ac31b0d62aad51eba5e87bb6906f67eb7d88"
     },
     {
       "symbol": "FLUXUSDT",
@@ -603,7 +676,9 @@
       "tech_days": 2948,
       "squeeze_days": 1612,
       "expected_overlap": 1612,
-      "overlap_frac": 0.982
+      "overlap_frac": 0.982,
+      "sha256_bars": "818558b72a37f89e7ed159af74bebbbf9c3cd1ce35182952a7926b24d0179d11",
+      "sha256_daily": "2dc64e5730fe56a84db3ed42eec80218b1e84d56982858f348e36f467b81d56e"
     },
     {
       "symbol": "COMPUSDT",
@@ -629,7 +704,9 @@
       "tech_days": 2809,
       "squeeze_days": 1660,
       "expected_overlap": 1660,
-      "overlap_frac": 0.9825
+      "overlap_frac": 0.9825,
+      "sha256_bars": "db97659ff7028e54193eb1f5467b55da5bb9cc3cab3e712f4c137c5cfeb5ddb4",
+      "sha256_daily": "c3927677cd685051f04c4cee1f5890a401a93422ff50aa10f122721401cdaba9"
     },
     {
       "symbol": "FETUSDT",
@@ -645,7 +722,9 @@
       "tech_days": 2736,
       "squeeze_days": 1540,
       "expected_overlap": 1540,
-      "overlap_frac": 0.9812
+      "overlap_frac": 0.9812,
+      "sha256_bars": "904b436aec7c217756ea591a178959e04e6784573b0b151453270e40c0b0f6a3",
+      "sha256_daily": "29f2d0788b16061c3669e8ce1fce1dfdac0da6982fbe8735f921a2b68cf315bb"
     },
     {
       "symbol": "ATOMUSDT",
@@ -661,7 +740,9 @@
       "tech_days": 2724,
       "squeeze_days": 2492,
       "expected_overlap": 2492,
-      "overlap_frac": 0.9884
+      "overlap_frac": 0.9884,
+      "sha256_bars": "bc814a4a94b1692f1afb6c123a0857deff734768df9af7df6a82750daea3466d",
+      "sha256_daily": "3395b73e0f8e49e75f46c841a95705ceff0350bfdebd9cfe0a8c2687ef7786aa"
     },
     {
       "symbol": "TFUELUSDT",
@@ -677,7 +758,9 @@
       "tech_days": 2710,
       "squeeze_days": 1571,
       "expected_overlap": 1571,
-      "overlap_frac": 0.9815
+      "overlap_frac": 0.9815,
+      "sha256_bars": "eb04575c1567274497310259f35a99b1ca11a91a9148e5889f82457c2daea0af",
+      "sha256_daily": "925cb775a11e23d77d801150c1b536a1557f25f874abec04b8a61e2d0f54d336"
     },
     {
       "symbol": "CELRUSDT",
@@ -693,7 +776,9 @@
       "tech_days": 2713,
       "squeeze_days": 1554,
       "expected_overlap": 1554,
-      "overlap_frac": 0.9813
+      "overlap_frac": 0.9813,
+      "sha256_bars": "f5060bffc94c686c37ab5a5cf770af98068e1fb1d47dac30ebb0a7468603fb12",
+      "sha256_daily": "7e1a871f991f71b50f5434487e661daaa731837268f5f098eb03b6aa8df15c96"
     },
     {
       "symbol": "OCEANUSDT",
@@ -709,7 +794,9 @@
       "tech_days": 2671,
       "squeeze_days": 1569,
       "expected_overlap": 1569,
-      "overlap_frac": 0.9815
+      "overlap_frac": 0.9815,
+      "sha256_bars": "e912d47d8f4f137481a49978f76066dab6d86c074e7dca2993bd511c46d85ec1",
+      "sha256_daily": "3b07947a88d6d9bf61569bce5ef4eba082613d4a53a6ab32908b5a792f47eb1f"
     },
     {
       "symbol": "COTIUSDT",
@@ -725,7 +812,9 @@
       "tech_days": 2642,
       "squeeze_days": 1605,
       "expected_overlap": 1605,
-      "overlap_frac": 0.9819
+      "overlap_frac": 0.9819,
+      "sha256_bars": "c1443e6375c4334166f190cac74e55b4f2ae4bc1f38cef777a4f3d1766eae93e",
+      "sha256_daily": "8fb5c4e89373f364585aeba1022c4c837314e17454881f9e87ee314e1b62ec71"
     },
     {
       "symbol": "ALGOUSDT",
@@ -741,7 +830,9 @@
       "tech_days": 2625,
       "squeeze_days": 1694,
       "expected_overlap": 1694,
-      "overlap_frac": 0.9829
+      "overlap_frac": 0.9829,
+      "sha256_bars": "9c997321419a03d4ea857af5c7e851500d4b5e16d71412f27a2ac22ec94f78b7",
+      "sha256_daily": "be92638c5a95975b5078b3c6e237833cd10545610ed7c02e6323af6a892f0308"
     },
     {
       "symbol": "CHZUSDT",
@@ -757,7 +848,9 @@
       "tech_days": 2615,
       "squeeze_days": 1641,
       "expected_overlap": 1641,
-      "overlap_frac": 0.9823
+      "overlap_frac": 0.9823,
+      "sha256_bars": "98305680079dc05024a31a799000a0e6df238ef39ecefe6608146a559f3c7490",
+      "sha256_daily": "80d9d2edd3252fba0fb23e5203234de417f14c42bd9b4fb80ff849d60f7cb212"
     },
     {
       "symbol": "BANDUSDT",
@@ -773,7 +866,9 @@
       "tech_days": 2536,
       "squeeze_days": 2191,
       "expected_overlap": 2191,
-      "overlap_frac": 0.9868
+      "overlap_frac": 0.9868,
+      "sha256_bars": "8458dbe30b78f5f4e59cace6a5a4e3dff69ef491ce75db49310f8e62cfde5fcf",
+      "sha256_daily": "381177973e82c5f89aba3aa4295dec74cc632e33b143247b0749536b09908af2"
     },
     {
       "symbol": "UNIUSDT",
@@ -790,7 +885,9 @@
       "squeeze_days": 2171,
       "expected_overlap": 1674,
       "overlap_frac": 0.8156,
-      "overlap_flag": "merged 1636 rows is 81.6% of the shorter feed (2006) -- inner join truncated"
+      "overlap_flag": "merged 1636 rows is 81.6% of the shorter feed (2006) -- inner join truncated",
+      "sha256_bars": "76e898312706dcf9ca7026801cac2039afd71ed5480bfcbd14ddc494fb98e25e",
+      "sha256_daily": "ef574bec6a14f96f1d7773b433af56bd66ac927a39f809b21357ca681d33719f"
     },
     {
       "symbol": "KSMUSDT",
@@ -806,7 +903,9 @@
       "tech_days": 2451,
       "squeeze_days": 1500,
       "expected_overlap": 1500,
-      "overlap_frac": 0.9807
+      "overlap_frac": 0.9807,
+      "sha256_bars": "9dd15e6062554cb8e18c4b4abb3b32ac37108890717fd41fa76c39898296faf9",
+      "sha256_daily": "1407503e31ba166bda5def163b6aa70d6f103b7d3648e5fe07f6e8459dbee2b1"
     },
     {
       "symbol": "OGNUSDT",
@@ -822,7 +921,9 @@
       "tech_days": 2423,
       "squeeze_days": 1639,
       "expected_overlap": 1639,
-      "overlap_frac": 0.9823
+      "overlap_frac": 0.9823,
+      "sha256_bars": "410042883d3e79969bac678f70dd7969a1ffd5332317777e9fb2f0968971e2af",
+      "sha256_daily": "2fea0a1c9cae2ac15525ce1e7515541aa1dd2dc4bc20acb549d6fbeb6841dead"
     },
     {
       "symbol": "SOLUSDT",
@@ -838,7 +939,9 @@
       "tech_days": 2331,
       "squeeze_days": 2170,
       "expected_overlap": 2170,
-      "overlap_frac": 0.9866
+      "overlap_frac": 0.9866,
+      "sha256_bars": "a3462a13079a797a3a005f86603bc38211cc23f3f50b65b21a022a4e7748a42b",
+      "sha256_daily": "12e219d9220fe29ef079bfd91e10703746815cf1046f2fa7e64918f066ef17b3"
     },
     {
       "symbol": "CTSIUSDT",
@@ -854,7 +957,9 @@
       "tech_days": 2318,
       "squeeze_days": 1737,
       "expected_overlap": 1737,
-      "overlap_frac": 0.9833
+      "overlap_frac": 0.9833,
+      "sha256_bars": "fda3619870a7a26171bc78b02bb0388dda3c13710fe13b49ab50e89b4b1785e4",
+      "sha256_daily": "2a4c3bb2d652046e97a47b95f17b1cfa42e17ede66f591e5e171995b92d9a9b8"
     },
     {
       "symbol": "CELOUSDT",
@@ -870,7 +975,9 @@
       "tech_days": 2289,
       "squeeze_days": 1521,
       "expected_overlap": 1521,
-      "overlap_frac": 0.9809
+      "overlap_frac": 0.9809,
+      "sha256_bars": "e49f6362ad5664033b3cd6488435f40aa9c9275be2b5d67bf571d684e379ed4f",
+      "sha256_daily": "123ba3f678f4d92e710ea670876123b3621308b649e93b6735f18c205ae89b29"
     },
     {
       "symbol": "GRTUSDT",
@@ -904,7 +1011,9 @@
       "tech_days": 2242,
       "squeeze_days": 1653,
       "expected_overlap": 1653,
-      "overlap_frac": 0.9825
+      "overlap_frac": 0.9825,
+      "sha256_bars": "7ec979d48a29b61f541038a70b6b19d8908c303bcf59f0577b8b244dff927f46",
+      "sha256_daily": "3994381f3c6e530232be655006d929175f8a908e8b34376b3330f661221d6dd3"
     },
     {
       "symbol": "AVAXUSDT",
@@ -920,7 +1029,9 @@
       "tech_days": 2168,
       "squeeze_days": 1744,
       "expected_overlap": 1744,
-      "overlap_frac": 0.9834
+      "overlap_frac": 0.9834,
+      "sha256_bars": "920da3252b14d24e012918dbb875cac3765b88097e10c3cb99408c81634adb45",
+      "sha256_daily": "6d555abe4e0dffe03187a9af863f2556bd9e56bf4462deb030e9e0a9698e5de5"
     },
     {
       "symbol": "YFIUSDT",
@@ -936,7 +1047,9 @@
       "tech_days": 2230,
       "squeeze_days": 1730,
       "expected_overlap": 1730,
-      "overlap_frac": 0.9832
+      "overlap_frac": 0.9832,
+      "sha256_bars": "56afd7c4b91b7522c8d821851ac0e3198ef7b25bb3d12a19a2645e85440d0129",
+      "sha256_daily": "bd5d80f241c14e9199961385042ba8e105c39933c3f3f134a961ef6c74e78cb1"
     },
     {
       "symbol": "SHIBUSDT",
@@ -962,7 +1075,9 @@
       "tech_days": 2205,
       "squeeze_days": 1800,
       "expected_overlap": 1800,
-      "overlap_frac": 0.9839
+      "overlap_frac": 0.9839,
+      "sha256_bars": "eec347b6baf4cf22fca077cb6d6c7552959ec24290a42258dff972468e9f3544",
+      "sha256_daily": "ff41c4a87b0a92a4f3a41319c982ef1043872e256735dab07de5cd5ce2b89563"
     },
     {
       "symbol": "DOTUSDT",
@@ -978,7 +1093,9 @@
       "tech_days": 2199,
       "squeeze_days": 1730,
       "expected_overlap": 1730,
-      "overlap_frac": 0.9832
+      "overlap_frac": 0.9832,
+      "sha256_bars": "1b328b1b4ceb8631cfbcd8b1d1cf104356855f38d44b14b111820944493f419a",
+      "sha256_daily": "4ba31c7603ac50ea6d18bb3f41673ccf71fb2d0410c75beb2afb6db674ae26d4"
     },
     {
       "symbol": "SUSHIUSDT",
@@ -994,7 +1111,9 @@
       "tech_days": 2191,
       "squeeze_days": 1680,
       "expected_overlap": 1680,
-      "overlap_frac": 0.9827
+      "overlap_frac": 0.9827,
+      "sha256_bars": "fe47d070cb29a67e7e5452e163effcdab6fddd16a73779da3d4cd26df9ba658d",
+      "sha256_daily": "12470ec68af526dba08db247726738cf796baf77e8c33ab99dfcd3e6423e676f"
     },
     {
       "symbol": "EGLDUSDT",
@@ -1010,7 +1129,9 @@
       "tech_days": 2184,
       "squeeze_days": 2164,
       "expected_overlap": 2164,
-      "overlap_frac": 0.9797
+      "overlap_frac": 0.9797,
+      "sha256_bars": "60dfc8753c730b9fa7b829dcf4e31909a51e1b7962a87444774a1de1c2cfdf80",
+      "sha256_daily": "0043720dd4c7ff4f3fcb34f8eaa99bdcd8bfa524250bbaa796a218c3bb37b16a"
     },
     {
       "symbol": "ACHUSDT",
@@ -1026,7 +1147,9 @@
       "tech_days": 2179,
       "squeeze_days": 1499,
       "expected_overlap": 1499,
-      "overlap_frac": 0.9807
+      "overlap_frac": 0.9807,
+      "sha256_bars": "6e4f9b89e6b06ee655e1d9a411f1ccf6f58c6db4898cb17ef1a701b9f81569dc",
+      "sha256_daily": "656602b1a4bb0b5a46b3a7593f5a339a427c62172763cc5e0178dac097e865b4"
     },
     {
       "symbol": "GALAUSDT",
@@ -1042,7 +1165,9 @@
       "tech_days": 2112,
       "squeeze_days": 1638,
       "expected_overlap": 1580,
-      "overlap_frac": 0.9469
+      "overlap_frac": 0.9469,
+      "sha256_bars": "d6ce972a84b7aedb86347d3cff01bd6c348c02b0695dcfd1c8add7099a520846",
+      "sha256_daily": "ebdbd841296f3f45c0ef96aa056eab30c55d607fafd70dfd91df6eda322f4c98"
     },
     {
       "symbol": "AAVEUSDT",
@@ -1058,7 +1183,9 @@
       "tech_days": 2156,
       "squeeze_days": 1870,
       "expected_overlap": 1870,
-      "overlap_frac": 0.9845
+      "overlap_frac": 0.9845,
+      "sha256_bars": "8f4a50b7a3a8457cb5849b03f98fbffdd734513f4b3e55ec6d74e5803dedf9bc",
+      "sha256_daily": "e78e605f58ff7bdb67b9c9ca80b54d88e63e98202503962c8b38013b7d65f63b"
     },
     {
       "symbol": "APEUSDT",
@@ -1075,7 +1202,9 @@
       "squeeze_days": 1624,
       "expected_overlap": 1624,
       "overlap_frac": 0.795,
-      "overlap_flag": "merged 1291 rows is 79.5% of the shorter feed (1624) -- inner join truncated"
+      "overlap_flag": "merged 1291 rows is 79.5% of the shorter feed (1624) -- inner join truncated",
+      "sha256_bars": "47f825fa23572d8d3c1fe795a0b13f091b9499dc5b950a8c940b865f2f4ffaae",
+      "sha256_daily": "aa63bdd0f963930a66b78f1d71eee948c8c4b70ac8dd99f4c680025b38070c8f"
     },
     {
       "symbol": "NEARUSDT",
@@ -1091,7 +1220,9 @@
       "tech_days": 2144,
       "squeeze_days": 1681,
       "expected_overlap": 1681,
-      "overlap_frac": 0.9827
+      "overlap_frac": 0.9827,
+      "sha256_bars": "ca0f6a6f8d78646d5dc4203e0e1006a9b4eb9451a2e7b2cce34e475c8f63a75a",
+      "sha256_daily": "56eeb17716385792e52d5d38d96c188e16dd1f4b658859499ec68923286c11b2"
     },
     {
       "symbol": "AUDIOUSDT",
@@ -1107,7 +1238,9 @@
       "tech_days": 2135,
       "squeeze_days": 1633,
       "expected_overlap": 1633,
-      "overlap_frac": 0.9822
+      "overlap_frac": 0.9822,
+      "sha256_bars": "cb9be199c0b42a1849d4df0ef7ae12cc681e60943c07872ceda42681696b4d32",
+      "sha256_daily": "d6fb2517cb364efd5d8ac734142f1d3bffa051318ff42dbb15d922d1fac3ed4b"
     },
     {
       "symbol": "AXSUSDT",
@@ -1123,7 +1256,9 @@
       "tech_days": 2123,
       "squeeze_days": 1751,
       "expected_overlap": 1751,
-      "overlap_frac": 0.9834
+      "overlap_frac": 0.9834,
+      "sha256_bars": "a741d77d7ba271229dd80a19cf15fba8681afcb61e1115ab49c1ccc4d6479716",
+      "sha256_daily": "6c14888b7226bb2bef4026c2a34ec0b611e5d4acfc09da41bf0a975a7d9898b3"
     },
     {
       "symbol": "ROSEUSDT",
@@ -1139,7 +1274,9 @@
       "tech_days": 2108,
       "squeeze_days": 1514,
       "expected_overlap": 1514,
-      "overlap_frac": 0.9808
+      "overlap_frac": 0.9808,
+      "sha256_bars": "220991b5a4aee4396de92c9d88e718476e6062ece00da3d85659c27cbb6001dc",
+      "sha256_daily": "49c344232efc28bcfc0622a07b50d6388c6afb806f66eafc0abdb17833b4e3db"
     },
     {
       "symbol": "API3USDT",
@@ -1155,7 +1292,9 @@
       "tech_days": 2095,
       "squeeze_days": 1590,
       "expected_overlap": 1590,
-      "overlap_frac": 0.9818
+      "overlap_frac": 0.9818,
+      "sha256_bars": "a2cb786cce4cdee2686ed097fc35e1e6a4001d644b94ef0a47ff18e1853d6749",
+      "sha256_daily": "3a9fc0dc3e463dc392c5593713b50a5ffdc8363d1ff47ab3fc05189060563e5c"
     },
     {
       "symbol": "SKLUSDT",
@@ -1171,7 +1310,9 @@
       "tech_days": 2095,
       "squeeze_days": 1549,
       "expected_overlap": 1549,
-      "overlap_frac": 0.9813
+      "overlap_frac": 0.9813,
+      "sha256_bars": "a59943dfb4e8f3bdbcc55e89b4f34392280177987e790e9fb316d049ee091214",
+      "sha256_daily": "369a40f3c33237ca7d06f67ce10bad5143cafdd1914f1c3b72c5e7f294fc5274"
     },
     {
       "symbol": "1INCHUSDT",
@@ -1187,7 +1328,9 @@
       "tech_days": 2072,
       "squeeze_days": 1722,
       "expected_overlap": 1722,
-      "overlap_frac": 0.9832
+      "overlap_frac": 0.9832,
+      "sha256_bars": "571add83eb2b960daeac4975bc8e18eb6c145f4f04848dcd0b90f67d0b9002f0",
+      "sha256_daily": "981579bb4cb0dbd29a85d152cd68569473726e67e2c6ea9ef0493eb57024f39c"
     },
     {
       "symbol": "LDOUSDT",
@@ -1203,7 +1346,9 @@
       "tech_days": 2061,
       "squeeze_days": 1478,
       "expected_overlap": 1478,
-      "overlap_frac": 0.9804
+      "overlap_frac": 0.9804,
+      "sha256_bars": "a2751c3ddb772122d915eccd13e5e24120f686f3bc11379d6d40ccba3528c625",
+      "sha256_daily": "b916f532f8e6ed660c608101a7db0bb9bea6df762c05fc2eaa243f6ce74ae8ce"
     },
     {
       "symbol": "FLOWUSDT",
@@ -1219,7 +1364,9 @@
       "tech_days": 2039,
       "squeeze_days": 1576,
       "expected_overlap": 1576,
-      "overlap_frac": 0.9816
+      "overlap_frac": 0.9816,
+      "sha256_bars": "3e312ac7130a9c4f4e81789749091d1bccddeeaadc1bcfa34872e4873a7f06d6",
+      "sha256_daily": "61389149d8bc16009d7e44a63e1bb58b3074084dbbf0ae758a1714a98dd4ebc6"
     },
     {
       "symbol": "RADUSDT",
@@ -1235,7 +1382,9 @@
       "tech_days": 2007,
       "squeeze_days": 1486,
       "expected_overlap": 1486,
-      "overlap_frac": 0.9805
+      "overlap_frac": 0.9805,
+      "sha256_bars": "12ce1ae9d62853f1f84b951dad139cdd8e6538ede1e738f7e0bd839c50c64b5e",
+      "sha256_daily": "eb4abc50a49206763eb1cd81d9b4ee6fb2e6da8dfa2ee5ea5879aebde940ff99"
     },
     {
       "symbol": "ILVUSDT",
@@ -1251,7 +1400,9 @@
       "tech_days": 1976,
       "squeeze_days": 1479,
       "expected_overlap": 1479,
-      "overlap_frac": 0.9804
+      "overlap_frac": 0.9804,
+      "sha256_bars": "c6bb9c556c75e17cdaf6da8d6aebcb9adf7ff07d71fcc05799848c81ddca7061",
+      "sha256_daily": "8f35771dcb1015f78907bc113027a91f06400b7d808f1479f9b70331013a58eb"
     },
     {
       "symbol": "TLMUSDT",
@@ -1267,7 +1418,9 @@
       "tech_days": 1969,
       "squeeze_days": 1634,
       "expected_overlap": 1634,
-      "overlap_frac": 0.9823
+      "overlap_frac": 0.9823,
+      "sha256_bars": "21772c50b8f21b166cba5796008a8e65c174d64dfa0eb0a84d07e92f71b0f56a",
+      "sha256_daily": "d814815c0f12d4ca666e358e6ad8428462a94a9d801a5569cc5edc3540c334b9"
     },
     {
       "symbol": "ICPUSDT",
@@ -1283,7 +1436,9 @@
       "tech_days": 1936,
       "squeeze_days": 1529,
       "expected_overlap": 1529,
-      "overlap_frac": 0.981
+      "overlap_frac": 0.981,
+      "sha256_bars": "bf2556a01fae2fc43f65e53093ac6f85799f92aaaa86ef1851deeabaaf82ddbc",
+      "sha256_daily": "d482cdeaec01d150aa67dced2256eb93ef3768ef337727b6a5091ffc61601b97"
     },
     {
       "symbol": "KNCUSDT",
@@ -1299,7 +1454,9 @@
       "tech_days": 1857,
       "squeeze_days": 2233,
       "expected_overlap": 1857,
-      "overlap_frac": 0.9655
+      "overlap_frac": 0.9655,
+      "sha256_bars": "5ab92c9c804bc743a9119bce029da689f1f27d8761d885ecd886e1094e3e5fce",
+      "sha256_daily": "05a7af8d40814fa780b0fb78188bf7c4b3d771e6a2948d3ba8aca1fd597545af"
     },
     {
       "symbol": "ENSUSDT",
@@ -1315,7 +1472,9 @@
       "tech_days": 1753,
       "squeeze_days": 1632,
       "expected_overlap": 1632,
-      "overlap_frac": 0.9822
+      "overlap_frac": 0.9822,
+      "sha256_bars": "960f92b98ec32d36772779df2c959fcf67ac1d1d2e640e2e4833899363baa20e",
+      "sha256_daily": "271bda186e99e4c1ce8286bf4763e7a5452c65a812b8d8890082efb34ba85446"
     },
     {
       "symbol": "BICOUSDT",
@@ -1331,7 +1490,9 @@
       "tech_days": 1731,
       "squeeze_days": 1597,
       "expected_overlap": 1597,
-      "overlap_frac": 0.9818
+      "overlap_frac": 0.9818,
+      "sha256_bars": "2106b2945a576358e4189ace6566e7312905989a2b612c8d5c09db974b7c98e0",
+      "sha256_daily": "84235e4cc573b26a0743651268bee478ee0e7c4e63b986d3a8b78a299690ef08"
     },
     {
       "symbol": "VOXELUSDT",
@@ -1347,7 +1508,9 @@
       "tech_days": 1718,
       "squeeze_days": 1603,
       "expected_overlap": 1603,
-      "overlap_frac": 0.9819
+      "overlap_frac": 0.9819,
+      "sha256_bars": "925ceaa95004a49fe2d511c63de2dfd21b95940c4909ec833fe610846276b756",
+      "sha256_daily": "3eedfc6020477fa6e29eae22e074e93dfff32676290d580c3c0db1150a34a1a4"
     },
     {
       "symbol": "TUSDT",
@@ -1363,7 +1526,9 @@
       "tech_days": 1660,
       "squeeze_days": 1528,
       "expected_overlap": 1528,
-      "overlap_frac": 0.981
+      "overlap_frac": 0.981,
+      "sha256_bars": "56b59ad2cf3a1384d783ee336bd9c31fd409e776061a2438f7f4d97f960a0585",
+      "sha256_daily": "0d7b9babe8d0f0e7f1c72b11970ba95191f543fcac64346ba84ec2aeeecf8b61"
     },
     {
       "symbol": "OPUSDT",
@@ -1379,7 +1544,9 @@
       "tech_days": 1628,
       "squeeze_days": 1527,
       "expected_overlap": 1527,
-      "overlap_frac": 0.981
+      "overlap_frac": 0.981,
+      "sha256_bars": "f8d7dd1e87d2249102a1592d2a652cf8b8f7bcfdce8ab33dc11347d822b46046",
+      "sha256_daily": "4562fc1e70661df80941b36da85834f8c8919d55a51e713720ef95795830cd0b"
     }
   ]
 }

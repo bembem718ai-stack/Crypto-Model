@@ -44,6 +44,7 @@ tls.enable(verbose=True)
 
 import pandas as pd             # noqa: E402
 import pipeline as p            # noqa: E402
+import freeze_hash as fz       # noqa: E402
 import signal_engines as cf     # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -199,6 +200,11 @@ def main():
             keep = [c for c in SLIM_COLS if c in merged.columns]
             merged[keep].to_csv(os.path.join(OUT, b + "_merged.csv.gz"),
                                 compression="gzip")
+            # HASH AT FREEZE TIME, right after both writes. See
+            # research/freeze_hash.py: a manifest without hashes records
+            # what a file was supposed to contain, not what it does.
+            fz.hash_into(rec, OUT, [("bars", b + "_4h.csv.gz"),
+                                    ("daily", b + "_merged.csv.gz")])
             print("      ok  4h=%d  daily=%d  %s -> %s  overlap=%.0f%%"
                   % (rec["bars_4h"], rec["daily_rows"], rec["daily_first"],
                      rec["daily_last"], 100 * rec["overlap_frac"]))
@@ -218,6 +224,7 @@ def main():
                      "overlap_min_frac": OVERLAP_MIN_FRAC,
                      "n_requested": len(syms)},
            "tickers": recs}
+    fz.stamp(man["_meta"])      # hashed_at = today, hashed_at_freeze = True
     with open(os.path.join(OUT, "MANIFEST.json"), "w", encoding="utf-8") as f:
         json.dump(man, f, indent=2)
 

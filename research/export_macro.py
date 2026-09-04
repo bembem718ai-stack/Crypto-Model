@@ -44,12 +44,10 @@ DGS10_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10"
 TIMEOUT = 60
 
 
-def sha256(path):
-    h = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
+# ONE IMPLEMENTATION, shared with every other freeze. This function used
+# to be copied verbatim in three export scripts; research/freeze_hash.py is
+# now the single copy and the standard for all of them.
+from freeze_hash import sha256          # noqa: E402,F401
 
 
 def fetch_stablecoin_supply():

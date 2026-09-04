@@ -30,6 +30,7 @@ tls.enable(verbose=True)
 
 import pipeline as p          # noqa: E402
 import signal_engines as cf   # noqa: E402
+import freeze_hash as fz      # noqa: E402
 
 import argparse                                       # noqa: E402
 
@@ -82,6 +83,12 @@ for t in TICKERS:
                   "bars_first": str(bars.index.min()),
                   "bars_last": str(bars.index.max()),
                   "bars_years": round((bars.index.max() - bars.index.min()).days / 365.25, 2)}
+        # HASH AT FREEZE TIME. Row counts and spans say what the file was
+        # SUPPOSED to contain; two files can agree on both and differ in
+        # every price. Taken here, right after the write, so the hash
+        # attests to what was actually frozen rather than to whatever the
+        # file holds whenever someone thinks to check.
+        fz.hash_into(man[t], "data", [("bars", t + "_" + INTERVAL + ".csv")])
         continue
 
     merged = p.run_backtest(t, period=PERIOD, squeeze_bars=N)
@@ -100,7 +107,10 @@ for t in TICKERS:
         "daily_years": round((merged.index.max() - merged.index.min()).days / 365.25, 2),
         "directions": {k: int(v) for k, v in merged["direction"].value_counts().to_dict().items()},
     }
+    fz.hash_into(man[t], "data", [("bars", t + "_" + INTERVAL + ".csv"),
+                                  ("daily", t + "_merged.csv")])
 
+fz.stamp(man["_meta"])          # hashed_at = today, hashed_at_freeze = True
 MANIFEST_NAME = "MANIFEST.json" if INTERVAL == "4h" else "MANIFEST_%s.json" % INTERVAL
 with open("data/" + MANIFEST_NAME, "w", encoding="utf-8") as f:
     json.dump(man, f, indent=2)

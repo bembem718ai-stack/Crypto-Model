@@ -9,7 +9,7 @@ Repo is PUBLIC: `bembem718ai-stack/Crypto-Model`.
 $py = "C:\Users\gubby\AppData\Local\Programs\Python\Python312\python.exe"
 $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 
-& $py -m pytest test_signals.py -q        # 545 passed + 1 skipped, must stay green
+& $py -m pytest test_signals.py -q        # 623 passed + 1 skipped, must stay green
 & $py audit.py --offline                  # structural health, seconds, no network
 & $py audit.py BTC ETH SOL --years 4      # full audit, 10-40 min
 & $py pipeline.py run BTC                 # live signal — COSTS 1 ADANOS REQUEST
@@ -39,7 +39,7 @@ Four core files plus the audit, and two directories that support research:
   every day, which is the precondition that keeps the change reversible.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 612 tests covering all decision logic.
+- `test_signals.py` — 623 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
 - `research/premia.py` — **#257 THE PREMIA INSTRUMENT.** Descriptive, in
   the #249 style: no hypotheses, no verdicts. Measures crypto variance
@@ -56,6 +56,13 @@ Four core files plus the audit, and two directories that support research:
   recording bar counts, last bar, and the direction mix. Written by
   `export_data.py` (`BINANCE_REGION=US`). Research reads these files
   instead of the network, so a result can be re-run bit-for-bit later.
+  **Every manifest records a sha256 per frozen file** -- row counts and
+  spans say what a file was SUPPOSED to hold, and two files can agree on
+  both while differing in every price. `research/freeze_hash.py` is the
+  one implementation, called at freeze time by every export script, and
+  `_meta.hashed_at_freeze` distinguishes a hash taken at the freeze from
+  one retrofitted later. The three core manifests were retrofitted
+  2026-09-02 and say so.
 - `data/derivatives/` — positioning and funding history collected daily by
   `research/collect_derivs.py` (`derivs-collect.yml`). SIX sources: Kraken
   funding, **Kraken tickers** (OI / mark / index / predicted funding, all

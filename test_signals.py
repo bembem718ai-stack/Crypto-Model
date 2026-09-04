@@ -5903,3 +5903,137 @@ class TestTransparencyPostWithPremia:
         assert "PRICES OBSERVED IN THE MARKET" in c
         assert "adds NO SUPPORTED entry" in c
         assert "zero supported edge claims" in c.lower()
+
+
+# ======================================================================
+# FROZEN-DATASET INTEGRITY — every manifest hashes what it froze.
+#
+# A manifest recording row counts and spans says what a file was SUPPOSED
+# to contain. Two files can agree on 15,177 rows spanning 2019-09-23 to
+# 2026-08-27 and differ in every price. These tests are the check that
+# the frozen data has not moved under the results computed from it, and
+# hashing the whole dataset costs ~0.05s, so there is no reason to sample.
+# ======================================================================
+
+class TestFrozenDatasetHashes:
+
+    def _fz(self):
+        import importlib
+        rd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "research")
+        if rd not in sys.path:
+            sys.path.insert(0, rd)
+        return importlib.import_module("freeze_hash")
+
+    def _man(self, path):
+        import json
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+
+    # ---- every manifest carries hashes -------------------------------
+    def test_all_five_manifests_record_hashes(self):
+        for path in ("data/MANIFEST.json", "data/MANIFEST_1h.json",
+                     "data/basket/MANIFEST.json",
+                     "data/equities/MANIFEST_equities.json",
+                     "data/macro/MANIFEST_macro.json"):
+            raw = open(path, encoding="utf-8").read()
+            assert "sha256" in raw, path + " records no hash"
+
+    def test_core_manifests_stamp_when_they_were_hashed(self):
+        for path in ("data/MANIFEST.json", "data/MANIFEST_1h.json",
+                     "data/basket/MANIFEST.json"):
+            meta = self._man(path)["_meta"]
+            assert "hashed_at" in meta, path
+            assert "hashed_at_freeze" in meta, path
+            # These three were hashed AFTER their freeze, and the manifest
+            # must say so -- a retrofitted hash attests to the file's
+            # content at that date, not at freeze time.
+            assert meta["hashed_at_freeze"] is False, path
+            assert meta["hashed_at"] == "2026-09-02", path
+            assert "AFTER the freeze" in meta["hashed_note"], path
+
+    # ---- the hashes are CORRECT --------------------------------------
+    def test_core_4h_hashes_match_the_files(self):
+        fz = self._fz()
+        m = self._man("data/MANIFEST.json")
+        n = 0
+        for t in [k for k in m if not k.startswith("_")]:
+            assert m[t]["sha256_bars"] == fz.sha256("data/%s_4h.csv" % t), t
+            assert m[t]["sha256_daily"] == fz.sha256("data/%s_merged.csv" % t), t
+            n += 2
+        assert n == 6
+
+    def test_core_1h_hashes_match_the_files(self):
+        fz = self._fz()
+        m = self._man("data/MANIFEST_1h.json")
+        n = 0
+        for t in [k for k in m if not k.startswith("_")]:
+            assert m[t]["sha256_bars"] == fz.sha256("data/%s_1h.csv" % t), t
+            n += 1
+        assert n == 3
+
+    def test_basket_hashes_match_every_ok_ticker(self):
+        fz = self._fz()
+        m = self._man("data/basket/MANIFEST.json")
+        ok = [r for r in m["tickers"] if r.get("status") == "ok"]
+        assert len(ok) == 82
+        for r in ok:
+            b = r["base"]
+            assert r["sha256_bars"] == fz.sha256(
+                "data/basket/%s_4h.csv.gz" % b), b
+            assert r["sha256_daily"] == fz.sha256(
+                "data/basket/%s_merged.csv.gz" % b), b
+
+    def test_failed_basket_tickers_carry_no_hash(self):
+        """A failed ticker has a record and no files. Recording a null
+        would imply a file that ought to exist."""
+        m = self._man("data/basket/MANIFEST.json")
+        for r in m["tickers"]:
+            if r.get("status") != "ok":
+                assert "sha256_bars" not in r, r.get("base")
+
+    def test_equities_and_macro_hashes_match(self):
+        fz = self._fz()
+        e = self._man("data/equities/MANIFEST_equities.json")
+        for tk, rec in e["etfs"].items():
+            f = os.path.join("data", "equities", "%s.csv" % tk)
+            if os.path.exists(f):
+                assert rec["sha256"] == fz.sha256(f), tk
+        mm = self._man("data/macro/MANIFEST_macro.json")
+        for name, rec in mm["series"].items():
+            f = os.path.join("data", "macro", "%s.csv" % name)
+            assert rec["sha256"] == fz.sha256(f), name
+
+    # ---- the standard holds for FUTURE freezes ------------------------
+    def test_export_scripts_hash_at_freeze_time(self):
+        """The retrofit is worth little if the next freeze forgets."""
+        for path in ("export_data.py", "research/basket_data.py"):
+            src = open(path, encoding="utf-8").read()
+            assert "freeze_hash" in src, path + " does not import the helper"
+            assert "hash_into(" in src, path + " never hashes"
+            assert "fz.stamp(" in src, path + " never stamps hashed_at"
+
+    def test_there_is_one_sha256_implementation(self):
+        """It used to be copied verbatim into three export scripts."""
+        import importlib
+        fz = self._fz()
+        for mod in ("export_macro", "export_equities"):
+            m = importlib.import_module(mod)
+            assert m.sha256 is fz.sha256, mod + " has its own copy"
+        for path in ("research/export_macro.py", "research/export_equities.py",
+                     "export_data.py", "research/basket_data.py"):
+            src = open(path, encoding="utf-8").read()
+            assert "def sha256(" not in src, path + " redefines sha256"
+
+    def test_sha256_or_none_survives_a_missing_file(self):
+        fz = self._fz()
+        assert fz.sha256_or_none("data/does_not_exist.csv") is None
+        assert fz.sha256_or_none("data/BTC_4h.csv") is not None
+
+    def test_stamp_marks_freeze_time_when_no_date_given(self):
+        fz = self._fz()
+        meta = fz.stamp({})
+        assert meta["hashed_at_freeze"] is True
+        assert len(meta["hashed_at"]) == 10
+        meta2 = fz.stamp({}, hashed_at="2020-01-01", note="retrofit")
+        assert meta2["hashed_at_freeze"] is False
+        assert meta2["hashed_note"] == "retrofit"
