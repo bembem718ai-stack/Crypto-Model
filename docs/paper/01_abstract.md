@@ -1,0 +1,4 @@
+256 pre-registered programs tested a retail crypto trading system across all seven axes.
+Through the testing, there were zero supported edge claims. No arrangement of any public price and volume data could beat the placebo's random entry through identical rules.
+The main contribution of this project isn't the strategy, rather it's the audit methodology: pre-registration, and the placebo construction with the four fidelity checks, as well as the six documented instrument defects that were caught before anything was produced.
+However, after the final decision that there was no edge to be found based on public data - the model is running a check where three sealed programs are collecting data, with their rules being pre-written and locked before the data even existed, and therefore the rules cannot be tuned to fit the results.
