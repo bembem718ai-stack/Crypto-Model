@@ -1,12 +1,12 @@
 {
   "BTC": {
-    "fetched_at": "2026-10-18T22:07:32.669689+00:00",
+    "fetched_at": "2026-10-19T18:04:09.141190+00:00",
     "gate": {
       "decision": "PROCEED",
       "gate_multiplier": 1.0,
-      "reason": "Sentiment (-0.014) across 8744 mentions is neutral or positive \u2014 no gating applied.",
-      "sentiment_mentions": 8744,
-      "sentiment_score": -0.014
+      "reason": "Sentiment (-0.011) across 7547 mentions is neutral or positive \u2014 no gating applied.",
+      "sentiment_mentions": 7547,
+      "sentiment_score": -0.011
     }
   }
 }
