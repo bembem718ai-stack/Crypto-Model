@@ -9,7 +9,7 @@ Repo is PUBLIC: `bembem718ai-stack/Crypto-Model`.
 $py = "C:\Users\gubby\AppData\Local\Programs\Python\Python312\python.exe"
 $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 
-& $py -m pytest test_signals.py -q        # 654 passed + 1 skipped on Windows, must stay green (3 hash tests FAIL on Linux -- see Known open issues)
+& $py -m pytest test_signals.py -q        # 657 passed + 1 skipped, must stay green
 & $py audit.py --offline                  # structural health, seconds, no network
 & $py audit.py BTC ETH SOL --years 4      # full audit, 10-40 min
 & $py pipeline.py run BTC                 # live signal — COSTS 1 ADANOS REQUEST
@@ -40,7 +40,7 @@ Four core files plus the audit, and two directories that support research:
   every day, which is the precondition that keeps the change reversible.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 655 tests covering all decision logic.
+- `test_signals.py` — 658 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
 - `research/premia.py` — **#257 THE PREMIA INSTRUMENT.** Descriptive, in
   the #249 style: no hypotheses, no verdicts. Measures crypto variance
@@ -63,7 +63,10 @@ Four core files plus the audit, and two directories that support research:
   one implementation, called at freeze time by every export script, and
   `_meta.hashed_at_freeze` distinguishes a hash taken at the freeze from
   one retrofitted later. The three core manifests were retrofitted
-  2026-09-02 and say so.
+  2026-09-02 and say so; the 4h, 1h and macro manifests were RE-STAMPED
+  2026-11-18 to the committed (LF) bytes and say that too. `data/**` is
+  `-text` in `.gitattributes`: stored and checked out byte-for-byte, so
+  a hash taken on any platform is a hash of the commit.
 - `data/derivatives/` — positioning and funding history collected daily by
   `research/collect_derivs.py` (`derivs-collect.yml`). SIX sources: Kraken
   funding, **Kraken tickers** (OI / mark / index / predicted funding, all
@@ -709,20 +712,20 @@ public until all three are done.**
     `!cancelled()` so a red step keeps the others' work.
   - **Test the entry point the workflow calls, with the workflow's
     flags.** Every test passed for 78 days because none of them did.
-- **Three frozen-dataset hash tests fail on Linux (OPEN, decision pending,
-  2026-11-19).** `TestFrozenDatasetHashes::test_core_4h_hashes_match_the_files`,
-  `test_core_1h_hashes_match_the_files` and
-  `test_equities_and_macro_hashes_match` pass on this Windows machine and
-  fail on the runner, and have since 2026-09-14. Cause, measured:
-  `core.autocrlf=true` with no `.gitattributes`, so the manifests record
-  the sha256 of the CRLF working copy (`data/BTC_4h.csv`: 992,804 bytes,
-  `9d933a2e…`) while the committed blob is LF (977,626 bytes, `3ac8b045…`).
-  **The recorded hashes attest to bytes that exist only on a Windows
-  checkout.** The data is not in doubt -- same rows, different line
-  endings -- but the attestation is not reproducible from the repository.
-  Fixing it means re-stamping hashes in frozen manifests, which is a
-  decision, not a patch. The audit now NAMES failing tests in its detail
-  (it reported bare counts for nine weeks).
+- **Frozen-data hashes re-stamped 2026-11-18 — RESOLVED, a
+  reproducibility finding, NOT an instrument defect.** Eleven manifest
+  hashes (core 4h, merged, 1h; macro) had been taken on this Windows
+  machine under `core.autocrlf=true`, over CRLF bytes that exist in no
+  commit, so three `TestFrozenDatasetHashes` tests failed on the Linux
+  runner from 2026-09-14. Content equivalence was proven per file
+  (CRLF->LF of the hashed bytes == the committed blob) before anything was
+  re-stamped; **no result moved.** `.gitattributes` now carries
+  `data/** -text`. Basket and equities were never affected (they freeze
+  `.csv.gz`). See the REPRODUCIBILITY FINDING in `docs/cleanroom.md`.
+  **Standing rule: a recorded hash means the COMMITTED bytes** — the test
+  hashes `git show HEAD:<path>`, not the working file. The audit NAMES
+  failing and skipped tests; it reported bare counts for nine weeks.
+  `research/paper_facts_s3.md` still quotes the pre-re-stamp hashes.
 - **4-year degradation (unresolved).** Extending the backtest to ~4 years
   showed BUY win rate falling toward 50% and SELL expectancy flipping sign
   over 2022–2026. The 2024–2026 validation window may simply have been

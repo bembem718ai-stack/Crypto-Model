@@ -1,0 +1,7 @@
+# Frozen and collected data is stored and checked out BYTE-FOR-BYTE.
+#
+# Without this, core.autocrlf rewrites line endings on a Windows checkout,
+# so a sha256 taken there covers bytes that exist in no commit. Eleven
+# manifest hashes were exactly that until 2026-11-18 (docs/cleanroom.md,
+# REPRODUCIBILITY FINDING). A content hash must mean the committed bytes.
+data/** -text

@@ -6,9 +6,9 @@
     "klines_path": "/api/v3/klines",
     "target_4h_bars": 20000,
     "daily_period": "max",
-    "hashed_at": "2026-09-02",
+    "hashed_at": "2026-11-18",
     "hashed_at_freeze": false,
-    "hashed_note": "hashes computed 2026-09-02, AFTER the freeze -- they attest to the files' content at that date, not at freeze time. Verified via git log that no commit touched these files between their freeze commit and the hashing. Every freeze from this date records hashes at freeze time (research/freeze_hash.py)."
+    "hashed_note": "hashes RE-STAMPED 2026-11-18 to the COMMITTED bytes (LF). The 2026-09-02 hashes were taken from a Windows working copy under core.autocrlf=true with no .gitattributes, so they covered CRLF bytes that exist in no commit and could not be reproduced from the repository. Content equivalence was verified per file before re-stamping: sha256 of the hashed bytes with CRLF converted to LF equals sha256 of the committed blob. Still a retrofit, AFTER the freeze -- it attests to the files' content at this date, not at freeze time. data/** is now -text. See docs/cleanroom.md, REPRODUCIBILITY FINDING 2026-11-18."
   },
   "BTC": {
     "bars_4h": 15177,
@@ -26,8 +26,8 @@
       "STRONG_SELL": 258,
       "STRONG_BUY": 30
     },
-    "sha256_bars": "9d933a2e3449c50f97eaa3cdc2d25a12769ad97a48014f101381bbabd36dc01b",
-    "sha256_daily": "32824b996bf7e03852608b542d3f898e517dfd1c28d084ce07284ff41ddf8fcb"
+    "sha256_bars": "3ac8b045fa581b748b6938937c0b149cdea1850580775bac5d7bf46f171bbc5a",
+    "sha256_daily": "148c9cd1dfafbc268cc97b3d17f058db81474233574a8b972daaf2172f54907d"
   },
   "ETH": {
     "bars_4h": 15177,
@@ -45,8 +45,8 @@
       "STRONG_SELL": 260,
       "STRONG_BUY": 21
     },
-    "sha256_bars": "88b02417b79cd991eadb313b994b75bec377fa3f099f3269def9e91abf74cd42",
-    "sha256_daily": "d0a50276665e2fc0671dfe503c7992f909c54639d440966ba664221f1ec31a17"
+    "sha256_bars": "7d91c1774da47d06921015eedfcf908c62d4cc68689534b2d4af8c249850e9c2",
+    "sha256_daily": "ef529a9aaf8f9deb0fb22b1214ac3d4e5eeba11eb6d2113047f27deb389435f1"
   },
   "SOL": {
     "bars_4h": 13014,
@@ -64,7 +64,7 @@
       "STRONG_SELL": 213,
       "STRONG_BUY": 8
     },
-    "sha256_bars": "23a5bbc412a5cff4ed189f780704d8810d221181ffb8e7b19ba187d5dc3300bc",
-    "sha256_daily": "3944ce19a13de7175f654b860297983f24560a9f7ec645826fcf9ba3f39158b5"
+    "sha256_bars": "c49e2c169fcd9c88be586816acd8c0b3d5220fe0d46fbcaf8479a845c6fec7a2",
+    "sha256_daily": "9cba806c1f79ab4a602024f5a9a7a0c13d26a039082873d3d347a8763692de1b"
   }
 }

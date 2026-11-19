@@ -7307,3 +7307,107 @@ computed, printed or read. SHADOW-EVAL's rules are unchanged.
 - **The project still holds ZERO supported edge claims.** The withdrawn
   +1.00R was never one — but it was a published number, it was wrong, and it
   was wrong in the flattering direction.
+
+---
+
+# REPRODUCIBILITY FINDING — eleven manifest hashes covered bytes that are in no commit
+
+**RECORDED 2026-11-18. This is NOT an instrument defect and is not numbered
+as one.** No computation was wrong, no number was produced from wrong data,
+and **no result moved.** What failed was an attestation: a sha256 that could
+not be reproduced from the repository on any machine but the one that wrote
+it. Recorded under the routing rule's first branch — fixed, re-stamped,
+noted — and no sealed rule is touched.
+
+## What was found
+
+`TestFrozenDatasetHashes::test_core_4h_hashes_match_the_files`,
+`test_core_1h_hashes_match_the_files` and
+`test_equities_and_macro_hashes_match` passed on the operator's Windows
+machine and failed on the Linux runner from 2026-09-14. The weekly audit
+reported the count every Monday and never the names; they were first named
+on 2026-11-19, by the run that followed the change making the audit print
+them.
+
+**Cause, measured.** `core.autocrlf=true` on the Windows machine and no
+`.gitattributes` in the repository. Git stores the CSVs with LF and rewrites
+them to CRLF on a Windows checkout. `freeze_hash.sha256` reads the working
+file, so every hash taken on that machine covered the CRLF rendering:
+
+| | `data/BTC_4h.csv` | bytes | sha256 |
+|---|---|---|---|
+| Windows working copy | CRLF | 992,804 | `9d933a2e…` (what the manifest recorded) |
+| committed blob | LF | 977,626 | `3ac8b045…` |
+
+The difference is 15,178 bytes: one `\r` per line.
+
+## Equivalence, proven per file BEFORE any re-stamp
+
+For each affected file: (i) the recorded hash equals sha256 of the CRLF
+working copy, which identifies the cause; and (ii) sha256 of those same bytes
+with CRLF converted to LF equals sha256 of the committed blob, which proves
+the content is the same. Both held for all eleven. Had either failed for any
+file the re-stamp would not have run.
+
+| file | old hash (CRLF working copy) | new hash (committed bytes) | equivalent |
+|---|---|---|---|
+| `data/BTC_4h.csv` | `9d933a2e3449…` | `3ac8b045fa58…` | YES |
+| `data/BTC_merged.csv` | `32824b996bf7…` | `148c9cd1dfaf…` | YES |
+| `data/BTC_1h.csv` | `ae719f713351…` | `c8617c336f1b…` | YES |
+| `data/ETH_4h.csv` | `88b02417b79c…` | `7d91c1774da4…` | YES |
+| `data/ETH_merged.csv` | `d0a50276665e…` | `ef529a9aaf8f…` | YES |
+| `data/ETH_1h.csv` | `38a483bc5269…` | `45248151a28c…` | YES |
+| `data/SOL_4h.csv` | `23a5bbc412a5…` | `c49e2c169fcd…` | YES |
+| `data/SOL_merged.csv` | `3944ce19a13d…` | `9cba806c1f79…` | YES |
+| `data/SOL_1h.csv` | `5b8382a38a14…` | `5d0c6a3281d3…` | YES |
+| `data/macro/dgs10.csv` | `e25385403d61…` | `5ee63f1c364e…` | YES |
+| `data/macro/stablecoin_supply.csv` | `0a051a5e6f8f…` | `d0c4a09fdd73…` | YES |
+
+The same check was run on all 23 tracked files under `data/` that git was
+converting (the eleven above, five manifests and seven derivatives CSVs
+that carry no recorded hash). All 23 were equivalent, and none contained a
+lone carriage return.
+
+**Any earlier text in this repository that quotes one of the hashes in the
+left-hand column is quoting the Windows rendering of the same content.** The
+table above is the mapping.
+
+## What was done
+
+- **`.gitattributes`: `data/** -text`.** Files under `data/` are now stored
+  and checked out byte-for-byte on every platform, so a hash taken anywhere
+  is a hash of the committed bytes.
+- **The eleven hashes were re-stamped to the committed bytes** as a dated
+  retrofit: `hashed_at: 2026-11-18`, `hashed_at_freeze: false`, with a note
+  naming the cause. `data/MANIFEST.json` and `data/MANIFEST_1h.json` were
+  already retrofits (2026-09-02) and remain so. **`MANIFEST_macro.json` loses
+  its hashed-at-freeze status**: its hashes were taken at the freeze and were
+  correct for the file as exported, but the re-stamped values were not. Its
+  `frozen_at` is untouched — the freeze did not move, the series did not
+  change, and MACRO-OVERLAY (#251-#256) read the same rows.
+- **A test now hashes the committed blob** (`git show HEAD:<path>`) rather
+  than the working file, for all 32 recorded hashes outside the basket.
+
+## What was NOT affected, and one check that had been testing nothing
+
+- **`data/basket/` (82 tickers) and `data/equities/` (21 ETFs) were never
+  affected.** Both freeze `.csv.gz`, which git treats as binary and never
+  converts, and both manifests hash the `.gz` itself. Their recorded hashes
+  were reproducible throughout, which is why the basket test passed on the
+  runner while the others failed. The basket's 2026-09-02 stamp stands.
+- **The equities half of `test_equities_and_macro_hashes_match` verified
+  zero files.** It looked for `<ticker>.csv` behind an `if os.path.exists`;
+  the frozen files are `<ticker>.csv.gz`, so the condition was false on every
+  machine and the loop body never ran. The hashes were right; nothing was
+  checking them. Fixed to hash the `.gz` and to require all 21.
+
+## Why this is not a defect in the sense the seven are
+
+Every research program read these files through pandas, which parses CRLF
+and LF to the same frame. The rows the Windows machine computed on are the
+rows in the commit; the equivalence table is the proof. What the finding
+does cost is narrower and real: for 2.5 months the repository's claim that a
+frozen result "can be re-run bit-for-bit" rested on hashes nobody else could
+have confirmed. **A content hash that depends on the checkout platform is
+not a content hash.** It is recorded so the standard for every future freeze
+is explicit: hash the committed bytes.

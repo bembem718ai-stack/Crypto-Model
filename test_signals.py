@@ -6042,17 +6042,76 @@ class TestFrozenDatasetHashes:
             assert "sha256" in raw, path + " records no hash"
 
     def test_core_manifests_stamp_when_they_were_hashed(self):
-        for path in ("data/MANIFEST.json", "data/MANIFEST_1h.json",
-                     "data/basket/MANIFEST.json"):
+        # These three were hashed AFTER their freeze, and the manifest must
+        # say so -- a retrofitted hash attests to the file's content at that
+        # date, not at freeze time.
+        #
+        # The 4h and 1h manifests were RE-STAMPED 2026-11-18: their
+        # 2026-09-02 hashes had been taken on a Windows checkout under
+        # core.autocrlf, i.e. over CRLF bytes that exist in no commit. The
+        # basket manifest hashes .csv.gz files, which git never converts, so
+        # its 2026-09-02 stamp stands.
+        for path, when in (("data/MANIFEST.json", "2026-11-18"),
+                           ("data/MANIFEST_1h.json", "2026-11-18"),
+                           ("data/basket/MANIFEST.json", "2026-09-02")):
             meta = self._man(path)["_meta"]
-            assert "hashed_at" in meta, path
-            assert "hashed_at_freeze" in meta, path
-            # These three were hashed AFTER their freeze, and the manifest
-            # must say so -- a retrofitted hash attests to the file's
-            # content at that date, not at freeze time.
             assert meta["hashed_at_freeze"] is False, path
-            assert meta["hashed_at"] == "2026-09-02", path
+            assert meta["hashed_at"] == when, path
             assert "AFTER the freeze" in meta["hashed_note"], path
+            if when == "2026-11-18":
+                assert "CRLF" in meta["hashed_note"], path
+                assert "autocrlf" in meta["hashed_note"], path
+
+    def test_macro_manifest_discloses_its_retrofit(self):
+        """Its hashes WERE taken at freeze -- over the CRLF file as exported
+        on Windows. Re-stamped to the committed bytes, so it may no longer
+        claim hashed-at-freeze."""
+        m = self._man("data/macro/MANIFEST_macro.json")
+        assert m["hashed_at"] == "2026-11-18"
+        assert m["hashed_at_freeze"] is False
+        assert "CRLF" in m["hashed_note"]
+        assert m["frozen_at"].startswith("2026-09-01"), "the FREEZE did not move"
+
+    # ---- a hash must mean the COMMITTED bytes -------------------------
+    def test_data_is_exempt_from_line_ending_conversion(self):
+        """The cause, pinned. Under core.autocrlf with no .gitattributes a
+        Windows checkout rewrites every LF in data/ to CRLF, so a sha256
+        taken there matches no commit. Three hash tests passed on Windows
+        and failed on the Linux runner for nine weeks because of it."""
+        rules = [l.split() for l in open(".gitattributes", encoding="utf-8")
+                 if l.strip() and not l.startswith("#")]
+        assert ["data/**", "-text"] in rules
+
+    def test_every_recorded_hash_is_reproducible_from_the_commit(self):
+        """Hash the BLOB, not the working file: the working file is what a
+        platform made of the commit, and that is exactly what went wrong."""
+        import subprocess
+
+        def blob_sha(path):
+            r = subprocess.run(["git", "show", "HEAD:" + path],
+                               capture_output=True)
+            if r.returncode != 0:
+                pytest.skip("no git history available in this checkout")
+            import hashlib
+            return hashlib.sha256(r.stdout).hexdigest()
+
+        n = 0
+        m = self._man("data/MANIFEST.json")
+        for t in [k for k in m if not k.startswith("_")]:
+            assert m[t]["sha256_bars"] == blob_sha("data/%s_4h.csv" % t), t
+            assert m[t]["sha256_daily"] == blob_sha("data/%s_merged.csv" % t), t
+            n += 2
+        m = self._man("data/MANIFEST_1h.json")
+        for t in [k for k in m if not k.startswith("_")]:
+            assert m[t]["sha256_bars"] == blob_sha("data/%s_1h.csv" % t), t
+            n += 1
+        for name, rec in self._man("data/macro/MANIFEST_macro.json")["series"].items():
+            assert rec["sha256"] == blob_sha("data/macro/%s.csv" % name), name
+            n += 1
+        for tk, rec in self._man("data/equities/MANIFEST_equities.json")["etfs"].items():
+            assert rec["sha256"] == blob_sha("data/equities/%s.csv.gz" % tk), tk
+            n += 1
+        assert n == 6 + 3 + 2 + 21
 
     # ---- the hashes are CORRECT --------------------------------------
     def test_core_4h_hashes_match_the_files(self):
@@ -6097,10 +6156,14 @@ class TestFrozenDatasetHashes:
     def test_equities_and_macro_hashes_match(self):
         fz = self._fz()
         e = self._man("data/equities/MANIFEST_equities.json")
+        # THE FROZEN FILES ARE .csv.gz. This loop used to look for
+        # "<ticker>.csv" behind an `if os.path.exists`, found none of them
+        # on any machine, and so verified ZERO equities hashes while
+        # passing. The hashes themselves were always right.
+        assert len(e["etfs"]) == 21
         for tk, rec in e["etfs"].items():
-            f = os.path.join("data", "equities", "%s.csv" % tk)
-            if os.path.exists(f):
-                assert rec["sha256"] == fz.sha256(f), tk
+            f = os.path.join("data", "equities", "%s.csv.gz" % tk)
+            assert rec["sha256"] == fz.sha256(f), tk
         mm = self._man("data/macro/MANIFEST_macro.json")
         for name, rec in mm["series"].items():
             f = os.path.join("data", "macro", "%s.csv" % name)

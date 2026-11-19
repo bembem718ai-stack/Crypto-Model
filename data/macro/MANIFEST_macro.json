@@ -15,7 +15,7 @@
       "longest_gap_days": 1,
       "total_missing_days": 0,
       "source_url": "https://stablecoins.llama.fi/stablecoincharts/all",
-      "sha256": "0a051a5e6f8f59143ab630950543f5193d7f9981ed2c8da9f111a6613f356103",
+      "sha256": "d0c4a09fdd73fd182cc700b0e4fd5fa5fe2782035ee44ae029ee9c0f63ca2b6f",
       "columns": [
         "date",
         "total_circulating_usd"
@@ -30,11 +30,14 @@
       "longest_gap_days": 5,
       "total_missing_days": 7465,
       "source_url": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10",
-      "sha256": "e25385403d61c34019e819ee33fb5e0ce22a6dba904f4ccf7e12c14184674a26",
+      "sha256": "5ee63f1c364e06fdc46abe20fc788bcd50ec63facc8d5b3780e30ecf3aba79de",
       "columns": [
         "date",
         "dgs10"
       ]
     }
-  }
+  },
+  "hashed_at": "2026-11-18",
+  "hashed_at_freeze": false,
+  "hashed_note": "hashes RE-STAMPED 2026-11-18 to the COMMITTED bytes (LF). The hashes written at freeze (2026-09-01) were correct for the file as exported on Windows (CRLF); git normalised line endings on commit, so those bytes exist in no commit. Content equivalence was verified per file before re-stamping: sha256 of the hashed bytes with CRLF converted to LF equals sha256 of the committed blob. The series are unchanged and the freeze is unchanged; only the attestation now refers to bytes the repository holds. A retrofit, so hashed_at_freeze is false. See docs/cleanroom.md, REPRODUCIBILITY FINDING 2026-11-18."
 }
