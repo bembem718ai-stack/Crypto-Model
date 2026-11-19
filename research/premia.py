@@ -559,11 +559,26 @@ def basis():
 
         live = (oi == oi and oi > MIN_OI) and (vol == vol and vol > MIN_VOL24H)
         if exp is not None and not live:
+            # SAY WHAT WAS OBSERVED ON THIS ROW. The reason used to read
+            # "mark marked AT index" for every non-live row. That is true of
+            # a bookless instrument (the 8 FI_ rows of 2026-09-01), and it
+            # was printed just the same for FF_ETHUSD_261127 on 2026-11-17,
+            # which had open interest, no trade in 24h, and a mark 8.7 bps
+            # OFF index. The exclusion is right either way -- the liveness
+            # rule is OI > 0 AND vol24h > 0 -- but a stated reason that the
+            # row itself contradicts is not a reason.
+            at_index = bool(mark == index)
+            if at_index:
+                why = ("no book: openInterest=%s vol24h=%s, mark marked AT "
+                       "index" % (oi, vol))
+            else:
+                why = ("not live: openInterest=%s vol24h=%s; mark is %+.4f%% "
+                       "from index, but a quote with no open interest or no "
+                       "trade in 24h is not a measurement"
+                       % (oi, vol, 100.0 * prem))
             out["excluded"].append({
                 "symbol": sym, "expiry": str(exp), "oi": oi, "vol24h": vol,
-                "premium": prem,
-                "why": "no book: openInterest=%s vol24h=%s, mark marked AT "
-                       "index" % (oi, vol)})
+                "premium": prem, "at_index": at_index, "why": why})
             continue
 
         if exp is None:
@@ -637,8 +652,10 @@ def basis():
         "different index values (0.2-1.0 bps apart), and substituting one "
         "for the other moves a 3-day annualised basis by ~8% relative.")
     out["notes"].append(
-        "%d instrument(s) excluded as dead (no book; Kraken marks those AT "
-        "index, which fabricates a 0.0000%% basis)." % len(out["excluded"]))
+        "%d dated instrument(s) excluded by rule, each listed with its own "
+        "reason: not live (no open interest or no trade in 24h -- a bookless "
+        "one is marked AT index, which fabricates a 0.0000%% basis) or "
+        "expiry not in the future." % len(out["excluded"]))
     return out
 
 
@@ -768,7 +785,7 @@ def render(vrp, carry, bas, today):
                     fmt_pct(c["max"], 3)))
         L.append("")
     if bas.get("excluded"):
-        L.append("**Excluded as dead, reported not dropped** — Kraken marks "
+        L.append("**Excluded by rule, reported not dropped** — Kraken marks "
                  "a bookless instrument AT index, fabricating a 0.0000% "
                  "basis:")
         L.append("")

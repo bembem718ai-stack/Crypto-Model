@@ -5734,13 +5734,20 @@ class TestPremiaInstrument:
         why = {r["symbol"]: r["why"] for r in b["excluded"]}
         assert set(why) == {"FI_XBTUSD_260925", "FF_ETHUSD_261127",
                             "FF_XBTUSD_260828"}
-        assert "no book" in why["FI_XBTUSD_260925"]
-        assert "no book" in why["FF_ETHUSD_261127"]
+        # Each reason describes ITS row. "marked AT index" may only be
+        # said of a row whose mark IS at index.
+        assert "marked AT index" in why["FI_XBTUSD_260925"]
+        assert "not live" in why["FF_ETHUSD_261127"]
+        assert "AT index" not in why["FF_ETHUSD_261127"]
+        assert "+0.0866% from index" in why["FF_ETHUSD_261127"]
+        flags = {r["symbol"]: r.get("at_index") for r in b["excluded"]}
+        assert flags["FI_XBTUSD_260925"] is True
+        assert flags["FF_ETHUSD_261127"] is False
         assert "expiry not in the future" in why["FF_XBTUSD_260828"]
         # the fabricated 0.0000% never reaches the table
         assert [r["symbol"] for r in b["dated"]] == ["FF_XBTUSD_261225"]
         assert all(r["premium"] != 0.0 for r in b["dated"])
-        assert "3 instrument(s) excluded" in b["notes"][-1]
+        assert "3 dated instrument(s) excluded by rule" in b["notes"][-1]
 
     def test_no_dead_instrument_reaches_the_real_basis_table(self):
         """The invariant that DOES hold on any snapshot, whatever Kraken
