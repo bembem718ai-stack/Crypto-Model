@@ -6696,3 +6696,42 @@ class TestAuditNamesFailingTests:
     def test_pass_is_unchanged(self, monkeypatch):
         audit, r = self._run(monkeypatch, "....\n4 passed in 0.10s", 0)
         assert r["status"] == audit.PASS and r["detail"] == "4 tests passed"
+
+    # ---- skips are named too -----------------------------------------
+    SKIPS = "\n".join([
+        "..s.s",
+        "=========================== short test summary info ===========================",
+        "SKIPPED [1] test_signals.py:581: live network test; set RUN_LIVE=1",
+        "SKIPPED [4] test_signals.py:691: could not import 'xgboost'",
+    ])
+
+    def test_a_passing_run_still_names_what_it_skipped(self, monkeypatch):
+        """A skipped test did not run. A green row that hides which ones is
+        how the runner carried an unnamed second skip for months."""
+        audit, r = self._run(monkeypatch,
+                             self.SKIPS + "\n3 passed, 5 skipped in 0.10s", 0)
+        assert r["status"] == audit.PASS
+        assert r["detail"].startswith("3 tests passed :: SKIPPED [1]")
+        assert "could not import 'xgboost'" in r["detail"]
+        assert len(r["evidence"]["skipped"]) == 2
+
+    def test_a_failing_run_names_failures_and_skips(self, monkeypatch):
+        out = (self.SKIPS + "\nFAILED test_signals.py::TestA::test_one - x"
+               + "\n1 failed, 2 passed, 5 skipped in 0.10s")
+        audit, r = self._run(monkeypatch, out, 1)
+        assert "TestA::test_one" in r["detail"]
+        assert "RUN_LIVE=1" in r["detail"] and "xgboost" in r["detail"]
+
+    def test_the_audit_asks_pytest_for_skip_reasons(self, monkeypatch):
+        import audit
+        import types
+        seen = {}
+
+        def fake(cmd, **k):
+            seen["cmd"] = cmd
+            return types.SimpleNamespace(stdout="1 passed", stderr="", returncode=0)
+
+        monkeypatch.setattr(audit.subprocess, "run", fake)
+        audit._results.clear()
+        audit.check_test_suite()
+        assert "-rs" in seen["cmd"]

@@ -98,7 +98,11 @@ def check_test_suite():
     """The 190-test suite is the model's load-bearing safety net. Anything
     else in this audit is meaningless if the decision logic is broken."""
     try:
-        proc = subprocess.run([sys.executable, "-m", "pytest", "test_signals.py", "-q"],
+        # -rs: print each SKIPPED test with its reason. A skip is a test
+        # that did not run, and "2 skipped" on the runner against 1 locally
+        # sat in this audit for months with nothing saying which.
+        proc = subprocess.run([sys.executable, "-m", "pytest", "test_signals.py",
+                               "-q", "-rs"],
                               capture_output=True, text=True, timeout=600)
     except (subprocess.TimeoutExpired, FileNotFoundError) as e:
         return record("A. Structural", "Unit test suite", SKIP,
@@ -106,30 +110,36 @@ def check_test_suite():
     tail = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
     m = re.search(r"(\d+) passed", tail)
     n_pass = int(m.group(1)) if m else 0
+    skipped = summary_lines(proc.stdout, ("SKIPPED ",))
+    skips = (" :: " + "; ".join(skipped[:MAX_FAILED_SHOWN])
+             + (f"; … and {len(skipped) - MAX_FAILED_SHOWN} more"
+                if len(skipped) > MAX_FAILED_SHOWN else "")) if skipped else ""
     if proc.returncode == 0:
         return record("A. Structural", "Unit test suite", PASS,
-                      f"{n_pass} tests passed", {"summary": tail})
+                      f"{n_pass} tests passed{skips}",
+                      {"summary": tail, "skipped": skipped})
     # NAME THE FAILURES. This used to report only pytest's last line, so the
     # weekly audit said "3 failed" for nine weeks (2026-09-14 onward) and
     # nothing anywhere said WHICH three -- the runner's log was the only
     # place the names ever existed and it did not keep them. A count nobody
     # can act on is the same buried alarm as DEFECT #7.
-    failed = failed_test_lines(proc.stdout)
+    failed = summary_lines(proc.stdout, ("FAILED ", "ERROR "))
     shown = "; ".join(failed[:MAX_FAILED_SHOWN])
     more = (f"; … and {len(failed) - MAX_FAILED_SHOWN} more"
             if len(failed) > MAX_FAILED_SHOWN else "")
     names = f" :: {shown}{more}" if failed else " :: (no FAILED/ERROR lines in pytest output)"
     return record("A. Structural", "Unit test suite", FAIL,
-                  f"pytest exited {proc.returncode} — {tail}{names}",
-                  {"summary": tail, "failed": failed})
+                  f"pytest exited {proc.returncode} — {tail}{names}{skips}",
+                  {"summary": tail, "failed": failed, "skipped": skipped})
 
 
 MAX_FAILED_SHOWN = 25
 MAX_FAILED_LINE = 220
 
 
-def failed_test_lines(pytest_stdout: str) -> list:
-    """pytest's own `FAILED path::name - reason` / `ERROR ...` summary lines.
+def summary_lines(pytest_stdout: str, prefixes: tuple) -> list:
+    """pytest's own short-summary lines: `FAILED path::name - reason`,
+    `ERROR ...`, and (with -rs) `SKIPPED [n] path:line: reason`.
 
     Trimmed to one bounded line each, and `|` replaced, because the detail
     is rendered into a markdown table row and from there into the weekly
@@ -138,7 +148,7 @@ def failed_test_lines(pytest_stdout: str) -> list:
     out = []
     for line in (pytest_stdout or "").splitlines():
         s = line.strip()
-        if s.startswith("FAILED ") or s.startswith("ERROR "):
+        if s.startswith(prefixes):
             s = s.replace("|", "/")
             out.append(s if len(s) <= MAX_FAILED_LINE else s[:MAX_FAILED_LINE - 1] + "…")
     return out
