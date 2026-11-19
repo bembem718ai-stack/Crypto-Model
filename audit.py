@@ -109,8 +109,39 @@ def check_test_suite():
     if proc.returncode == 0:
         return record("A. Structural", "Unit test suite", PASS,
                       f"{n_pass} tests passed", {"summary": tail})
+    # NAME THE FAILURES. This used to report only pytest's last line, so the
+    # weekly audit said "3 failed" for nine weeks (2026-09-14 onward) and
+    # nothing anywhere said WHICH three -- the runner's log was the only
+    # place the names ever existed and it did not keep them. A count nobody
+    # can act on is the same buried alarm as DEFECT #7.
+    failed = failed_test_lines(proc.stdout)
+    shown = "; ".join(failed[:MAX_FAILED_SHOWN])
+    more = (f"; … and {len(failed) - MAX_FAILED_SHOWN} more"
+            if len(failed) > MAX_FAILED_SHOWN else "")
+    names = f" :: {shown}{more}" if failed else " :: (no FAILED/ERROR lines in pytest output)"
     return record("A. Structural", "Unit test suite", FAIL,
-                  f"pytest exited {proc.returncode} — {tail}", {"summary": tail})
+                  f"pytest exited {proc.returncode} — {tail}{names}",
+                  {"summary": tail, "failed": failed})
+
+
+MAX_FAILED_SHOWN = 25
+MAX_FAILED_LINE = 220
+
+
+def failed_test_lines(pytest_stdout: str) -> list:
+    """pytest's own `FAILED path::name - reason` / `ERROR ...` summary lines.
+
+    Trimmed to one bounded line each, and `|` replaced, because the detail
+    is rendered into a markdown table row and from there into the weekly
+    audit issue: a raw pipe would split the row and lose the name again.
+    """
+    out = []
+    for line in (pytest_stdout or "").splitlines():
+        s = line.strip()
+        if s.startswith("FAILED ") or s.startswith("ERROR "):
+            s = s.replace("|", "/")
+            out.append(s if len(s) <= MAX_FAILED_LINE else s[:MAX_FAILED_LINE - 1] + "…")
+    return out
 
 
 def check_ml_is_display_only():

@@ -6522,3 +6522,62 @@ class TestShadowOutcomesInheritTheFix:
         for f in ("signal_outcomes.csv", "shadow_outcomes.csv",
                   "shadow_outcomes_sq.csv"):
             assert f in commit, f + " is resolved but never committed"
+
+
+# ======================================================================
+# The audit must NAME failing tests, not count them
+# ======================================================================
+# The weekly audit reported "3 failed" (later "4 failed") on the runner for
+# nine weeks and no log anywhere kept the names. A count nobody can act on
+# is the same buried alarm as DEFECT #7.
+
+class TestAuditNamesFailingTests:
+
+    FAKE = "\n".join([
+        "....F..E",
+        "=========================== short test summary info ===========================",
+        "FAILED test_signals.py::TestA::test_one - AssertionError: a | b",
+        "FAILED test_signals.py::TestB::test_two - ValueError: " + "x" * 400,
+        "ERROR test_signals.py::TestC::test_three - RuntimeError: boom",
+        "2 failed, 5 passed, 1 error in 1.00s",
+    ])
+
+    def _run(self, monkeypatch, stdout, returncode):
+        import audit
+        import types
+        audit._results.clear()
+        monkeypatch.setattr(audit.subprocess, "run", lambda *a, **k:
+                            types.SimpleNamespace(stdout=stdout, stderr="",
+                                                  returncode=returncode))
+        audit.check_test_suite()
+        return audit, audit._results[-1]
+
+    def test_fail_detail_carries_every_failing_test_name(self, monkeypatch):
+        audit, r = self._run(monkeypatch, self.FAKE, 1)
+        assert r["status"] == audit.FAIL
+        for name in ("TestA::test_one", "TestB::test_two", "TestC::test_three"):
+            assert name in r["detail"], name + " is not named in the audit row"
+        assert len(r["evidence"]["failed"]) == 3
+        assert "2 failed, 5 passed, 1 error" in r["detail"]
+
+    def test_names_survive_the_markdown_table(self, monkeypatch):
+        """The detail is rendered as one `| a | b |` table row and the weekly
+        workflow filters on that row. A raw pipe or newline splits it."""
+        audit, r = self._run(monkeypatch, self.FAKE, 1)
+        assert "|" not in r["detail"] and "\n" not in r["detail"]
+        assert all(len(l) <= audit.MAX_FAILED_LINE for l in r["evidence"]["failed"])
+
+    def test_a_long_failure_list_is_capped_and_says_so(self, monkeypatch):
+        many = "\n".join("FAILED test_signals.py::T::t%d - x" % i for i in range(40))
+        audit, r = self._run(monkeypatch, many + "\n40 failed in 1.00s", 1)
+        assert "and 15 more" in r["detail"]
+        assert len(r["evidence"]["failed"]) == 40      # evidence keeps them all
+
+    def test_a_crash_with_no_summary_lines_says_that(self, monkeypatch):
+        audit, r = self._run(monkeypatch, "collection blew up", 2)
+        assert r["status"] == audit.FAIL
+        assert "no FAILED/ERROR lines" in r["detail"]
+
+    def test_pass_is_unchanged(self, monkeypatch):
+        audit, r = self._run(monkeypatch, "....\n4 passed in 0.10s", 0)
+        assert r["status"] == audit.PASS and r["detail"] == "4 tests passed"
