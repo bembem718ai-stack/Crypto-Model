@@ -11,8 +11,9 @@ may make a claim outside its SUPPORTED list.
 
 THE ONE PLACE THIS DEPARTS FROM THE TEMPLATES, AND WHY
 ------------------------------------------------------
-claims.md's templates carry a frozen tally ("8 closed long episodes, 3 target
-/ 5 stop, +1.00R net"). That was true when the document was written. **The
+claims.md's templates carry a frozen tally ("8 closed long episodes, 2 target
+/ 6 stop, -2.00R net" -- corrected 2026-11-18 from a 3/5 +1.00R figure that
+was a resolver artifact, cleanroom DEFECT #7). **The
 DISCLOSURES are reproduced verbatim; the NUMBERS are computed live from
 `signal_outcomes.csv`.** A template that hard-codes its own record starts
 publishing a false one the moment an episode resolves, and a stale tally is a

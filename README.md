@@ -14,17 +14,17 @@ finds a tradeable edge.
 
 | | |
 |---|---|
-| registered hypotheses | **249**, each written to [`docs/cleanroom.md`](docs/cleanroom.md) **before it ran** |
+| registered hypotheses | **256**, each written to [`docs/cleanroom.md`](docs/cleanroom.md) **before it ran** |
 | automated tests | **545** |
 | supported edge claims | **zero** — [`docs/claims.md`](docs/claims.md) |
 
 A negative result is only worth anything if the instrument that produced it
 was trustworthy. Most of this repository is the work of making that true.
 
-## Six instrument defects, each caught before it could manufacture a false positive
+## Seven instrument defects — six caught before they could manufacture a false positive, one that was not
 
-Every one was found by checking a null against the property it claimed to
-have — not by a test failing.
+The first six were found by checking a null against the property it claimed
+to have — not by a test failing. The seventh was found twelve weeks late.
 
 1. **A permutation null re-shuffled every row**, so a weekly-rebalanced
    portfolio became a daily one: **13.6× the real turnover**, a null crippled
@@ -47,8 +47,18 @@ have — not by a test failing.
 6. **Prices rounded to two decimals** collapsed entry and stop onto each
    other on low-priced assets: **185 of 645 trades with NaN P&L**, averaged
    over survivors while rates were computed over all.
+7. **The live path failed silently for 78 days, twice over.** The hourly
+   check threw on every run after 2026-09-01 and exited green, so no signal
+   was logged or published until 2026-11-18. Separately, the outcome
+   resolver re-resolved *closed* episodes against a rolling 22-day window,
+   so the published long record drifted from the true **2 targets / 6
+   stops** to **8 / 0** without a single new trade. The weekly audit
+   reported the stale log eleven weeks running — as comments under an
+   issue titled for August. **This one was not caught in time: this page
+   quoted a wrong record (+1.00R) for twelve weeks.**
+   *([DEFECT #7](docs/cleanroom.md))*
 
-Two of these made a bar *easier*; two made it *harder*. That is why all four
+Of the four null defects, two made a bar *easier* and two made it *harder*. That is why all four
 [placebo fidelity axes](CLAUDE.md) are now measured before any draw is scored.
 
 ## What makes the zeros trustworthy
@@ -81,8 +91,10 @@ plus positioning snapshots accruing daily.
 
 Every published signal, its computed exit levels, and its resolved outcome go
 into a public tally **including the losses**. Current published record:
-**8 long episodes, 3 winners, 5 losers, +1.00R net** — four weeks, essentially
-one ticker, and far too small to mean anything. A further 11 short episodes
+**8 long episodes, 2 winners, 6 losers, −2.00R net** — four weeks, essentially
+one ticker, and far too small to mean anything. *(Corrected 2026-11-18: this
+line read "3 winners, 5 losers, +1.00R", a resolver artifact — see defect 7
+above. No signals were published from 2026-09-01 to 2026-11-18.)* A further 11 short episodes
 were logged and never published; they went 0 for 11, which is why shorts are
 off.
 

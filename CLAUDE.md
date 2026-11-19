@@ -9,7 +9,7 @@ Repo is PUBLIC: `bembem718ai-stack/Crypto-Model`.
 $py = "C:\Users\gubby\AppData\Local\Programs\Python\Python312\python.exe"
 $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 
-& $py -m pytest test_signals.py -q        # 623 passed + 1 skipped, must stay green
+& $py -m pytest test_signals.py -q        # 647 passed + 1 skipped; 1 KNOWN FAILURE as of 2026-11-18 (see Known open issues)
 & $py audit.py --offline                  # structural health, seconds, no network
 & $py audit.py BTC ETH SOL --years 4      # full audit, 10-40 min
 & $py pipeline.py run BTC                 # live signal — COSTS 1 ADANOS REQUEST
@@ -17,6 +17,7 @@ $env:BINANCE_REGION="US"          # REQUIRED — see "Binance" below
 & $py pipeline.py robustness BTC ETH SOL --years 4
 & $py pipeline.py walkforward BTC ETH SOL --years 4   # fixed config, K folds, lockboxed
 & $py live_tools.py outcomes --compare    # score the LIVE system, 0 Adanos
+& $py live_tools.py outcomes --rebuild    # re-resolve EVERY episode from its entry (closed rows are otherwise frozen)
 & $py live_tools.py graph BTC             # opens the chart locally
 ```
 
@@ -39,7 +40,7 @@ Four core files plus the audit, and two directories that support research:
   every day, which is the precondition that keeps the change reversible.
 - `live_tools.py` — confluence monitor, three-tab browser chart, local HTTP
   server, GitHub Actions check mode.
-- `test_signals.py` — 623 tests covering all decision logic.
+- `test_signals.py` — 649 tests covering all decision logic.
 - `audit.py` — full-model health check; every known issue re-measured.
 - `research/premia.py` — **#257 THE PREMIA INSTRUMENT.** Descriptive, in
   the #249 style: no hypotheses, no verdicts. Measures crypto variance
@@ -86,6 +87,9 @@ Four core files plus the audit, and two directories that support research:
   the gate is dampen-only, so shadow BUY days are a strict SUPERSET of
   gated ones). Written by `shadow_basket.py`; evaluation is pre-registered
   as SHADOW-EVAL and may not be looked at before 30 pooled episodes.
+  The squeeze arm's outcomes live in `shadow_outcomes_sq.csv`, tracked
+  from 2026-11-18. **Both outcome files were REBUILT on 2026-11-18**
+  (DEFECT #7); the resolver prints ROW COUNTS ONLY for shadow files.
 - `research/` — all research and experiment code. Nothing here is imported
   by the live path. See "Research rules".
 
@@ -683,6 +687,32 @@ public until all three are done.**
 
 ## Known open issues
 
+- **DEFECT #7 — FIXED 2026-11-18, and the reason two rules below exist.**
+  Two silent failures on the live path, both recorded in
+  `docs/cleanroom.md`. (1) The hourly check threw on every run after the
+  2026-09-01 simplification (`use_ml` forced on a path that skips Step 3),
+  printed `BTC: FAILED` and exited 0: **no signal was logged or published
+  from 2026-09-01 15:21 UTC to 2026-11-18**, across ~1,800 green runs.
+  (2) `resolve_outcomes` re-resolved CLOSED episodes against a rolling
+  22-day window, so the published long record drifted from the true
+  **2 targets / 6 stops, −2.00R** to 3/5 (+1.00R, the figure claims.md and
+  README quoted) to 8/0. **The true live record is 2 / 6, −2.00R.**
+  Standing rules that came out of it:
+  - **A closed outcome row is permanent.** `resolve_outcomes` carries
+    closed rows forward byte-for-byte, fetches from the oldest UNRESOLVED
+    entry, and RAISES rather than resolve against bars that begin after an
+    entry. Regenerating is `--rebuild`, deliberately, never a side effect.
+  - **A display-only request is never fatal.** `use_ml` without Step 3
+    yields `ml_confidence=None`; only `ml_weight > 0` raises.
+  - **No `|| echo non-fatal` and no `except: print` on the live path
+    without an `::error` annotation.** Later workflow steps run on
+    `!cancelled()` so a red step keeps the others' work.
+  - **Test the entry point the workflow calls, with the workflow's
+    flags.** Every test passed for 78 days because none of them did.
+- **One test fails locally and 3-4 fail in CI (open, 2026-11-18).**
+  `TestPremiaInstrument::test_dead_instruments_are_excluded_and_reported`
+  fails locally; the weekly audit has reported 3-4 pytest failures on the
+  runner since 2026-09-14 without naming them. Not yet triaged.
 - **4-year degradation (unresolved).** Extending the backtest to ~4 years
   showed BUY win rate falling toward 50% and SELL expectancy flipping sign
   over 2022–2026. The 2024–2026 validation window may simply have been
@@ -760,7 +790,25 @@ Chart is on GitHub Pages at
 `https://bembem718ai-stack.github.io/Crypto-Model/BTC.html`.
 
 Workflows: `signal-check.yml` (hourly), `robustness.yml` (manual),
-`audit.yml` (manual + weekly).
+`audit.yml` (manual), `audit-weekly.yml` (Mondays).
+
+**The signal check is ALLOWED TO GO RED.** `live_tools.py check` exits
+non-zero when failures left zero rows logged and prints one `::error` per
+failed ticker. The shadow, chart, outcome and commit steps are conditioned
+on `!cancelled()`, so a red check still commits their work.
+
+**`audit-weekly.yml` FAILS THE RUN ON A SECTION C (DEPLOYMENT) FAIL — a
+design change, 2026-11-18.** It was built issue-only on the reasoning that
+a red run is noise that gets muted and a FAIL is a decision to make. That
+still holds for structural and research checks, which stay ISSUE-ONLY. It
+does not hold for an outage: the audit reported `Signal log is fresh: FAIL`
+**eleven weeks running** (141.6h stale on 2026-09-07 to 1825.0h on
+2026-11-16), every time as a comment under one issue whose title stayed
+"3 FAIL(s) — 2026-08-31", in a run that concluded green. The alarm was
+correct and nobody could see it. A dead signal log is not a finding. The
+issue title is now refreshed each week, and the freshness check says
+WHICH outage it is: bot commits still arriving + log not growing means
+the check step is failing inside the run, not that the trigger stopped.
 
 ## Style
 

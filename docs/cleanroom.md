@@ -7154,3 +7154,156 @@ a genuine VRP becomes computable.
   under rule 10, and an account of what balance sheet it proposes to use.
 - **The project still holds ZERO supported edge claims**, and neither
   change alters that.
+
+---
+
+# DEFECT #7 — the live path failed silently for 78 days, twice over
+
+**RECORDED 2026-11-18.** Not a hypothesis, not a registration, no number
+drawn. Recorded under the standing ROUTING RULE: *a computation defect in
+live or instrument code is FIXED, re-rendered, and noted.* No sealed rule is
+touched. Both parts were found from origin on 2026-11-18, and both belong to
+one class: **a swallowed failure that looks healthy.**
+
+It is numbered seventh after the six instrument defects listed in
+`README.md`. **It differs from all six in the way that matters: the six were
+caught before they could produce a false number. This one was not.** A wrong
+live record sat in `signal_outcomes.csv` for twelve weeks and was quoted in
+`docs/claims.md` and `README.md`.
+
+## Part 1 — the live check threw on every run
+
+| | |
+|---|---|
+| last row written to `signal_log.csv` | **2026-09-01 15:21 UTC** |
+| breaking commit | `7793720` (SIMPLIFICATION), 2026-09-01 17:14 UTC |
+| first failed run | 2026-09-01 19:05 UTC |
+| fixed | 2026-11-18 (`168cd5c`) |
+| runs affected | every hourly run in between, roughly 1,800; **all green** |
+
+**Mechanism.** `7793720` made `run_full_pipeline` raise `use_ml=True requires
+run_step3=True` on the published squeeze-only path. The workflow runs
+`check BTC --log-all`, and `run_single_check` set `want_ml = confluence or
+log_all`, forcing `use_ml=True`. The per-ticker `except Exception` printed
+`BTC: FAILED` and the step exited 0. The shadow, chart, outcome and commit
+steps carried on, so `Signal check:` commits kept arriving and the run list
+stayed green while the log never grew.
+
+**Why no test caught it.** Every test of the published path called
+`run_full_pipeline` directly with its defaults; every test of
+`run_single_check` predated the published path. The defect lived only where
+the two meet, which nothing exercised. `test_ml_requires_step3_to_have_run`
+asserted the raise itself — the suite was pinning the defect in place.
+
+**Why the audit did not surface it — it did, and nobody could see it.** The
+weekly audit ran every Monday, compared against origin/main, held
+`issues: write`, and reported `Signal log is fresh: FAIL` **eleven weeks
+running**, 141.6h stale on 2026-09-07 to 1825.0h on 2026-11-16. Each report
+was appended as a comment to one issue whose title stayed "Weekly audit: 3
+FAIL(s) — 2026-08-31"; the run concluded `success` by design; and the detail
+read "the trigger may have stopped firing" while the triggers fired hourly.
+A correct alarm in a channel nobody reads is the same class of failure.
+
+**Fixed.** `use_ml` is derived from `pipeline.PUBLISHED_RUN_STEP3`; a
+display-only ML request on a construction that skips Step 3 returns
+`ml_confidence=None` rather than raising (`ml_weight > 0` still raises); each
+failed ticker emits a `::error` annotation; `check` exits non-zero when
+failures leave zero rows logged; later workflow steps run on `!cancelled()`
+so a red check keeps their work. The audit now distinguishes "runs
+committing, log not growing" from "trigger stopped", refreshes the issue
+title, and **fails the run on a Section C (deployment) FAIL only** —
+structural and research FAILs stay issue-only.
+
+**Consequence for the record.** **No signal was published from 2026-09-01
+15:21 UTC until the fix.** The LIVE RECORD clock did not accrue for 78 days.
+SHADOW-EVAL was unaffected by Part 1: `shadow_log.csv` kept growing.
+
+## Part 2 — closed episodes were re-resolved against a rolling window
+
+**Mechanism.** `resolve_outcomes` fetched a fixed trailing 130 bars (~22
+days) on every run, re-resolved **every** episode against it — closed ones
+included — and overwrote the file. Its docstring said "closed ones can only
+stay closed (past bars don't change)"; nothing implemented that.
+`resolve_episode` scans `bars > entry`, so once the window had rolled past
+an episode's real exit, the **first bar of the window** decided the outcome:
+`bars_held=1`, `exit_date` = the window start, and target-versus-stop set by
+wherever price happened to be weeks later.
+
+**The drift, reconstructed from the git history of `signal_outcomes.csv`**
+(published long side, 8 episodes, none opened after 2026-08-15):
+
+| file as of (UTC) | targets / stops | net R | note |
+|---|---|---|---|
+| 2026-08-18 08:01 → 08-25 12:01 | 2 / 6 | −2.00R | **the true record** |
+| 2026-08-25 16:27 | 2 / 5 (+1 timeout) | −0.22R | first artifact: a stop re-resolved as a timeout |
+| 2026-08-26 04:32 | 3 / 5 | **+1.00R** | the figure quoted in claims.md and README |
+| 2026-09-01 | 3 / 5 | +1.00R | unchanged; window already past four real exits |
+| 2026-09-08 02:23 | 6 / 2 | +10.00R | |
+| 2026-09-08 12:29 | 7 / 1 | +13.00R | |
+| 2026-09-10 12:34 | 8 / 0 | +16.00R | every row `bars_held=1` |
+| 2026-11-19 00:53 | 8 / 0 | +16.00R | every row `exit_date` 2026-10-28 |
+
+No episode opened and no resolver code changed between any two rows of that
+table. The number moved because the calendar did.
+
+**The "+1.00R" was itself contaminated.** It was not a true figure that
+later drifted. The file read the true 2 / 6 for a week, and +1.00R first
+appeared on 2026-08-26 once the window had rolled past early exits. By
+2026-09-01 the window began after four of the eight real exits (ETH 07-24,
+BTC 07-27, 07-31, 08-04).
+
+**The true record**, every episode resolved from its own entry forward,
+confirmed twice — against the frozen `data/BTC_4h.csv` / `data/ETH_4h.csv`
+(pinned in `test_signals.py`) and at full depth against Binance.US:
+
+| entry | outcome | exit (UTC) | bars held |
+|---|---|---|---|
+| ETH 07-23 | stop | 07-24 12:00 | 5 |
+| BTC 07-27 | stop | 07-27 20:00 | 2 |
+| BTC 07-31 | stop | 07-31 12:00 | 1 |
+| BTC 08-03 | **target** | 08-04 16:00 | 9 |
+| BTC 08-06 | stop | 08-11 12:00 | 29 |
+| BTC 08-14 00:01 | stop | 08-14 08:00 | 2 |
+| BTC 08-14 01:01 | stop | 08-14 08:00 | 2 |
+| BTC 08-15 | **target** | 08-17 12:00 | 11 |
+
+**2 targets / 6 stops, −2.00R.** The 11 logged, never-published short
+episodes resolve as 11 stops, which is what was already recorded.
+
+**Fixed** (`ea89f34`). (a) Closed rows are read back from the outcomes file
+and carried forward byte-for-byte; a closed episode is never re-resolved.
+(b) Bars are fetched from the oldest unresolved entry forward, never a fixed
+trailing window. (c) A bar window that begins after an entry raises and
+writes nothing. Only complete bars may close an episode, because a closed
+row is now permanent. `--rebuild` regenerates deliberately. Files regenerated
+in `da90d32`.
+
+**Propagation.** `shadow_basket.py` resolves both arms through the same
+function, so `shadow_outcomes.csv` carried the same contamination and
+receives the same fix. Both shadow files were rebuilt from `shadow_log.csv`;
+`shadow_outcomes_sq.csv` (the squeeze arm; earlier text in this file calls
+it `shadow_sq_outcomes.csv`) is tracked for the first time, since a
+carried-forward record exists only if the file survives the runner. The
+resolver's target/stop/mean-R summary line, which had been printed for the
+shadow file into a public Actions log every hour, is suppressed for shadow.
+
+## Disclosure — the sealed shadow file was read during diagnosis
+
+> **During diagnosis on 2026-11-18, aggregate counts of the contaminated
+> `shadow_outcomes.csv` were read. They were resolver artifacts carrying no
+> information about either arm, recorded here because the registration seals
+> that file.**
+
+The regeneration itself computed and printed row counts only (600 and 656
+rows). Nothing aggregate about the rebuilt shadow outcomes has been
+computed, printed or read. SHADOW-EVAL's rules are unchanged.
+
+## What this does and does not change
+
+- **`docs/claims.md` LIVE RECORD is corrected**, withdrawn figure shown
+  beside the corrected one, per the #171 precedent.
+- **No research verdict moves.** No registered program read
+  `signal_outcomes.csv` or `shadow_outcomes.csv`.
+- **The project still holds ZERO supported edge claims.** The withdrawn
+  +1.00R was never one — but it was a published number, it was wrong, and it
+  was wrong in the flattering direction.

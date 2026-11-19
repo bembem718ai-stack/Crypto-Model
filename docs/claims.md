@@ -428,15 +428,48 @@ From `signal_outcomes.csv`, resolved against 4h bars with the same rules as the
 backtest. **19 episodes, all closed, none open.** Entries span
 2026-07-23 → 2026-08-18.
 
+### CORRECTED 2026-11-18 — the published long record was wrong (DEFECT #7)
+
+**This section previously read "8 long episodes, 3 winners, 5 losers,
++1.00R". That figure is WITHDRAWN. It was a resolver artifact.**
+
+| | published long record | status |
+|---|---|---|
+| **withdrawn** (this document, until 2026-11-18) | 8 episodes, 3 targets / 5 stops, **+1.00R** | resolver artifact |
+| **corrected** | 8 episodes, **2 targets / 6 stops, −2.00R** | as of 2026-08-27; every episode resolved from its own entry |
+
+**What broke.** The outcome resolver re-resolved every episode — closed ones
+included — against a fixed trailing ~22-day window of bars on every run and
+overwrote the file. Once the window rolled past an episode's real exit, the
+first bar in the window decided its outcome. The file read the true 2 / 6
+from 2026-08-18 to 2026-08-25, read 3 / 5 from 2026-08-26, 7 / 1 on
+2026-09-08, and 8 / 0 from 2026-09-10, with no new episode in between.
+
+**Unlike #171, one of these numbers IS wrong.** #171 withdrew a claim whose
+two measurements were each correct for their own data. Here the +1.00R was
+never correct for any data: it was produced by resolving closed trades
+against bars from after they had exited. And it was wrong in the flattering
+direction.
+
+**No published signals from 2026-09-01 15:21 UTC to 2026-11-18.** The same
+defect record covers a second failure: the hourly check threw on every run
+after the 2026-09-01 simplification and exited green. The live record did
+not accrue for 78 days. The 8 episodes below are the whole published record.
+
+The short side is unchanged by the correction: 0 for 11 before and after.
+
+*Source: cleanroom DEFECT #7. Pinned by
+`test_the_eight_live_long_episodes_against_frozen_data`.*
+
 ### Everything logged
 
 | | value |
 |---|---|
 | closed episodes | **19** |
-| wins (target) / losses (stop) | **3 / 16** |
-| win rate | **15.8%** |
-| net R | **−10.00R** (mean −0.526R per episode) |
-| longest losing streak | **8** |
+| wins (target) / losses (stop) | **2 / 17** |
+| win rate | **10.5%** |
+| net R | **−13.00R** (mean −0.684R per episode) |
+| longest losing streak | **9** |
 | BTC | **18 of 19** (1 ETH) |
 
 ### Split by side — this matters
@@ -447,9 +480,9 @@ one of them describes what a follower would have traded.
 
 | | n | wins | losses | win% | net R | worst streak |
 |---|---|---|---|---|---|---|
-| **LONG (published)** | **8** | 3 | 5 | **37.5%** | **+1.00R** | 3 |
+| **LONG (published)** | **8** | 2 | 6 | **25.0%** | **−2.00R** | 3 |
 | SHORT (logged, not published) | 11 | 0 | 11 | 0.0% | −11.00R | 11 |
-| ALL | 19 | 3 | 16 | 15.8% | −10.00R | 8 |
+| ALL | 19 | 2 | 17 | 10.5% | −13.00R | 9 |
 
 > **DISCLOSURE — the SHORT row spans two constructions from 2026-09-01.**
 > The short trend filter (SELL downgraded to WATCH when price is above its
@@ -468,8 +501,8 @@ one of them describes what a follower would have traded.
 
 ### Which number is *your* number
 
-**A follower's experience matches the LONG row: 8 episodes, 3 winners, 5
-losers, +1.00R.** That is the only line in this table describing signals the
+**A follower's experience matches the LONG row: 8 episodes, 2 winners, 6
+losers, −2.00R.** That is the only line in this table describing signals the
 system actually published. Short signals are suppressed on the live path
 (`--long-only`), so nobody was ever told to take one; the 11 short episodes
 were recorded by the outcome tracker because it reads every direction in the
@@ -482,15 +515,15 @@ padding:
    0-for-11 short record is the evidence that switching shorts off was right.
    Deleting it would delete the justification.
 2. **It is the honest denominator for "how often is the model wrong".** The
-   model formed a directional opinion 19 times and 16 of those resolved
+   model formed a directional opinion 19 times and 17 of those resolved
    against it. A reader who only sees the long row learns that the published
-   subset went 3–5; they do not learn that the unpublished subset went 0–11.
+   subset went 2–6; they do not learn that the unpublished subset went 0–11.
 3. **Publishing only the filtered row is how selective reporting starts.** The
    filter here is defensible and pre-existing. It would stop being defensible
    the moment the filter were chosen *because* it improved the number.
 
-**The published long record is 8 episodes and +1.00R.** Three winners at +2.0R
-each, five losers at −1.0R each. Entry scores ranged 60.11–62.99 — all just
+**The published long record is 8 episodes and −2.00R.** Two winners at +2.0R
+each, six losers at −1.0R each. Entry scores ranged 60.11–62.99 — all just
 above the 60 bar. One episode peaked at STRONG_BUY and stopped out.
 
 **This sample is far too small to mean anything.** Eight episodes over four
@@ -523,7 +556,7 @@ Draft text using only SUPPORTED statements.
 > candidate passed on BTC and SOL and failed on ETH, and was recorded as a
 > failure because that is what the pre-registered rule says.
 >
-> **The live record is 8 published long episodes: 3 winners, 5 losers, +1.00R
+> **The live record is 8 published long episodes: 2 winners, 6 losers, −2.00R
 > net.** That is four weeks of data on one ticker and it proves nothing yet. A
 > further 11 short episodes were logged and not published; they went 0 for 11,
 > which is why shorts are switched off.
@@ -545,7 +578,7 @@ Entry 78,420   Target 80,910   Stop 77,175
 Risk:reward 2.0 : 1   |   ATR-derived, 15-day max hold
 
 This is a research signal, published as-is and tracked publicly.
-Live record to date: 8 closed long episodes, 3 target / 5 stop, +1.00R net.
+Live record to date: 8 closed long episodes, 2 target / 6 stop, -2.00R net.
 That is not enough trades to establish an edge, in either direction.
 No claim is made that this trade will work.
 Outcome will be added to the public tally either way.
