@@ -294,7 +294,7 @@ def run_shadow(tickers=None, log_path=SHADOW_LOG, now=None):
 
 
 def outcomes_path_for(arm, out_path=SHADOW_OUTCOMES):
-    """shadow_outcomes.csv for the incumbent, shadow_sq_outcomes.csv for
+    """shadow_outcomes.csv for the incumbent, shadow_outcomes_sq.csv for
     the squeeze arm. Separate files: the two arms are separate records and
     must never be pooled by accident."""
     if arm == "incumbent":
@@ -304,7 +304,8 @@ def outcomes_path_for(arm, out_path=SHADOW_OUTCOMES):
 
 
 def resolve_shadow_outcomes(log_path=SHADOW_LOG, out_path=SHADOW_OUTCOMES,
-                            max_hold_days: int = 15, arm="incumbent"):
+                            max_hold_days: int = 15, arm="incumbent",
+                            now=None, rebuild: bool = False):
     """Outcome resolution for one arm's shadow entries.
 
     Reuses live_tools.extract_episodes / resolve_episode unchanged, so a
@@ -312,6 +313,16 @@ def resolve_shadow_outcomes(log_path=SHADOW_LOG, out_path=SHADOW_OUTCOMES,
     selected by PROJECTING its columns onto the canonical names (see
     project_arm) and handing the result to the same resolver -- there is no
     second implementation to drift. Costs zero Adanos: 4h klines only.
+
+    That reuse cuts both ways: DEFECT #7 (closed episodes re-resolved
+    against a rolling 22-day window) contaminated this file exactly as it
+    did signal_outcomes.csv, and the fix arrives here the same way --
+    closed rows carried forward verbatim, bars fetched from the oldest
+    unresolved entry, a late window raises. `rebuild=True` regenerates.
+
+    summary=False ALWAYS: SHADOW-EVAL is sealed until 30 pooled closed
+    episodes, and the resolver's target/stop/mean-R line was being printed
+    for this file into a public Actions log every hour. Row counts only.
     """
     if not os.path.exists(log_path):
         print("no shadow log yet")
@@ -319,7 +330,8 @@ def resolve_shadow_outcomes(log_path=SHADOW_LOG, out_path=SHADOW_OUTCOMES,
     dest = outcomes_path_for(arm, out_path)
     if arm == "incumbent":
         return lt.resolve_outcomes(log_path=log_path, out_path=dest,
-                                   max_hold_days=max_hold_days)
+                                   max_hold_days=max_hold_days, now=now,
+                                   rebuild=rebuild, summary=False)
     # The projection is EPHEMERAL. Writing it beside the log would create a
     # second file that looks like a record and is really a view.
     projected = project_arm(pd.read_csv(log_path), arm)
@@ -328,7 +340,8 @@ def resolve_shadow_outcomes(log_path=SHADOW_LOG, out_path=SHADOW_OUTCOMES,
     try:
         projected.to_csv(tmp, index=False)
         return lt.resolve_outcomes(log_path=tmp, out_path=dest,
-                                   max_hold_days=max_hold_days)
+                                   max_hold_days=max_hold_days, now=now,
+                                   rebuild=rebuild, summary=False)
     finally:
         try:
             os.remove(tmp)
@@ -341,6 +354,9 @@ def main():
     ap.add_argument("mode", choices=("run", "outcomes"))
     ap.add_argument("--tickers", nargs="*", default=None)
     ap.add_argument("--log", default=SHADOW_LOG)
+    ap.add_argument("--rebuild", action="store_true",
+                    help="outcomes only: ignore the existing files and "
+                         "re-resolve every episode from its own entry")
     a = ap.parse_args()
     if a.mode == "run":
         run_shadow(a.tickers, log_path=a.log)
@@ -349,7 +365,7 @@ def main():
         # drift apart in length, and #203's checkpoint compares them.
         for arm in ("incumbent", "squeeze"):
             print("--- resolving %s arm ---" % arm)
-            resolve_shadow_outcomes(log_path=a.log, arm=arm)
+            resolve_shadow_outcomes(log_path=a.log, arm=arm, rebuild=a.rebuild)
 
 
 if __name__ == "__main__":

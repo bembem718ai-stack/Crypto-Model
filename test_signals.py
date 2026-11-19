@@ -1374,7 +1374,11 @@ class TestEpisodeResolution:
         _log_rows([("2026-08-01T10:00:00","BTC",100.0,65,"BUY",106.0,97.0,2.0,20),
                    ("2026-08-01T10:30:00","BTC",100.5,66,"BUY",106.0,97.0,2.0,20)]
                   ).to_csv(log, index=False)
-        d = _daily("2026-08-02", [(107,101,106)])
+        # The window must COVER the entry (10:00): one quiet bar at 08:00,
+        # then the target bar. This fixture used to start on 08-02, a full
+        # day after entry -- the exact shape of DEFECT #7, which
+        # resolve_outcomes now refuses.
+        d = _daily("2026-08-01T08:00:00", [(100.5,99.5,100),(107,101,106)])
         out = lt.resolve_outcomes(str(log), str(tmp_path/"out.csv"),
                                   fetcher=lambda t: d)
         assert len(out)==1 and out.iloc[0]["outcome"]=="target"
@@ -4987,7 +4991,8 @@ class TestPublicationGenerator:
         lits = [n.value for n in ast.walk(tree)
                 if isinstance(n, ast.Constant) and isinstance(n.value, str)
                 and id(n.value) not in docs]
-        for bad in ("shadow_log.csv", "shadow_outcomes.csv"):
+        for bad in ("shadow_log.csv", "shadow_outcomes.csv",
+                    "shadow_outcomes_sq.csv"):
             assert bad not in lits, "publication path names " + bad
 
     # ---- OPEN alert, golden ------------------------------------------
@@ -6269,3 +6274,251 @@ class TestLiveCheckOnPublishedPath:
                           if not l.strip().startswith("#"))
         assert "continue-on-error" not in check and "||" not in check, \
             "the check step's failure must reach the run conclusion"
+
+
+# ======================================================================
+# DEFECT #7b — closed episodes were re-resolved against a ROLLING window
+# ======================================================================
+# resolve_outcomes fetched a fixed trailing 130 bars (~22 days) on every run,
+# re-resolved EVERY episode against it -- closed ones included -- and
+# overwrote the file. resolve_episode scans `bars > entry`, so once the
+# window had rolled past an episode's real exit, the FIRST bar of the window
+# decided the outcome: bars_held=1, exit_date = window start, and
+# target-vs-stop set by wherever price happened to be weeks later.
+#
+# The docstring said "closed ones can only stay closed". Nothing implemented
+# it. The published record drifted 3/5 (Sept 1) -> 7/1 (Sept 8) -> 8/0
+# (Sept 10) with no new episode and no code change.
+
+def _bars_from(start, bars):
+    idx = pd.date_range(start, periods=len(bars), freq="4h")
+    return pd.DataFrame(bars, index=idx, columns=["High", "Low", "Close"])
+
+
+_QUIET = (100.5, 99.5, 100.0)      # inside both levels of the fixture below
+
+
+class TestClosedOutcomesStayClosed:
+
+    BUY = ("2026-08-01T10:00:00", "BTC", 100.0, 65, "BUY", 106.0, 97.0, 2.0, 20)
+
+    def _log(self, tmp_path, rows=None):
+        p = tmp_path / "log.csv"
+        _log_rows(rows or [self.BUY]).to_csv(p, index=False)
+        return str(p)
+
+    def test_closed_outcome_is_byte_identical_after_the_window_rolls(self, tmp_path):
+        """THE DRIFT, reproduced. Run 1 sees the real exit (a stop). Run 2
+        happens 3 months later with a window that starts long after the
+        exit and opens with a bar ABOVE the target -- exactly what turned
+        every live stop into a 'target, bars_held=1'."""
+        log, out = self._log(tmp_path), tmp_path / "out.csv"
+        real = _bars_from("2026-08-01T08:00:00", [_QUIET, (101, 96.5, 98)])
+        lt.resolve_outcomes(log, str(out), fetcher=lambda t: real,
+                            now=datetime(2026, 8, 3, tzinfo=timezone.utc))
+        first = out.read_bytes()
+        assert b",closed,stop," in first
+
+        rolled = _bars_from("2026-10-28T12:00:00", [(140, 130, 135)] * 5)
+        lt.resolve_outcomes(log, str(out), fetcher=lambda t: rolled,
+                            now=datetime(2026, 11, 18, tzinfo=timezone.utc))
+        assert out.read_bytes() == first
+
+    def test_closed_episode_is_not_even_fetched_for(self, tmp_path):
+        log, out = self._log(tmp_path), tmp_path / "out.csv"
+        real = _bars_from("2026-08-01T08:00:00", [_QUIET, (101, 96.5, 98)])
+        lt.resolve_outcomes(log, str(out), fetcher=lambda t: real,
+                            now=datetime(2026, 8, 3, tzinfo=timezone.utc))
+
+        def must_not_fetch(t):
+            raise AssertionError("fetched bars for a ticker with nothing open")
+
+        df = lt.resolve_outcomes(log, str(out), fetcher=must_not_fetch,
+                                 now=datetime(2026, 11, 18, tzinfo=timezone.utc))
+        assert len(df) == 1 and df.iloc[0]["outcome"] == "stop"
+
+    def test_window_starting_after_entry_raises(self, tmp_path):
+        log, out = self._log(tmp_path), tmp_path / "out.csv"
+        late = _bars_from("2026-08-02", [(107, 101, 106)])
+        with pytest.raises(ValueError, match="begin AFTER"):
+            lt.resolve_outcomes(log, str(out), fetcher=lambda t: late,
+                                now=datetime(2026, 8, 3, tzinfo=timezone.utc))
+        assert not out.exists(), "a refused resolve must write nothing"
+
+    def test_a_refused_resolve_leaves_the_existing_record_untouched(self, tmp_path):
+        rows = [self.BUY,
+                ("2026-08-01T12:00:00", "BTC", 100.0, 50, "WATCH", None, None, 2.0, 20),
+                ("2026-08-05T10:00:00", "BTC", 100.0, 65, "BUY", 106.0, 97.0, 2.0, 20)]
+        log, out = self._log(tmp_path, rows[:2]), tmp_path / "out.csv"
+        real = _bars_from("2026-08-01T08:00:00", [_QUIET, (101, 96.5, 98)])
+        lt.resolve_outcomes(log, str(out), fetcher=lambda t: real,
+                            now=datetime(2026, 8, 3, tzinfo=timezone.utc))
+        before = out.read_bytes()
+        _log_rows(rows).to_csv(log, index=False)
+        late = _bars_from("2026-08-06", [(107, 101, 106)])
+        with pytest.raises(ValueError, match="begin AFTER"):
+            lt.resolve_outcomes(log, str(out), fetcher=lambda t: late,
+                                now=datetime(2026, 8, 7, tzinfo=timezone.utc))
+        assert out.read_bytes() == before
+
+    def test_default_fetch_reaches_back_to_the_oldest_open_entry(
+            self, tmp_path, monkeypatch):
+        """Never a fixed trailing window: the depth is derived from the
+        entry's age, so an old unresolved episode is resolved from ITS
+        entry forward."""
+        now = datetime(2026, 11, 18, tzinfo=timezone.utc)
+        log, out = self._log(tmp_path), tmp_path / "out.csv"
+        asked = {}
+        # 726 four-hour bars from 07-20 00:00 end at 11-17 20:00 -- i.e. a
+        # feed that runs up to `now`, like the real one.
+        full = _bars_from("2026-07-20", [_QUIET] * 726)
+
+        def fake_paginated(symbol, interval="4h", target_bars=1000, **k):
+            asked["target_bars"] = target_bars
+            return full.tail(target_bars).copy()
+
+        def old_path(*a, **k):
+            raise AssertionError("fixed trailing window (fetch_klines) used")
+
+        monkeypatch.setattr(epm, "fetch_klines_paginated", fake_paginated)
+        monkeypatch.setattr(epm, "fetch_klines", old_path)
+        df = lt.resolve_outcomes(log, str(out), now=now)
+        bars_since_entry = (109 * 24 - 10) // 4          # 08-01 10:00 -> 11-18
+        assert asked["target_bars"] >= bars_since_entry
+        # 90 quiet bars after entry -> the hold budget runs out, at the
+        # 90th bar after ENTRY, not at the head of a trailing window.
+        assert df.iloc[0]["outcome"] == "timeout"
+        assert df.iloc[0]["exit_date"] == "2026-08-16T08:00:00"
+
+    def test_an_unfinished_bar_cannot_close_an_episode(self, tmp_path):
+        """A closed row is now permanent, so it may only be decided by a
+        COMPLETE bar. A bar that has touched the target so far can still go
+        on to touch the stop (ambiguous_stop), and nothing would ever
+        revisit it."""
+        log, out = self._log(tmp_path), tmp_path / "out.csv"
+        bars = _bars_from("2026-08-01T08:00:00", [_QUIET, (107, 101, 106)])
+        mid = lt.resolve_outcomes(log, str(out), fetcher=lambda t: bars,
+                                  now=datetime(2026, 8, 1, 13, tzinfo=timezone.utc))
+        assert mid.iloc[0]["status"] == "open"
+        done = lt.resolve_outcomes(log, str(out), fetcher=lambda t: bars,
+                                   now=datetime(2026, 8, 1, 16, tzinfo=timezone.utc))
+        assert done.iloc[0]["status"] == "closed"
+        assert done.iloc[0]["outcome"] == "target"
+
+    def test_rebuild_discards_a_contaminated_record(self, tmp_path):
+        log, out = self._log(tmp_path), tmp_path / "out.csv"
+        rolled = _bars_from("2026-08-01T08:00:00", [_QUIET, (107, 101, 106)])
+        lt.resolve_outcomes(log, str(out), fetcher=lambda t: rolled,
+                            now=datetime(2026, 8, 3, tzinfo=timezone.utc))
+        assert b",closed,target," in out.read_bytes()
+        real = _bars_from("2026-08-01T08:00:00", [_QUIET, (101, 96.5, 98)])
+        kept = lt.resolve_outcomes(log, str(out), fetcher=lambda t: real,
+                                   now=datetime(2026, 8, 3, tzinfo=timezone.utc))
+        assert kept.iloc[0]["outcome"] == "target"       # carried, by design
+        redo = lt.resolve_outcomes(log, str(out), fetcher=lambda t: real,
+                                   now=datetime(2026, 8, 3, tzinfo=timezone.utc),
+                                   rebuild=True)
+        assert redo.iloc[0]["outcome"] == "stop"
+
+    def test_schema_mismatch_refuses_rather_than_re_resolving(self, tmp_path):
+        log, out = self._log(tmp_path), tmp_path / "out.csv"
+        out.write_text("episode_id,status\nBTC_x,closed\n", encoding="utf-8")
+        real = _bars_from("2026-08-01T08:00:00", [_QUIET, (101, 96.5, 98)])
+        with pytest.raises(ValueError, match="schema"):
+            lt.resolve_outcomes(log, str(out), fetcher=lambda t: real)
+
+    def test_the_eight_live_long_episodes_against_frozen_data(self, tmp_path):
+        """THE TRUE RECORD, pinned. Every live long episode entered before
+        the data freeze, resolved against data/BTC_4h.csv and
+        data/ETH_4h.csv from its own entry forward: 2 targets, 6 stops,
+        -2.00R. The contaminated file read 8 targets / 0 stops."""
+        live = pd.read_csv("signal_log.csv")
+        ts = pd.to_datetime(live["timestamp_utc"], format="mixed")
+        log = tmp_path / "log.csv"
+        live[ts < pd.Timestamp("2026-08-27T16:00:00")].to_csv(log, index=False)
+        df = lt.resolve_outcomes(str(log), str(tmp_path / "out.csv"),
+                                 fetcher=_frozen_4h,
+                                 now=datetime(2026, 8, 28, tzinfo=timezone.utc))
+        longs = df[df["side"] == "long"].sort_values(["ticker", "entry_time_utc"])
+        got = [(r.ticker, r.entry_time_utc[5:10], r.outcome)
+               for r in longs.itertuples()]
+        assert got == [("BTC", "07-27", "stop"), ("BTC", "07-31", "stop"),
+                       ("BTC", "08-03", "target"), ("BTC", "08-06", "stop"),
+                       ("BTC", "08-14", "stop"), ("BTC", "08-14", "stop"),
+                       ("BTC", "08-15", "target"), ("ETH", "07-23", "stop")]
+        assert (longs["status"] == "closed").all()
+        assert longs["pnl_r"].sum() == pytest.approx(-2.00)
+        assert (longs["bars_held"] >= 1).all()
+        # the contamination signature: an exit dated after the data it was
+        # resolved against could possibly contain
+        assert (pd.to_datetime(longs["exit_date"])
+                <= pd.Timestamp("2026-08-27T16:00:00")).all()
+
+
+class TestShadowOutcomesInheritTheFix:
+    """shadow_basket.resolve_shadow_outcomes calls the SAME function, so
+    the same defect contaminated shadow_outcomes.csv. Both arms."""
+
+    def _shadow_log(self, tmp_path):
+        import importlib
+        sb = importlib.import_module("shadow_basket")
+        row = {c: None for c in sb.SHADOW_COLUMNS}
+        row.update({"timestamp_utc": "2026-09-02T10:00:00", "ticker": "BTC",
+                    "price": 100.0, "final_score": 65.0, "direction": "BUY",
+                    "target_price": 106.0, "stop_price": 97.0, "atr": 2.0,
+                    "sq_final_score": 66.0, "sq_direction": "BUY",
+                    "sq_target_price": 106.0, "sq_stop_price": 97.0})
+        watch = dict(row, timestamp_utc="2026-09-02T12:00:00",
+                     direction="WATCH", target_price=None, stop_price=None,
+                     sq_direction="WATCH", sq_target_price=None,
+                     sq_stop_price=None)
+        p = tmp_path / "shadow_log.csv"
+        pd.DataFrame([row, watch], columns=sb.SHADOW_COLUMNS).to_csv(p, index=False)
+        return sb, str(p)
+
+    @pytest.mark.parametrize("arm", ["incumbent", "squeeze"])
+    def test_closed_shadow_row_survives_a_rolled_window(
+            self, tmp_path, monkeypatch, capsys, arm):
+        sb, log = self._shadow_log(tmp_path)
+        out = str(tmp_path / "shadow_outcomes.csv")
+        dest = sb.outcomes_path_for(arm, out)
+        serve = {"bars": _bars_from("2026-09-02T08:00:00",
+                                    [_QUIET, (101, 96.5, 98)])}
+        monkeypatch.setattr(
+            epm, "fetch_klines_paginated",
+            lambda symbol, interval="4h", target_bars=1000, **k: serve["bars"])
+        sb.resolve_shadow_outcomes(log_path=log, out_path=out, arm=arm,
+                                   now=datetime(2026, 9, 4, tzinfo=timezone.utc))
+        first = open(dest, "rb").read()
+        assert b",closed,stop," in first
+
+        serve["bars"] = _bars_from("2026-10-28T12:00:00", [(140, 130, 135)] * 5)
+        sb.resolve_shadow_outcomes(log_path=log, out_path=out, arm=arm,
+                                   now=datetime(2026, 11, 18, tzinfo=timezone.utc))
+        assert open(dest, "rb").read() == first
+
+        # SHADOW-EVAL IS SEALED. The resolver used to print target %, stop %
+        # and mean R for the shadow file into a PUBLIC Actions log every
+        # hour. Counts are fine -- the 30-episode gate needs them -- but no
+        # aggregate of the outcomes themselves.
+        printed = capsys.readouterr().out
+        assert "target" not in printed and "mean" not in printed
+        assert "1 closed" in printed
+
+    def test_workflow_does_not_swallow_a_resolver_refusal(self):
+        """The resolver now raises instead of resolving against a late
+        window. `|| echo "non-fatal"` would turn that back into silence."""
+        src = open(".github/workflows/signal-check.yml", encoding="utf-8").read()
+        step = src.split("- name: Resolve live signal outcomes", 1)[1]
+        step = step.split("- name: ", 1)[0]
+        code = " ".join(l for l in step.splitlines()
+                        if not l.strip().startswith("#"))
+        assert "python live_tools.py outcomes" in code and "||" not in code
+        shadow = src.split("- name: Shadow basket", 1)[1].split("- name: ", 1)[0]
+        assert "shadow_basket.py outcomes || echo \"::error " in shadow
+        # BOTH arms' outcome files are committed: a carried-forward record
+        # only exists if the file survives the runner.
+        commit = src.split("- name: Commit updated log", 1)[1]
+        for f in ("signal_outcomes.csv", "shadow_outcomes.csv",
+                  "shadow_outcomes_sq.csv"):
+            assert f in commit, f + " is resolved but never committed"

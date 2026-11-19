@@ -186,8 +186,10 @@ def _():
     pd.DataFrame([dict(zip(cols, ("2026-08-01T10:00:00", "BTC", 100.0, 65,
                                   "BUY", 106.0, 97.0, 2.0, 20)))]).to_csv(log, index=False)
     out = os.path.join(tmp, "out.csv")
-    df = lt.resolve_outcomes(log, out, fetcher=lambda t: _bars4h("2026-08-02",
-                                                                [(107, 101, 106)]))
+    # Bars must COVER the 10:00 entry: resolve_outcomes refuses a window
+    # that begins after it (DEFECT #7).
+    df = lt.resolve_outcomes(log, out, fetcher=lambda t: _bars4h(
+        "2026-08-01T08:00:00", [(100.5, 99.5, 100), (107, 101, 106)]))
     assert os.path.isfile(out), "outcomes CSV not written"
     assert df.iloc[0]["outcome"] == "target"
     txt = lt.compare_live_to_backtest(df, min_n=15)

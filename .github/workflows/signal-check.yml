@@ -110,7 +110,10 @@ jobs:
         continue-on-error: true
         run: |
           python shadow_basket.py run
-          python shadow_basket.py outcomes || echo "shadow outcomes non-fatal"
+          # Non-fatal by design (see above) but NOT silent: the resolver now
+          # raises rather than resolve against a window that starts after an
+          # entry, and a raise that only prints "non-fatal" is DEFECT #7 again.
+          python shadow_basket.py outcomes || echo "::error title=Shadow outcomes FAILED::shadow_basket.py outcomes exited non-zero — outcome files NOT updated this run (existing closed rows are untouched)"
 
       - name: Build hosted charts (docs/ folder, served by GitHub Pages)
         if: ${{ !cancelled() && steps.guard.outputs.should_run == 'true' }}
@@ -148,7 +151,11 @@ jobs:
 
       - name: Resolve live signal outcomes (0 Adanos requests)
         if: ${{ !cancelled() && steps.guard.outputs.should_run == 'true' }}
-        run: python live_tools.py outcomes || echo "outcomes step non-fatal"
+        # NO `|| echo "non-fatal"`. The resolver raises when it would have to
+        # resolve against bars that begin after an entry, and writes nothing
+        # when it does -- so a failure here is safe for the record and must
+        # be visible. The commit step below still runs (`!cancelled()`).
+        run: python live_tools.py outcomes
 
       - name: Commit updated log + hosted charts
         if: ${{ !cancelled() && steps.guard.outputs.should_run == 'true' }}
@@ -162,7 +169,11 @@ jobs:
           # and killed this whole step, discarding a completed run (signal
           # check, charts and outcomes had all succeeded). Missing optional
           # artifacts must never fail the commit.
-          for f in signal_log.csv sentiment_cache.json signal_outcomes.csv shadow_log.csv shadow_outcomes.csv docs; do
+          # shadow_outcomes_sq.csv (the squeeze arm) was resolved every run
+          # and never committed. Closed rows are now carried forward from
+          # the file on disk, so an arm whose file is not persisted has no
+          # frozen record at all -- it is re-derived from scratch each hour.
+          for f in signal_log.csv sentiment_cache.json signal_outcomes.csv shadow_log.csv shadow_outcomes.csv shadow_outcomes_sq.csv docs; do
             if [ -e "$f" ]; then
               git add "$f"
             else

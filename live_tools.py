@@ -883,36 +883,196 @@ def resolve_episode(episode: dict, bars: pd.DataFrame,
     return res
 
 
+# The on-disk schema of an outcomes file, in order. Explicit, because the
+# file is now CARRIED FORWARD line by line: a closed row written last month
+# sits under this month's header, so the header may not drift silently.
+OUTCOME_COLUMNS = [
+    "episode_id", "ticker", "side", "entry_time_utc", "entry_direction",
+    "peak_direction", "entry_price", "target_price", "stop_price",
+    "entry_score", "atr", "vix_level", "n_log_rows", "signal_last_seen_utc",
+    "status", "outcome", "exit_date", "bars_held", "days_held", "pnl_r",
+    "mfe_pct_of_target", "resolved_at_utc",
+]
+
+
+def _naive_utc(ts) -> pd.Timestamp:
+    ts = pd.Timestamp(ts)
+    return ts.tz_convert("UTC").tz_localize(None) if ts.tzinfo is not None else ts
+
+
+def _read_closed_lines(out_path: str) -> dict:
+    """episode_id -> the RAW text line of every closed row already on disk.
+
+    Raw text, not parsed values: a closed row is carried forward
+    byte-for-byte, and a float that has been through read_csv/to_csv is not
+    guaranteed to print the way it was written. Refuses a file whose header
+    is not OUTCOME_COLUMNS -- carrying lines under a different header would
+    misalign every column, and quietly re-resolving instead is the defect
+    this function exists to end.
+    """
+    import csv
+    if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+        return {}
+    with open(out_path, encoding="utf-8", newline="") as fh:
+        lines = fh.read().splitlines()
+    if not lines:
+        return {}
+    header = next(csv.reader([lines[0]]))
+    if header != OUTCOME_COLUMNS:
+        raise ValueError(
+            f"outcomes schema mismatch in {out_path}: refusing to carry closed "
+            f"rows forward under a different header. missing="
+            f"{[c for c in OUTCOME_COLUMNS if c not in header]} extra="
+            f"{[c for c in header if c not in OUTCOME_COLUMNS]}. Migrate the "
+            f"file deliberately, or pass rebuild=True to re-resolve every "
+            f"episode from its own entry at full depth.")
+    i_id, i_status = header.index("episode_id"), header.index("status")
+    closed = {}
+    for line in lines[1:]:
+        if not line.strip():
+            continue
+        fields = next(csv.reader([line]))
+        if len(fields) == len(header) and fields[i_status] == "closed":
+            closed[fields[i_id]] = line
+    return closed
+
+
 def resolve_outcomes(log_path: str = DEFAULT_LOG, out_path: str = OUTCOMES_FILE,
                       max_hold_days: int = 15, fetcher=None, now=None,
-                      interval: str = "4h", bars_per_day: int = 6) -> pd.DataFrame:
-    """Extract episodes from the log, resolve each against 4h klines, and
-    write signal_outcomes.csv. Open episodes are re-resolved every run;
-    closed ones can only stay closed (past bars don't change).
+                      interval: str = "4h", bars_per_day: int = 6,
+                      rebuild: bool = False, summary: bool = True) -> pd.DataFrame:
+    """Extract episodes from the log, resolve the ones not yet closed
+    against 4h klines, and write the outcomes file.
+
+    THREE RULES, each one a thing this function used to get wrong
+    (DEFECT #7, docs/cleanroom.md):
+
+    (a) A CLOSED EPISODE IS NEVER RE-RESOLVED. Its row is read back from
+        `out_path` and carried forward byte-for-byte. The old docstring
+        claimed "closed ones can only stay closed (past bars don't
+        change)" and nothing implemented it: every run re-resolved every
+        episode and overwrote the file.
+
+    (b) BARS ARE FETCHED FROM THE OLDEST UNRESOLVED ENTRY FORWARD, never
+        as a fixed trailing window. The old window was 130 bars (~22
+        days). resolve_episode scans `bars > entry`, so once that window
+        had rolled past an episode's real exit, the FIRST bar of the
+        window decided the outcome -- bars_held=1, exit_date = the window
+        start, target-vs-stop set by wherever price was weeks later. The
+        live record read 3 targets / 5 stops on 2026-09-01, 7/1 on
+        09-08 and 8/0 on 09-10 with no new episode and no code change.
+
+    (c) A WINDOW THAT BEGINS AFTER AN ENTRY RAISES. Resolving against bars
+        that start after entry is how (b) produced a plausible-looking
+        row instead of an error. Nothing is written when this raises, so
+        the existing record survives intact.
+
+    ONLY COMPLETE BARS DECIDE. Because a closed row is now permanent, a bar
+    still forming at `now` is dropped: it can touch the target and then go
+    on to touch the stop (ambiguous_stop), and no later run would revisit
+    it. Cost: an exit is recorded up to one bar (4h) late.
+
+    Because closed rows are frozen, `n_log_rows` and `signal_last_seen_utc`
+    on a closed row are as of the run that closed it.
+
+    rebuild=True ignores the existing file and re-resolves everything from
+    its own entry -- the deliberate, visible way to regenerate a record.
+    summary=False suppresses the target/stop/mean-R line; shadow_basket
+    passes it because SHADOW-EVAL is sealed and that line used to land in a
+    public Actions log every hour. Counts are always printed.
+
+    `fetcher(ticker)` may be injected (tests, frozen data); rules (c) and
+    complete-bars apply to whatever it returns.
 
     4h, not daily: live levels come from 4h ATR (see resolve_episode)."""
-    need = int(max_hold_days * bars_per_day) + 40
-    fetcher = fetcher or (lambda tkr: cf.fetch_klines(
-        cf.to_binance_symbol(tkr), interval=interval, limit=min(need, 1000)))
+    now_ts = _naive_utc(now or datetime.now(timezone.utc))
+    bar_td = pd.Timedelta(hours=24.0 / bars_per_day)
+
     log_df = pd.read_csv(log_path)
     episodes = extract_episodes(log_df)
     if not episodes:
         print("No resolvable episodes in the log yet.")
         return pd.DataFrame()
-    daily_by_ticker, results = {}, []
+
+    carried = {} if rebuild else _read_closed_lines(out_path)
+    todo = [ep for ep in episodes if ep["episode_id"] not in carried]
+
+    # (b) one fetch per ticker, deep enough for that ticker's OLDEST
+    # unresolved entry. In steady state that entry is at most max_hold_days
+    # old (older ones have timed out and are carried), so this is one small
+    # request; it is only deep on a rebuild or after an outage.
+    oldest = {}
+    for ep in todo:
+        e = _naive_utc(ep["entry_time_utc"])
+        oldest[ep["ticker"]] = min(e, oldest.get(ep["ticker"], e))
+
+    bars_by_ticker = {}
+    for t, first_entry in oldest.items():
+        if fetcher is not None:
+            bars = fetcher(t)
+        else:
+            n = int((now_ts - first_entry) / bar_td) + 3
+            bars = cf.fetch_klines_paginated(
+                cf.to_binance_symbol(t), interval=interval, target_bars=n,
+                page_limit=max(1, min(n, 1000)))
+        if bars is None or len(bars) == 0:
+            raise ValueError(f"{t}: no bars returned — refusing to resolve "
+                             f"{t} episodes against nothing.")
+        bars = bars.copy()
+        bars.index = pd.to_datetime(bars.index)
+        if getattr(bars.index, "tz", None) is not None:
+            bars.index = bars.index.tz_convert("UTC").tz_localize(None)
+        bars = bars.sort_index()
+        # (c) checked on the window AS FETCHED, before anything is resolved.
+        if bars.index[0] > first_entry:
+            raise ValueError(
+                f"{t}: bars begin AFTER an unresolved entry (window starts "
+                f"{bars.index[0].isoformat()}, oldest unresolved entry "
+                f"{first_entry.isoformat()}). Resolving against bars that "
+                f"start after entry lets the first bar of the window decide "
+                f"the outcome — refusing. Nothing was written.")
+        bars_by_ticker[t] = bars[bars.index + bar_td <= now_ts]
+
+    fresh = {}
+    for ep in todo:
+        fresh[ep["episode_id"]] = resolve_episode(
+            ep, bars_by_ticker[ep["ticker"]], max_hold_days=max_hold_days,
+            now=now, bars_per_day=bars_per_day)
+
+    lines, seen = [",".join(OUTCOME_COLUMNS)], set()
     for ep in episodes:
-        t = ep["ticker"]
-        if t not in daily_by_ticker:
-            daily_by_ticker[t] = fetcher(t)
-        results.append(resolve_episode(ep, daily_by_ticker[t],
-                                        max_hold_days=max_hold_days, now=now,
-                                        bars_per_day=bars_per_day))
-    out = pd.DataFrame(results)
-    out.to_csv(out_path, index=False)
+        eid = ep["episode_id"]
+        seen.add(eid)
+        if eid in carried:
+            lines.append(carried[eid])                       # (a) verbatim
+        else:
+            lines.append(pd.DataFrame([fresh[eid]], columns=OUTCOME_COLUMNS)
+                         .to_csv(header=False, index=False,
+                                 lineterminator="\n").rstrip("\n"))
+    # A closed row whose episode the log no longer yields is KEPT. Dropping
+    # a resolved outcome because of an upstream change is the silent kind
+    # of loss; keeping it and saying so is not.
+    orphans = [eid for eid in carried if eid not in seen]
+    for eid in orphans:
+        lines.append(carried[eid])
+    if orphans:
+        print(f"  [outcomes] kept {len(orphans)} closed row(s) with no matching "
+              f"episode in {log_path}: {', '.join(orphans[:5])}"
+              f"{' ...' if len(orphans) > 5 else ''}")
+
+    # Write beside, then replace: a crash mid-write must not truncate a
+    # record that can no longer be regenerated by simply re-running.
+    tmp_path = out_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8", newline="") as fh:
+        fh.write("\n".join(lines) + "\n")
+    os.replace(tmp_path, out_path)
+
+    out = pd.read_csv(out_path)
     closed = out[out["status"] == "closed"]
-    print(f"{len(out)} episodes ({len(closed)} closed, {len(out)-len(closed)} open) "
+    print(f"{len(out)} episodes ({len(closed)} closed, {len(out)-len(closed)} open; "
+          f"{len(carried)} carried forward, {len(todo)} resolved this run) "
           f"-> {out_path}")
-    if len(closed):
+    if summary and len(closed):
         print(f"  closed: target {(closed['outcome']=='target').mean()*100:.0f}%, "
               f"stop {(closed['outcome'].isin(['stop','ambiguous_stop'])).mean()*100:.0f}%, "
               f"mean {closed['pnl_r'].mean():+.2f}R over {len(closed)} episodes")
@@ -1897,8 +2057,14 @@ def main():
         p.add_argument("--max-hold-days", type=int, default=15)
         p.add_argument("--compare", action="store_true",
                        help="Also print live-vs-backtest calibration by score band")
-        a = p.parse_args(sys.argv[2:])
-        odf = resolve_outcomes(a.log_file, a.out, max_hold_days=a.max_hold_days)
+        p.add_argument("--rebuild", action="store_true",
+                       help="Ignore the existing outcomes file and re-resolve "
+                            "EVERY episode from its own entry at full depth. "
+                            "Closed rows are otherwise carried forward "
+                            "byte-for-byte and never re-resolved.")
+        a = p.parse_args(sys.argv[1:])
+        odf = resolve_outcomes(a.log_file, a.out, max_hold_days=a.max_hold_days,
+                               rebuild=a.rebuild)
         if a.compare and len(odf):
             print("\n" + compare_live_to_backtest(odf))
     elif command == "graph":
