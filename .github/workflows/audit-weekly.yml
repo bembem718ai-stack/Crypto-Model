@@ -4,7 +4,9 @@ name: Weekly Audit
 # anything FAILs. Zero Adanos requests, no network beyond the git fetch the
 # freshness check does.
 #
-# WHY AN ISSUE AND NOT A RED RUN: a red workflow is noise that gets muted.
+# WHY AN ISSUE AND NOT A RED RUN (for FINDINGS -- Section C deployment
+# failures ALSO fail the run, see the last step): a red workflow is noise
+# that gets muted.
 # An issue is a thing with a title, an assignee and a close button, and it
 # survives until someone acts on it. The audit's own design rule is that a
 # FAIL is a DECISION to make, not a bug to silence -- so it gets a decision
@@ -74,7 +76,12 @@ jobs:
           script: |
             const fs = require('fs');
             const out = fs.readFileSync('audit_output.txt', 'utf8');
-            const fails = out.split('\n').filter(l => l.includes('**FAIL**'));
+            // TABLE ROWS ONLY. The report's legend line ("- **FAIL** needs a
+            // decision...") also contains **FAIL** and was counted as a
+            // failing check every week, so every count was one too high.
+            const fails = out.split('\n')
+              .filter(l => l.trim().startsWith('|') && l.includes('**FAIL**'));
+            const outage = fails.filter(l => l.includes('C. Deployment'));
             const today = new Date().toISOString().slice(0, 10);
             const body = [
               `The weekly offline audit reported ${fails.length} FAIL(s) on ${today}.`,
@@ -88,7 +95,8 @@ jobs:
               '',
               `[Full run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
             ].join('\n');
-            const title = `Weekly audit: ${fails.length} FAIL(s) — ${today}`;
+            const title = (outage.length ? 'DEPLOYMENT OUTAGE — ' : '') +
+              `Weekly audit: ${fails.length} FAIL(s) — ${today}`;
             const existing = await github.rest.issues.listForRepo({
               owner: context.repo.owner, repo: context.repo.repo,
               state: 'open', labels: 'audit',
@@ -96,10 +104,20 @@ jobs:
             // Reuse the open audit issue rather than opening one a week
             // forever; a stack of near-identical issues is how they stop
             // being read.
+            //
+            // BUT REFRESH THE TITLE. From 2026-09-07 to 2026-11-16 eleven
+            // weekly FAILs (log 141.6h -> 1825.0h stale) were appended as
+            // comments under a title frozen at "3 FAIL(s) — 2026-08-31". In
+            // the issue list that is one old issue, not a live outage that
+            // was getting worse every week (DEFECT #7).
             if (existing.data.length) {
               await github.rest.issues.createComment({
                 owner: context.repo.owner, repo: context.repo.repo,
                 issue_number: existing.data[0].number, body,
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: existing.data[0].number, title,
               });
             } else {
               await github.rest.issues.create({
@@ -107,3 +125,18 @@ jobs:
                 title, body, labels: ['audit'],
               });
             }
+
+      # A SECTION C FAIL IS AN OUTAGE, NOT A DECISION, AND IT GOES RED.
+      # The header's rule -- an issue, not a red run -- is right for
+      # FINDINGS: a sign-flipping edge is information and deserves a
+      # decision artefact. A dead signal log is not a finding. This workflow
+      # reported one for eleven consecutive weeks and concluded `success`
+      # every time. Runs LAST, so the issue above is always written first.
+      - name: Fail the run on a deployment outage
+        if: steps.audit.outputs.exit_code != '0'
+        run: |
+          if grep -E '^\| C\. Deployment \|.*\*\*FAIL\*\*' audit_output.txt; then
+            echo "::error title=Deployment outage::a Section C check FAILED — see the audit issue"
+            exit 1
+          fi
+          echo "FAILs present, none in Section C — reported by issue only."

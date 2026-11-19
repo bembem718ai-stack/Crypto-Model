@@ -184,10 +184,28 @@ def passes_confluence(result: dict, ml_bull_min: float = 55.0,
             "reason": f"{direction} — not an actionable direction"}
 
 
+def _report_check_failure(ticker: str, stage: str, exc: Exception,
+                          failures: list) -> None:
+    """Record one failed ticker and print a GitHub `::error` annotation.
+
+    The annotation is what puts the failure on the run page and in the
+    notification e-mail; a plain "FAILED" line in a green step's log is
+    read by nobody. A workflow command is ONE line, so `%`, CR and LF are
+    escaped the way the runner expects. Outside Actions it is just a line
+    of text.
+    """
+    msg = f"{type(exc).__name__}: {exc}"
+    failures.append((ticker, msg))
+    esc = msg.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::error title=Signal check FAILED ({ticker}, {stage})::"
+          f"{ticker} logged NO row this run — {esc}")
+
+
 def run_single_check(tickers: list, log_file: str = "signal_log.csv",
                      confluence: bool = False, ml_bull_min: float = 55.0,
                      ml_bear_max: float = 45.0, log_all: bool = False,
-                     long_only: bool = False, confirm_days: int = 1) -> list:
+                     long_only: bool = False, confirm_days: int = 1,
+                     failures: list = None) -> list:
     """
     ONE pass over `tickers` — no loop, no sleep, no desktop alerts. Built for
     headless/scheduled environments (GitHub Actions, cron, etc.) where an
@@ -208,14 +226,28 @@ def run_single_check(tickers: list, log_file: str = "signal_log.csv",
           without confluence gating.)
 
     Returns the list of results that were actually LOGGED this call.
+
+    `failures`, if given, is appended with (ticker, message) for every
+    ticker whose pipeline run OR log append raised. One bad ticker still
+    does not stop the others -- but it is no longer silent: each failure
+    prints a GitHub `::error` annotation, and main_check exits non-zero
+    when failures left the log with zero new rows. The old behaviour
+    (print "FAILED", exit 0) is how ~1,800 consecutive runs went green
+    while signal_log.csv never grew (DEFECT #7).
     """
     logged = []
+    failures = failures if failures is not None else []
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     mode = " (confluence mode)" if confluence else ""
     mode += ", logging everything" if log_all else ""
     print(f"--- {timestamp} --- checking {', '.join(tickers)}{mode}")
 
-    want_ml = confluence or log_all
+    # ML is produced BY Step 3, so it can only be wanted on a construction
+    # that runs Step 3. DERIVED from the published flag rather than forced:
+    # forcing it on for --log-all is what raised on every run after
+    # 2026-09-01. Reverting the simplification flips the flag and the ML
+    # column refills with no change here.
+    want_ml = (confluence or log_all) and pl.PUBLISHED_RUN_STEP3
 
     # ADANOS QUOTA. The gate is dampen-only, so on a day whose Step 1 score
     # is below the DERIVED cutoff (sentiment_call_cutoff -- 33.3 at
@@ -278,10 +310,14 @@ def run_single_check(tickers: list, log_file: str = "signal_log.csv",
                     append_ping_to_log(result, log_file)
                     logged.append(result)
                 except Exception as e:  # noqa: BLE001
+                    # A row that could not be written is the same outage as
+                    # a pipeline that threw: the log did not grow.
                     print(f"  [log] append failed ({type(e).__name__}: {e})")
+                    _report_check_failure(ticker, "log append", e, failures)
 
         except Exception as e:  # noqa: BLE001 - one bad ticker shouldn't kill the run
             print(f"  {ticker}: FAILED — {type(e).__name__}: {e}")
+            _report_check_failure(ticker, "pipeline", e, failures)
 
     if confluence and not log_all and not logged:
         print("  (no confluence signals this check — nothing logged; "
@@ -1748,10 +1784,24 @@ def main_check():
                               "showed ~0R edge in the exit backtest)")
     args = parser.parse_args()
 
-    run_single_check(args.tickers, log_file=args.log_file, confluence=args.confluence,
-                     ml_bull_min=args.ml_bull_min, ml_bear_max=args.ml_bear_max,
-                     log_all=args.log_all, long_only=args.long_only,
-                     confirm_days=args.confirm_days)
+    failures = []
+    logged = run_single_check(args.tickers, log_file=args.log_file,
+                              confluence=args.confluence,
+                              ml_bull_min=args.ml_bull_min,
+                              ml_bear_max=args.ml_bear_max,
+                              log_all=args.log_all, long_only=args.long_only,
+                              confirm_days=args.confirm_days, failures=failures)
+    # EXIT NON-ZERO WHEN FAILURES LEFT THE LOG WITH ZERO NEW ROWS. That is
+    # the outage signature, and it has to reach the run conclusion: this
+    # step exiting 0 on "BTC: FAILED" hid a dead service for 78 days.
+    # Zero rows with zero failures stays 0 -- a quiet `--confluence` check
+    # logs nothing by design. signal-check.yml keeps the shadow, chart,
+    # outcome and commit steps running after a red check step.
+    if failures and not logged:
+        print(f"::error title=Signal check logged ZERO rows::"
+              f"{len(failures)} of {len(args.tickers)} ticker(s) failed and "
+              f"nothing was appended to {args.log_file}")
+        sys.exit(1)
 
 
 # ======================================================================

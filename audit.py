@@ -516,6 +516,31 @@ def _origin_log(path="signal_log.csv"):
         return None, f"{type(e).__name__}"
 
 
+def _last_bot_commit_age_hours():
+    """Hours since the newest `Signal check:` commit on origin/main, or
+    None when that cannot be determined.
+
+    WHY THIS EXISTS (DEFECT #7). A stale log has two very different causes
+    and this check used to name only one. "The trigger stopped firing" was
+    printed every Monday for eleven weeks while the triggers fired hourly
+    and committed shadow rows and charts -- the check step was throwing
+    inside a green run. The bot's commit history separates the two with no
+    extra permissions: commits still arriving + log not growing means the
+    RUNS are alive and the CHECK is dead.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "log", "origin/main", "-1", "--format=%ct",
+             "--grep=^Signal check:"],
+            capture_output=True, text=True, timeout=60)
+        if r.returncode != 0 or not r.stdout.strip():
+            return None
+        age = (pd.Timestamp.now(tz="UTC").timestamp() - int(r.stdout.strip())) / 3600
+        return round(age, 1)
+    except Exception:                          # offline, shallow clone, no git
+        return None
+
+
 def check_log_freshness(path="signal_log.csv"):
     """Hourly checks run via cron-job.org → workflow_dispatch. A stale log
     is how you find out the cron died without anyone noticing.
@@ -552,9 +577,24 @@ def check_log_freshness(path="signal_log.csv"):
     if age_h <= BASELINES["log_stale_hours"]:
         return record("C. Deployment", "Signal log is fresh", PASS,
                       f"{len(df)} rows, newest {age_h:.1f}h old [{source}]", ev)
+    # WHICH outage is it? Only claim what the commit history supports.
+    bot_age = _last_bot_commit_age_hours()
+    ev["last_bot_commit_age_hours"] = bot_age
+    if bot_age is not None and bot_age <= BASELINES["log_stale_hours"]:
+        why = (f"RUNS ARE STILL COMMITTING (newest `Signal check:` commit "
+               f"{bot_age:.1f}h old) but the log is not growing — the check "
+               f"step is failing inside the run; read its log, the trigger "
+               f"is fine")
+    elif bot_age is not None:
+        why = (f"no `Signal check:` commit for {bot_age:.1f}h either — the "
+               f"trigger may have stopped firing")
+    else:
+        why = ("the trigger may have stopped firing OR the check step is "
+               "failing inside the run (bot commit history unavailable, so "
+               "this audit cannot tell which)")
     return record("C. Deployment", "Signal log is fresh", FAIL,
                   f"newest entry {age_h:.1f}h old (> {BASELINES['log_stale_hours']}h) "
-                  f"[{source}] — the trigger may have stopped firing", ev)
+                  f"[{source}] — {why}", ev)
 
 
 def check_sentiment_gate_errors(path="signal_log.csv"):

@@ -83,7 +83,18 @@ jobs:
           echo "trigger=${{ github.event_name }} should_run=${{ steps.guard.outputs.should_run }}"
           echo "### Signal check — trigger \`${{ github.event_name }}\`, should_run=\`${{ steps.guard.outputs.should_run }}\`" >> $GITHUB_STEP_SUMMARY
 
+      # THIS STEP IS ALLOWED TO FAIL, AND MUST BE ABLE TO. `check` exits
+      # non-zero when failures left signal_log.csv with zero new rows, and
+      # prints one `::error` per failed ticker. From 2026-09-01 15:21 UTC it
+      # threw on every run, printed "BTC: FAILED", exited 0, and ~1,800 runs
+      # went green while the log never grew (DEFECT #7, docs/cleanroom.md).
+      #
+      # Every LATER step is conditioned on `!cancelled()` rather than on
+      # implicit success(), so a red check still gets its shadow rows,
+      # charts, outcomes and commit. The run shows red WITHOUT losing the
+      # other steps' work. Do not add `continue-on-error` or `|| true` here.
       - name: Run Signal check
+        id: check
         if: steps.guard.outputs.should_run == 'true'
         env:
           ADANOS_API_KEY: ${{ secrets.ADANOS_API_KEY }}
@@ -95,14 +106,14 @@ jobs:
       # never delay or affect it, and `continue-on-error` guarantees a
       # shadow failure cannot fail a run whose live work already succeeded.
       - name: Shadow basket (26 tickers, never published)
-        if: steps.guard.outputs.should_run == 'true'
+        if: ${{ !cancelled() && steps.guard.outputs.should_run == 'true' }}
         continue-on-error: true
         run: |
           python shadow_basket.py run
           python shadow_basket.py outcomes || echo "shadow outcomes non-fatal"
 
       - name: Build hosted charts (docs/ folder, served by GitHub Pages)
-        if: steps.guard.outputs.should_run == 'true'
+        if: ${{ !cancelled() && steps.guard.outputs.should_run == 'true' }}
         run: |
           mkdir -p docs
           python - <<'PY'
@@ -136,11 +147,11 @@ jobs:
           PY
 
       - name: Resolve live signal outcomes (0 Adanos requests)
-        if: steps.guard.outputs.should_run == 'true'
+        if: ${{ !cancelled() && steps.guard.outputs.should_run == 'true' }}
         run: python live_tools.py outcomes || echo "outcomes step non-fatal"
 
       - name: Commit updated log + hosted charts
-        if: steps.guard.outputs.should_run == 'true'
+        if: ${{ !cancelled() && steps.guard.outputs.should_run == 'true' }}
         run: |
           git config user.name "signal-bot"
           git config user.email "actions@users.noreply.github.com"

@@ -163,6 +163,12 @@ def compute_initial_score(ticker: str, interval: str = "4h", klines_limit: int =
 PUBLISHED_WEIGHT_PATTERN = 1.0
 PUBLISHED_WEIGHT_INDICATORS = 0.0
 PUBLISHED_USE_VIX_REGIME = False
+# Whether the published path RUNS Step 3 at all. Named, rather than left as
+# a bare `run_step3=False` default, so callers can DERIVE from it: the ML
+# score is produced by Step 3, and live_tools.run_single_check used to force
+# use_ml=True for --log-all regardless -- which raised on every hourly run
+# from 2026-09-01 15:21 UTC (DEFECT #7, docs/cleanroom.md).
+PUBLISHED_RUN_STEP3 = False
 
 # The pre-2026-09-01 construction. Kept because the shadow logger's
 # incumbent arm MUST keep producing it: if it stopped, the promotion /
@@ -603,7 +609,7 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
                        weight_pattern: float = PUBLISHED_WEIGHT_PATTERN,
                        weight_indicators: float = PUBLISHED_WEIGHT_INDICATORS,
                        use_vix_regime: bool = PUBLISHED_USE_VIX_REGIME,
-                       run_step3: bool = False,
+                       run_step3: bool = PUBLISHED_RUN_STEP3,
                        extreme_fear_mode: str = "symmetric",
                        stop_mult: float = 1.5, target_mult: float = 3.0,
                        use_ml: bool = False, ml_weight: float = 0.0,
@@ -733,9 +739,22 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
     if ml_weight and ml_weight > 0 and not run_step3:
         raise ValueError("ml_weight > 0 requires run_step3=True (the ML score is "
                          "produced by Step 3, which the published path skips).")
+    # use_ml WITHOUT ml_weight is a DISPLAY request, and it is NOT fatal.
+    # This used to raise, and that raise took the live service down for 78
+    # days (DEFECT #7): the hourly check asked for the ML number, the
+    # published path could not produce one, and a column nobody trades on
+    # stopped every row from being logged. ML is display-only and ml_weight
+    # is 0, so the honest answer to "show me ML" on a construction that
+    # skips Step 3 is "there is none" -- ml_confidence=None with the reason
+    # recorded. The ml_weight > 0 case above still raises, because THAT one
+    # would change final_score.
+    ml_unavailable_reason = None
     if use_ml and not run_step3:
-        raise ValueError("use_ml=True requires run_step3=True (the ML score is "
-                         "produced by Step 3, which the published path skips).")
+        ml_unavailable_reason = ("use_ml requested but Step 3 is skipped on "
+                                 "this construction; the ML score is produced "
+                                 "by Step 3. Display-only, so not an error.")
+        if verbose:
+            print(f"  ML confidence: unavailable ({ml_unavailable_reason})")
     combined = combine_and_decide(step2, step3, weight_pattern=weight_pattern,
                                    weight_indicators=weight_indicators,
                                    use_vix_regime=use_vix_regime,
@@ -772,6 +791,8 @@ def run_full_pipeline(ticker: str, interval: str = "4h", klines_limit: int = 500
     # ML confidence rides along in the output (display-only; not in final_score)
     combined["ml_confidence"] = step3.get("ai_confidence_score") if step3.get("ml_ok") else None
     combined["ml_accuracy"] = step3.get("ml_accuracy") if step3.get("ml_ok") else None
+    if ml_unavailable_reason:
+        combined["ml_unavailable_reason"] = ml_unavailable_reason
 
     if verbose:
         print(f"\n{'-' * 70}")

@@ -3237,6 +3237,58 @@ class TestAuditGateErrorStreak:
         a.check_log_freshness(str(p))
         assert "LOCAL CLONE ONLY" in a._results[-1]["detail"]
 
+    # ---- DEFECT #7: the audit SAW the stale log 11 weeks running ------
+    # It ran, it compared against origin/main, it had issues:write, and it
+    # reported FAIL every Monday from 2026-09-07 (141.6h) to 2026-11-16
+    # (1825.0h). Nobody saw it, for three reasons these tests pin:
+    #   1. the detail said "the trigger may have stopped firing" while the
+    #      triggers were firing hourly and COMMITTING -- a wrong diagnosis
+    #      that checks out as false the moment anyone looks at Actions;
+    #   2. every report was appended as a comment to one issue whose title
+    #      stayed "Weekly audit: 3 FAIL(s) — 2026-08-31" forever;
+    #   3. the run itself concluded green by design.
+    def _stale(self, a, tmp_path, monkeypatch, bot_age_h):
+        old = (pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=1825)).isoformat()
+        df = pd.DataFrame({"timestamp_utc": [old]})
+        monkeypatch.setattr(a, "_origin_log", lambda path="x": (df, "origin/main"))
+        monkeypatch.setattr(a, "_last_bot_commit_age_hours", lambda: bot_age_h)
+        p = tmp_path / "signal_log.csv"
+        df.to_csv(p, index=False)
+        a._results.clear()
+        a.check_log_freshness(str(p))
+        return a._results[-1]
+
+    def test_stale_log_with_live_commits_names_the_real_failure(
+            self, tmp_path, monkeypatch):
+        r = self._stale(self._audit(), tmp_path, monkeypatch, bot_age_h=0.7)
+        assert r["status"] == "FAIL"
+        assert "RUNS ARE STILL COMMITTING" in r["detail"]
+        assert "may have stopped firing" not in r["detail"]
+        assert r["evidence"]["last_bot_commit_age_hours"] == 0.7
+
+    def test_stale_log_with_no_commits_still_blames_the_trigger(
+            self, tmp_path, monkeypatch):
+        r = self._stale(self._audit(), tmp_path, monkeypatch, bot_age_h=1800.0)
+        assert r["status"] == "FAIL"
+        assert "may have stopped firing" in r["detail"]
+
+    def test_stale_log_with_unknown_commit_age_claims_neither(
+            self, tmp_path, monkeypatch):
+        r = self._stale(self._audit(), tmp_path, monkeypatch, bot_age_h=None)
+        assert r["status"] == "FAIL"
+        assert "RUNS ARE STILL COMMITTING" not in r["detail"]
+
+    def test_weekly_audit_cannot_bury_a_deployment_failure(self):
+        src = open(".github/workflows/audit-weekly.yml", encoding="utf-8").read()
+        # the issue title is refreshed, not frozen at the first week's
+        assert "issues.update" in src
+        # the legend line "- **FAIL** needs a decision" is not a failing check
+        assert "startsWith('|')" in src
+        # a Section C failure is an outage, not a decision: the run goes red,
+        # and only AFTER the issue step has had its chance to run
+        tail = src.split("- name: Open an issue on FAIL", 1)[1]
+        assert "C. Deployment" in tail and "exit 1" in tail
+
 
 # ======================================================================
 # LIVE-PATH SENTIMENT GATING — Adanos quota
@@ -5198,8 +5250,9 @@ class TestPublishedConstruction:
                             lambda *a, **k: _fake_step1(72.0))
         monkeypatch.setattr(um, "apply_reddit_step",
                             lambda *a, **k: _fake_step2(72.0))
-        with pytest.raises(ValueError, match="run_step3"):
-            um.run_full_pipeline("BTC", verbose=False, use_ml=True)
+        # BLENDING ML still requires Step 3 -- that would change final_score.
+        # A bare use_ml=True (display only) no longer raises: that raise is
+        # DEFECT #7, see TestLiveCheckOnPublishedPath.
         with pytest.raises(ValueError, match="run_step3"):
             um.run_full_pipeline("BTC", verbose=False, ml_weight=0.5, use_ml=True)
 
@@ -6037,3 +6090,182 @@ class TestFrozenDatasetHashes:
         meta2 = fz.stamp({}, hashed_at="2020-01-01", note="retrofit")
         assert meta2["hashed_at_freeze"] is False
         assert meta2["hashed_note"] == "retrofit"
+
+
+# ======================================================================
+# DEFECT #7a — the live check threw on every run from 2026-09-01 15:21 UTC
+# ======================================================================
+# 7793720 made run_full_pipeline raise "use_ml=True requires run_step3=True"
+# on the published squeeze-only path. The workflow runs
+# `check BTC --log-all`, run_single_check forced use_ml on for --log-all,
+# the per-ticker `except Exception` printed "BTC: FAILED", and the step
+# exited 0. ~1,800 runs went green while signal_log.csv never grew.
+#
+# Every existing test of the published path called run_full_pipeline
+# DIRECTLY with its defaults, and every test of run_single_check predated
+# the published path. Nothing exercised the two together, which is the only
+# place the defect lived. These tests go through the same entry point and
+# the same flags the workflow uses.
+
+def _frozen_4h(ticker="BTC"):
+    df = pd.read_csv(f"data/{ticker}_4h.csv", parse_dates=["open_time"],
+                     index_col="open_time")
+    return df[["Open", "High", "Low", "Close", "Volume"]]
+
+
+class TestLiveCheckOnPublishedPath:
+
+    WORKFLOW_FLAGS = dict(log_all=True, long_only=True, confirm_days=2)
+
+    def _offline(self, monkeypatch):
+        bars = _frozen_4h("BTC")
+
+        def fake_paginated(symbol, interval="4h", target_bars=1000, **k):
+            return bars.tail(target_bars).copy()
+
+        def no_network(*a, **k):
+            raise AssertionError("network call on a test that must be offline")
+
+        def no_step3(*a, **k):
+            raise AssertionError("published path must not call Step 3")
+
+        monkeypatch.setattr(epm, "fetch_klines_paginated", fake_paginated)
+        monkeypatch.setattr(epm, "fetch_klines", no_network)
+        monkeypatch.setattr(um, "apply_indicator_step", no_step3)
+        # Zero Adanos: a deterministic neutral gate instead of the provider.
+        monkeypatch.setattr(epm, "cached_sentiment_check", lambda *a, **k: {
+            "decision": "PROCEED", "gate_multiplier": 1.0, "reason": "test",
+            "cache_hit": True, "cache_age_hours": 0.0, "stale_fallback": False,
+            "sentiment_score": 0.0, "sentiment_mentions": 0})
+
+    def test_workflow_invocation_appends_a_row(self, tmp_path, monkeypatch):
+        """THE REPRODUCTION. Same entry point, same flags as signal-check.yml,
+        real pipeline, published construction, klines from data/BTC_4h.csv."""
+        self._offline(monkeypatch)
+        log = tmp_path / "signal_log.csv"
+        logged = lt.run_single_check(["BTC"], log_file=str(log),
+                                     **self.WORKFLOW_FLAGS)
+        assert len(logged) == 1, "the check logged nothing"
+        df = pd.read_csv(log)
+        assert len(df) == 1 and df.iloc[0]["ticker"] == "BTC"
+        assert list(df.columns) == lt.LOG_COLUMNS
+        # Step 3 is skipped, so there is no ML number to display -- blank,
+        # not an exception.
+        assert pd.isna(df.iloc[0]["ml_confidence"])
+        assert pd.isna(df.iloc[0]["indicator_final_score"])
+
+    def test_log_all_does_not_request_ml_when_step3_is_skipped(self, monkeypatch):
+        """ML is produced BY Step 3. Asking for it on a construction that
+        skips Step 3 must be derived away, not forced on."""
+        seen = {}
+
+        def spy(ticker, **kw):
+            seen.update(kw)
+            raise RuntimeError("stop here")
+
+        monkeypatch.setattr(lt.pl, "run_full_pipeline", spy)
+        assert um.PUBLISHED_RUN_STEP3 is False
+        lt.run_single_check(["BTC"], log_file="unused.csv", log_all=True)
+        assert seen["use_ml"] is False
+
+    def test_use_ml_without_step3_is_blank_not_fatal(self, monkeypatch):
+        """ML is display-only and ml_weight is 0: a display request that
+        cannot be met yields ml_confidence=None. It must never take the
+        signal down with it."""
+        monkeypatch.setattr(um, "compute_initial_score",
+                            lambda *a, **k: _fake_step1(72.0))
+        monkeypatch.setattr(um, "apply_reddit_step",
+                            lambda *a, **k: _fake_step2(72.0))
+        r = um.run_full_pipeline("BTC", verbose=False, use_ml=True)
+        assert r["combined"]["ml_confidence"] is None
+        assert r["combined"]["ml_unavailable_reason"]
+        assert r["combined"]["direction"] == "BUY"
+        assert r["combined"]["final_score"] == pytest.approx(72.0)
+
+    # ---- the swallow must be loud ------------------------------------
+    def _run_cli(self, monkeypatch, argv):
+        monkeypatch.setattr(sys, "argv", ["live_tools.py"] + argv)
+        try:
+            lt.main_check()
+        except SystemExit as e:
+            return 0 if e.code is None else e.code
+        return 0
+
+    def test_failed_ticker_emits_an_error_annotation(self, monkeypatch, capsys,
+                                                     tmp_path):
+        def boom(*a, **k):
+            raise ValueError("line one\nline two 100% broken")
+
+        monkeypatch.setattr(lt.pl, "run_full_pipeline", boom)
+        failures = []
+        logged = lt.run_single_check(["BTC", "ETH"],
+                                     log_file=str(tmp_path / "l.csv"),
+                                     log_all=True, failures=failures)
+        out = capsys.readouterr().out
+        assert logged == []
+        assert [t for t, _ in failures] == ["BTC", "ETH"]
+        ann = [l for l in out.splitlines() if l.startswith("::error ")]
+        assert len(ann) == 2, "one ::error per failed ticker"
+        assert "BTC" in ann[0] and "ETH" in ann[1]
+        # A workflow command is ONE line; a raw newline would truncate it.
+        assert "line two" in ann[0] and "%0A" in ann[0] and "100%25" in ann[0]
+
+    def test_cli_exits_nonzero_when_zero_rows_logged(self, monkeypatch, tmp_path):
+        def boom(*a, **k):
+            raise ValueError("x")
+
+        monkeypatch.setattr(lt.pl, "run_full_pipeline", boom)
+        code = self._run_cli(monkeypatch, [
+            "BTC", "--log-all", "--confirm-days", "2", "--long-only",
+            "--log-file", str(tmp_path / "l.csv")])
+        assert code != 0
+        assert not (tmp_path / "l.csv").exists()
+
+    def test_cli_exits_zero_when_the_row_is_logged(self, monkeypatch, tmp_path):
+        self._offline(monkeypatch)
+        log = tmp_path / "l.csv"
+        code = self._run_cli(monkeypatch, [
+            "BTC", "--log-all", "--confirm-days", "2", "--long-only",
+            "--log-file", str(log)])
+        assert code == 0 and len(pd.read_csv(log)) == 1
+
+    def test_append_failure_is_a_failure_not_a_footnote(self, monkeypatch,
+                                                        capsys, tmp_path):
+        """A row that could not be written is the same outage as a pipeline
+        that threw: the log did not grow."""
+        self._offline(monkeypatch)
+
+        def cannot_write(*a, **k):
+            raise PermissionError("disk")
+
+        monkeypatch.setattr(lt, "append_ping_to_log", cannot_write)
+        failures = []
+        logged = lt.run_single_check(["BTC"], log_file=str(tmp_path / "l.csv"),
+                                     failures=failures, **self.WORKFLOW_FLAGS)
+        assert logged == [] and [t for t, _ in failures] == ["BTC"]
+        assert "::error " in capsys.readouterr().out
+
+    def test_quiet_confluence_run_is_not_an_outage(self, monkeypatch, tmp_path):
+        """--confluence WITHOUT --log-all logs nothing on a non-qualifying
+        check BY DESIGN. Zero rows with zero failures must stay exit 0, or
+        the loud path cries wolf on every quiet hour."""
+        self._offline(monkeypatch)
+        code = self._run_cli(monkeypatch, [
+            "BTC", "--confluence", "--log-file", str(tmp_path / "l.csv")])
+        assert code == 0
+
+    # ---- the workflow must go red WITHOUT losing the other steps ------
+    def test_workflow_keeps_later_steps_when_the_check_fails(self):
+        src = open(".github/workflows/signal-check.yml", encoding="utf-8").read()
+        cond = "if: ${{ !cancelled() && steps.guard.outputs.should_run == 'true' }}"
+        for step in ("Shadow basket", "Build hosted charts",
+                     "Resolve live signal outcomes",
+                     "Commit updated log + hosted charts"):
+            block = src.split("- name: " + step, 1)[1].split("- name: ", 1)[0]
+            assert cond in block, step + " would be skipped by a red check step"
+        check = src.split("- name: Run Signal check", 1)[1].split("- name: ", 1)[0]
+        # YAML only: the block runs on into the NEXT step's leading comment.
+        check = "\n".join(l for l in check.splitlines()
+                          if not l.strip().startswith("#"))
+        assert "continue-on-error" not in check and "||" not in check, \
+            "the check step's failure must reach the run conclusion"
