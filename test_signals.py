@@ -5701,9 +5701,54 @@ class TestPremiaInstrument:
         """Kraken marks a bookless instrument AT index, which fabricates a
         basis of exactly 0.0000%. Those rows must be excluded by rule and
         listed, never silently dropped."""
+        # A FIXTURE, NOT THE ARCHIVE. This test used to assert that the live
+        # kraken_tickers snapshot contained at least one dead instrument --
+        # true while Kraken listed inverse dated (FI_) contracts, all 8 of
+        # them bookless. Kraken delisted them (8 -> 4 on 2026-10-31 -> 0 on
+        # 2026-11-03), the latest snapshot holds 10 FF_ rows that are all
+        # live, and the test began failing while the rule was working: it
+        # last fired on 2026-11-17. It was testing the market, not the rule.
+        import pandas as pd
+        pr = self._p()
+        ts = pd.Timestamp("2026-09-01T05:20:00Z")
+
+        def row(sym, oi, vol, mark, index):
+            return {"symbol": sym, "timestamp": ts, "observed_utc": str(ts),
+                    "openInterest": oi, "vol24h": vol,
+                    "markPrice": mark, "indexPrice": index}
+
+        snap = pd.DataFrame([
+            row("FI_XBTUSD_260925", 0.0, 0.0, 78000.0, 78000.0),   # bookless, AT index
+            row("FF_ETHUSD_261127", 4.285, 0.0, 1825.26, 1823.68), # OI but no trade
+            row("FF_XBTUSD_260828", 5.0, 2.0, 78010.0, 78000.0),   # already expired
+            row("FF_XBTUSD_261225", 18.874, 0.95, 78400.0, 78000.0),   # live
+            row("PF_XBTUSD", 1977.0, 500.0, 78005.0, 78000.0),     # perpetual
+        ])
+        self_read = pr._read
+        try:
+            pr._read = lambda name: snap if name == "kraken_tickers" else self_read(name)
+            b = pr.basis()
+        finally:
+            pr._read = self_read
+
+        why = {r["symbol"]: r["why"] for r in b["excluded"]}
+        assert set(why) == {"FI_XBTUSD_260925", "FF_ETHUSD_261127",
+                            "FF_XBTUSD_260828"}
+        assert "no book" in why["FI_XBTUSD_260925"]
+        assert "no book" in why["FF_ETHUSD_261127"]
+        assert "expiry not in the future" in why["FF_XBTUSD_260828"]
+        # the fabricated 0.0000% never reaches the table
+        assert [r["symbol"] for r in b["dated"]] == ["FF_XBTUSD_261225"]
+        assert all(r["premium"] != 0.0 for r in b["dated"])
+        assert "3 instrument(s) excluded" in b["notes"][-1]
+
+    def test_no_dead_instrument_reaches_the_real_basis_table(self):
+        """The invariant that DOES hold on any snapshot, whatever Kraken
+        lists that day: nothing bookless in the published rows, and every
+        exclusion carries its reason. Zero exclusions is a legitimate
+        state of the market."""
         pr = self._p()
         b = pr.basis()
-        assert b["excluded"], "nothing excluded -- has the rule stopped firing?"
         for r in b["excluded"]:
             assert "why" in r and r["why"]
         for r in b["dated"]:
